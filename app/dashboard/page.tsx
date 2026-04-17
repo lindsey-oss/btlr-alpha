@@ -2099,7 +2099,7 @@ export default function Dashboard() {
                           <span style={{ color: C.text2, fontWeight: 600 }}>{value}</span>
                         </div>
                       ))}
-                      {(parseDebug as Record<string,unknown>).text_preview && (
+                      {!!(parseDebug as Record<string,unknown>).text_preview && (
                         <div>
                           <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "4px 0 4px" }}>PDF Text Preview (first 500 chars)</p>
                           <pre style={{ fontSize: 11, color: C.text2, background: C.bg, borderRadius: 8, padding: "10px 12px", overflow: "auto", maxHeight: 140, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, border: `1px solid ${C.border}` }}>
