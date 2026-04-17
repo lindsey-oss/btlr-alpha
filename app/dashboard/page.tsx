@@ -791,7 +791,7 @@ export default function Dashboard() {
   const [docLoading, setDocLoading]         = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved]   = useState(false);
-  const [parseDebug, setParseDebug]         = useState<Record<string, unknown> | null>(null);
+  const [parseDebug, setParseDebug]         = useState<Record<string, string | number | boolean | null | undefined> | null>(null);
   const [showDebug, setShowDebug]           = useState(false);
 
   // Repair lifecycle
@@ -2090,28 +2090,28 @@ export default function Dashboard() {
                   {showDebug && (
                     <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
                       {[
-                        { label: "Extraction Method", value: String((parseDebug as Record<string,unknown>).extraction_method ?? "—") },
-                        { label: "Raw Chars Extracted", value: String((parseDebug as Record<string,unknown>).raw_chars_extracted ?? "—") },
-                        { label: "Chars Sent to AI", value: String((parseDebug as Record<string,unknown>).chars_sent_to_ai ?? "—") },
+                        { label: "Extraction Method", value: String((parseDebug).extraction_method ?? "—") },
+                        { label: "Raw Chars Extracted", value: String((parseDebug).raw_chars_extracted ?? "—") },
+                        { label: "Chars Sent to AI", value: String((parseDebug).chars_sent_to_ai ?? "—") },
                       ].map(({ label, value }) => (
                         <div key={label} style={{ display: "flex", gap: 12, fontSize: 12 }}>
                           <span style={{ color: C.text3, minWidth: 160, flexShrink: 0 }}>{label}:</span>
                           <span style={{ color: C.text2, fontWeight: 600 }}>{value}</span>
                         </div>
                       ))}
-                      {!!(parseDebug as Record<string,unknown>).text_preview && (
+                      {parseDebug.text_preview && (
                         <div>
                           <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "4px 0 4px" }}>PDF Text Preview (first 500 chars)</p>
                           <pre style={{ fontSize: 11, color: C.text2, background: C.bg, borderRadius: 8, padding: "10px 12px", overflow: "auto", maxHeight: 140, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, border: `1px solid ${C.border}` }}>
-                            {String((parseDebug as Record<string,unknown>).text_preview)}
+                            {String((parseDebug).text_preview)}
                           </pre>
                         </div>
                       )}
-                      {(parseDebug as Record<string,unknown>).raw_ai_output && (
+                      {(parseDebug).raw_ai_output && (
                         <div>
                           <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "4px 0 4px" }}>Raw AI Output</p>
                           <pre style={{ fontSize: 11, color: C.text2, background: C.bg, borderRadius: 8, padding: "10px 12px", overflow: "auto", maxHeight: 200, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, border: `1px solid ${C.border}` }}>
-                            {String((parseDebug as Record<string,unknown>).raw_ai_output)}
+                            {String((parseDebug).raw_ai_output)}
                           </pre>
                         </div>
                       )}
