@@ -774,6 +774,7 @@ export default function Dashboard() {
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [docs, setDocs]         = useState<Doc[]>([]);
   const [q, setQ]               = useState("");
+  const [chatMessages, setChatMessages] = useState<{role:"user"|"assistant"; content:string}[]>([]);
   const [answer, setAnswer]     = useState("");
   const [aiLoading, setAiLoading]   = useState(false);
   const [inspecting, setInspecting] = useState(false);
@@ -1204,14 +1205,26 @@ export default function Dashboard() {
   }
 
   async function askAI() {
-    if (!q.trim()) return;
-    setAiLoading(true); setAnswer("");
+    if (!q.trim() || aiLoading) return;
+    const userMsg = q.trim();
+    setQ("");
+    setAiLoading(true);
+    setChatMessages(prev => [...prev, { role: "user", content: userMsg }]);
     try {
       const authHeader = await getAuthHeader();
-      const res = await fetch("/api/home-ai", { method: "POST", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ question: q, roofYear, hvacYear, timeline, findings: inspectionResult?.findings ?? [], address }) });
+      const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
+      const res = await fetch("/api/home-ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ question: userMsg, chatHistory: history, roofYear, hvacYear, timeline, findings: inspectionResult?.findings ?? [], address }),
+      });
       const data = await res.json();
-      setAnswer(data.answer ?? "Sorry, couldn't generate a response.");
-    } catch { setAnswer("Something went wrong."); }
+      const aiReply = data.answer ?? "Sorry, couldn't generate a response.";
+      setChatMessages(prev => [...prev, { role: "assistant", content: aiReply }]);
+      setAnswer(aiReply); // keep for legacy compatibility
+    } catch {
+      setChatMessages(prev => [...prev, { role: "assistant", content: "Something went wrong — please try again." }]);
+    }
     setAiLoading(false);
   }
 
@@ -1790,31 +1803,65 @@ export default function Dashboard() {
                   <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>Your AI home advisor</p>
                 </div>
               </div>
-              {answer && (
-                <div style={{ background: C.surface, borderRadius: 10, padding: "12px 14px", marginBottom: 10, position: "relative", border: `1px solid ${C.border}` }}>
-                  <button onClick={() => setAnswer("")} style={{ position: "absolute", top: 8, right: 8, background: "none", border: "none", cursor: "pointer", color: C.text3 }}><X size={12}/></button>
-                  <p style={{ fontSize: 14, color: C.text, lineHeight: 1.65, whiteSpace: "pre-wrap", paddingRight: 16, margin: 0 }}>{answer}</p>
+              {/* Conversation thread */}
+              {chatMessages.length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12,
+                  maxHeight: 320, overflowY: "auto", paddingRight: 2 }}>
+                  {chatMessages.map((msg, i) => (
+                    <div key={i} style={{
+                      display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
+                    }}>
+                      <div style={{
+                        maxWidth: "85%", borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
+                        padding: "9px 13px", fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap",
+                        background: msg.role === "user" ? C.accent : C.surface,
+                        color: msg.role === "user" ? "white" : C.text,
+                        border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
+                        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
+                      }}>
+                        {msg.content}
+                      </div>
+                    </div>
+                  ))}
+                  {aiLoading && (
+                    <div style={{ display: "flex", justifyContent: "flex-start" }}>
+                      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: "14px 14px 14px 4px",
+                        padding: "9px 13px", display: "flex", alignItems: "center", gap: 6, color: C.text3, fontSize: 13 }}>
+                        <Loader2 size={13} className="animate-spin"/> Thinking…
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
-              {aiLoading && <div style={{ display: "flex", alignItems: "center", gap: 6, color: C.text3, fontSize: 13, marginBottom: 10 }}><Loader2 size={13} className="animate-spin"/> Thinking…</div>}
+              {aiLoading && chatMessages.length === 0 && (
+                <div style={{ display: "flex", alignItems: "center", gap: 6, color: C.text3, fontSize: 13, marginBottom: 10 }}>
+                  <Loader2 size={13} className="animate-spin"/> Thinking…
+                </div>
+              )}
               <div style={{ display: "flex", gap: 8 }}>
                 <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && askAI()}
-                  placeholder={inspectDone ? `"What's my most urgent repair?"` : `"What home maintenance should I do this season?"`}
+                  placeholder={chatMessages.length > 0 ? "Ask a follow-up…" : inspectDone ? `"What's my most urgent repair?"` : `"What home maintenance should I do this season?"`}
                   style={{ flex: 1, borderRadius: 10, padding: "11px 14px", fontSize: 14, border: `1.5px solid ${C.border}`, background: C.surface, color: C.text, outline: "none" }}/>
                 <button onClick={askAI} disabled={aiLoading || !q.trim()}
                   style={{ borderRadius: 10, padding: "11px 18px", border: "none", cursor: "pointer", background: C.accent, color: "white", opacity: aiLoading || !q.trim() ? 0.4 : 1, display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13 }}>
                   {aiLoading ? <Loader2 size={14} className="animate-spin"/> : <><Send size={13}/> Ask</>}
                 </button>
               </div>
-              {!answer && !aiLoading && !isMobile && (
+              {chatMessages.length === 0 && !aiLoading && !isMobile && (
                 <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                   {["What maintenance is due this season?", "How much should I budget for repairs?", "When should I replace my roof?"].map(prompt => (
-                    <button key={prompt} onClick={() => setQ(prompt)}
+                    <button key={prompt} onClick={() => { setQ(prompt); }}
                       style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, border: `1px solid ${C.border}`, background: C.surface, color: C.text3, cursor: "pointer", fontWeight: 500 }}>
                       {prompt}
                     </button>
                   ))}
                 </div>
+              )}
+              {chatMessages.length > 0 && (
+                <button onClick={() => { setChatMessages([]); setAnswer(""); }}
+                  style={{ marginTop: 8, fontSize: 11, color: C.text3, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
+                  Clear conversation
+                </button>
               )}
             </div>
 
