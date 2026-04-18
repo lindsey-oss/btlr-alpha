@@ -9,9 +9,17 @@ export async function POST(req) {
   try {
     const body = await req.json();
 
-    const { data, error } = await supabase
+    // Pre-generate the UUID so we don't need a SELECT after INSERT.
+    // The server-side anon client has no auth session, so auth.uid() = null,
+    // which means the RLS SELECT policy (user_id = auth.uid()) would block
+    // the .select("id").single() call and return PGRST116. Generating the ID
+    // here avoids that entirely.
+    const jobId = crypto.randomUUID();
+
+    const { error } = await supabase
       .from("job_requests")
       .insert({
+        id:                      jobId,
         homeowner_email:         body.homeowner_email ?? null,
         user_id:                 body.user_id ?? null,
         property_address:        body.property_address ?? null,
@@ -28,14 +36,12 @@ export async function POST(req) {
         estimated_cost_high:     body.estimated_cost_high ?? null,
         related_findings:        body.related_findings ?? null,
         status:                  "pending",
-      })
-      .select("id")
-      .single();
+      });
 
     if (error) throw error;
 
     // Send job link email to homeowner (confirmation) if email provided
-    const jobUrl = `${process.env.NEXT_PUBLIC_APP_URL}/job/${data.id}`;
+    const jobUrl = `${process.env.NEXT_PUBLIC_APP_URL}/job/${jobId}`;
     if (body.homeowner_email) {
       await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/send-email`, {
         method: "POST",
@@ -62,7 +68,7 @@ export async function POST(req) {
       }).catch(() => {});
     }
 
-    return Response.json({ success: true, job_id: data.id, job_url: jobUrl });
+    return Response.json({ success: true, job_id: jobId, job_url: jobUrl });
   } catch (err) {
     console.error("request-job error:", err);
     return Response.json({ error: err.message }, { status: 500 });
