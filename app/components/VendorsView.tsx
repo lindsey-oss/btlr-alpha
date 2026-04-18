@@ -114,9 +114,10 @@ interface Props {
   address: string;
   inspectionFindings: Finding[];
   userEmail?: string;
+  userId?: string;
 }
 
-export default function VendorsView({ address, inspectionFindings, userEmail }: Props) {
+export default function VendorsView({ address, inspectionFindings, userEmail, userId }: Props) {
   const [input, setInput]             = useState("");
   const [listening, setListening]     = useState(false);
   const [loading, setLoading]         = useState(false);
@@ -136,6 +137,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail }: 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           homeowner_email:         userEmail ?? null,
+          user_id:                 userId ?? null,
           property_address:        address,
           trade:                   result.category_label,
           trade_emoji:             result.category_emoji,

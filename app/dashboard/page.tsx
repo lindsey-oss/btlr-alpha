@@ -764,7 +764,7 @@ function CostDetailModal({
 export default function Dashboard() {
   const router = useRouter();
   const [isMobile, setIsMobile] = useState(false);
-  const [user, setUser]         = useState<{ email?: string } | null>(null);
+  const [user, setUser]         = useState<{ id?: string; email?: string } | null>(null);
   const [address, setAddress]   = useState("My Home");
   const [roofYear, setRoofYear] = useState("");
   const [hvacYear, setHvacYear] = useState("");
@@ -1416,7 +1416,7 @@ export default function Dashboard() {
 
           {/* ── Vendors ───────────────────────────────────────────────── */}
           {nav === "Vendors" && (
-            <VendorsView address={address} inspectionFindings={inspectionResult?.findings ?? []} userEmail={user?.email}/>
+            <VendorsView address={address} inspectionFindings={inspectionResult?.findings ?? []} userEmail={user?.email} userId={user?.id}/>
           )}
 
           {/* ── My Jobs ───────────────────────────────────────────────── */}

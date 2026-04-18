@@ -17,7 +17,7 @@ export async function POST(req) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: "BTLR <notifications@btlr-alpha.vercel.app>",
+        from: `BTLR <notifications@${new URL(process.env.NEXT_PUBLIC_APP_URL).hostname}>`,
         to,
         subject,
         html,

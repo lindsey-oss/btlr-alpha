@@ -13,6 +13,7 @@ export async function POST(req) {
       .from("job_requests")
       .insert({
         homeowner_email:         body.homeowner_email ?? null,
+        user_id:                 body.user_id ?? null,
         property_address:        body.property_address ?? null,
         trade:                   body.trade ?? null,
         trade_emoji:             body.trade_emoji ?? null,
@@ -34,9 +35,9 @@ export async function POST(req) {
     if (error) throw error;
 
     // Send job link email to homeowner (confirmation) if email provided
-    const jobUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? "https://btlr-alpha.vercel.app"}/job/${data.id}`;
+    const jobUrl = `${process.env.NEXT_PUBLIC_APP_URL}/job/${data.id}`;
     if (body.homeowner_email) {
-      await fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? "https://btlr-alpha.vercel.app"}/api/send-email`, {
+      await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/send-email`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

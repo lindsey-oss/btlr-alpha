@@ -33,7 +33,7 @@ export async function POST(req) {
         .single();
 
       if (job?.homeowner_email) {
-        await fetch(`${process.env.NEXT_PUBLIC_APP_URL ?? "https://btlr-alpha.vercel.app"}/api/send-email`, {
+        await fetch(`${process.env.NEXT_PUBLIC_APP_URL}/api/send-email`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({

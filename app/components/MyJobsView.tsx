@@ -61,39 +61,44 @@ interface Job {
 export default function MyJobsView() {
   const [jobs, setJobs]       = useState<Job[]>([]);
   const [loading, setLoading] = useState(true);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [userId, setUserId]   = useState<string | null>(null);
 
   useEffect(() => {
-    // Get current user first, then load their jobs
     supabase.auth.getSession().then(({ data: { session } }) => {
-      const email = session?.user?.email ?? null;
-      setUserEmail(email);
-      loadJobs(email);
+      const uid = session?.user?.id ?? null;
+      setUserId(uid);
+      loadJobs(uid);
 
-      // Real-time updates scoped to this user's jobs
+      if (!uid) return;
+
+      // Real-time subscription — filter to this user's jobs only.
+      // The `filter` param enforces the scope at the channel level so
+      // events for other users' rows are never delivered to this client.
       const channel = supabase
         .channel("my-jobs")
-        .on("postgres_changes", { event: "*", schema: "public", table: "job_requests" },
-          () => loadJobs(email))
+        .on("postgres_changes", {
+          event: "*",
+          schema: "public",
+          table: "job_requests",
+          filter: `user_id=eq.${uid}`,
+        }, () => loadJobs(uid))
         .subscribe();
 
       return () => { supabase.removeChannel(channel); };
     });
   }, []);
 
-  async function loadJobs(email?: string | null) {
-    let query = supabase
+  async function loadJobs(uid?: string | null) {
+    const filterUid = uid ?? userId;
+    // Do not query at all if there is no authenticated user.
+    if (!filterUid) { setLoading(false); return; }
+
+    const { data } = await supabase
       .from("job_requests")
       .select("*")
+      .eq("user_id", filterUid)               // filter by UUID — RLS is backstop
       .order("created_at", { ascending: false });
 
-    // Filter to current user's jobs only
-    const filterEmail = email ?? userEmail;
-    if (filterEmail) {
-      query = query.eq("homeowner_email", filterEmail);
-    }
-
-    const { data } = await query;
     setJobs(data ?? []);
     setLoading(false);
   }
@@ -114,7 +119,7 @@ export default function MyJobsView() {
             {jobs.length} job{jobs.length !== 1 ? "s" : ""} submitted
           </p>
         </div>
-        <button onClick={() => loadJobs()} style={{
+        <button onClick={() => loadJobs(userId)} style={{
           display: "flex", alignItems: "center", gap: 6, padding: "7px 14px",
           borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface,
           color: C.text2, fontSize: 13, fontWeight: 600, cursor: "pointer",
