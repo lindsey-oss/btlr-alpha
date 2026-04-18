@@ -112,6 +112,11 @@ export default function JobPage() {
       body: JSON.stringify({
         job_id: id, status: "accepted",
         contractor_name: name, contractor_phone: phone, contractor_notes: notes,
+        // Pass job details so the server doesn't need a SELECT (avoids RLS conflict)
+        homeowner_email:  job?.homeowner_email,
+        issue_summary:    job?.issue_summary,
+        trade:            job?.trade,
+        property_address: job?.property_address,
       }),
     });
     setDone(true);
@@ -124,7 +129,14 @@ export default function JobPage() {
     await fetch("/api/update-job", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ job_id: id, status: "declined" }),
+      body: JSON.stringify({
+        job_id: id, status: "declined",
+        // Pass job details so the server doesn't need a SELECT (avoids RLS conflict)
+        homeowner_email:  job?.homeowner_email,
+        issue_summary:    job?.issue_summary,
+        trade:            job?.trade,
+        property_address: job?.property_address,
+      }),
     });
     setDeclined(true);
     setSubmitting(false);
