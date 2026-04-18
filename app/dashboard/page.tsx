@@ -1024,6 +1024,7 @@ export default function Dashboard() {
     const file = e.target.files?.[0]; if (!file) return;
     setMortgageStatLoading(true);
     try {
+      await supabase.auth.getSession(); // refresh JWT before storage op
       const storagePath = `mortgage/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
       const { error: storageErr } = await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
       if (storageErr) throw new Error(storageErr.message);
@@ -1065,6 +1066,7 @@ export default function Dashboard() {
     const file = e.target.files?.[0]; if (!file) return;
     setInspecting(true); setInspectDone(false); setInspectErr(""); setInspectionResult(null);
     try {
+      await supabase.auth.getSession(); // refresh JWT before storage op
       const storagePath = `inspections/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
       const { error: storageErr } = await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
       if (storageErr) throw new Error("Storage upload failed: " + storageErr.message);
@@ -1100,6 +1102,7 @@ export default function Dashboard() {
   async function uploadDoc(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setDocLoading(true);
+    await supabase.auth.getSession(); // refresh JWT before storage op
     const fileName = `docs-${Date.now()}-${file.name}`;
     const { error } = await supabase.storage.from("documents").upload(fileName, file);
     if (error) { alert("Upload failed: " + error.message); setDocLoading(false); return; }
@@ -1114,6 +1117,7 @@ export default function Dashboard() {
     const file = e.target.files?.[0]; if (!file) return;
     setUploadingRepair(true);
     try {
+      await supabase.auth.getSession(); // refresh JWT before storage op
       const storagePath = `repairs/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
       const { error: storageErr } = await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
       if (storageErr) throw new Error("Upload failed: " + storageErr.message);
