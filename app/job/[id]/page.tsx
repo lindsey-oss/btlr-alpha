@@ -98,7 +98,7 @@ export default function JobPage() {
       .from("job_requests")
       .select("*")
       .eq("id", id)
-      .single();
+      .maybeSingle();           // maybeSingle: returns null (not an error) when no row found
     setJob(data);
     setLoading(false);
   }

@@ -42,7 +42,7 @@ export default function LoginPage() {
         // If email confirmation is on, show a message
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          window.location.href = "/dashboard";
+          router.push("/dashboard");
         } else {
           setSuccess("Account created! Check your email to confirm, then sign in.");
           setMode("login");
@@ -53,8 +53,7 @@ export default function LoginPage() {
       if (error) {
         setError(error.message);
       } else {
-        // Use full reload to ensure session is picked up by dashboard
-        window.location.href = "/dashboard";
+        router.push("/dashboard");
       }
     }
     setLoading(false);
