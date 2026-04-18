@@ -872,6 +872,7 @@ export default function Dashboard() {
       if (authed) {
         loadProperty();
         loadPlaidData();
+        loadDocs();
       }
     });
   }, []);
@@ -1124,6 +1125,27 @@ export default function Dashboard() {
     } catch (err: unknown) { setInspectErr(err instanceof Error ? err.message : "Upload failed"); }
     setInspecting(false);
     if (inspRef.current) inspRef.current.value = "";
+  }
+
+  // ── Load documents from storage on mount ────────────────────────────────
+  // General docs are stored at the bucket root with a "docs-" prefix.
+  // Inspections/repairs go into subfolders, so filtering by "docs-" is safe.
+  async function loadDocs() {
+    try {
+      await supabase.auth.getSession(); // ensure fresh JWT before storage op
+      const { data, error } = await supabase.storage
+        .from("documents")
+        .list("", { limit: 200, sortBy: { column: "created_at", order: "desc" } });
+      if (error || !data) return;
+      const files = data
+        .filter(item => item.name.startsWith("docs-"))
+        .map(item => ({
+          // Strip the "docs-{timestamp}-" prefix to restore the original filename
+          name: item.name.replace(/^docs-\d+-/, ""),
+          path: item.name,
+        }));
+      setDocs(files);
+    } catch { /* silent — show empty list on error rather than crashing */ }
   }
 
   async function uploadDoc(e: React.ChangeEvent<HTMLInputElement>) {
