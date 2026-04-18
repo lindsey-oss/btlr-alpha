@@ -126,13 +126,27 @@ function toTitleCase(str: string): string {
 
 // ── House Photo ───────────────────────────────────────────────────────────
 function HousePhoto({ address, height = 200 }: { address: string; height?: number }) {
-  const [imgFailed, setImgFailed] = useState(false);
-  const mapsKey   = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
-  const hasRealKey = mapsKey?.startsWith("AIza");
+  // "streetview" → try Street View; on fail → "satellite" → try Maps Static;
+  // on fail → "none" → show SVG only
+  const [imgMode, setImgMode] = useState<"streetview" | "satellite" | "none">("streetview");
+  const mapsKey    = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+  const hasKey     = mapsKey?.startsWith("AIza");
   const hasAddress = address && address !== "My Home" && address.length > 5;
-  const streetViewUrl = hasRealKey && hasAddress && !imgFailed
-    ? `https://maps.googleapis.com/maps/api/streetview?size=940x220&location=${encodeURIComponent(address)}&key=${mapsKey}&fov=90&pitch=0&return_error_code=true`
+  const encoded    = hasAddress ? encodeURIComponent(address) : null;
+
+  // Street View Static API — requires "Street View Static API" enabled in Google Cloud
+  const streetViewUrl = hasKey && encoded && imgMode === "streetview"
+    ? `https://maps.googleapis.com/maps/api/streetview?size=940x220&location=${encoded}&key=${mapsKey}&fov=90&pitch=0&return_error_code=true`
     : null;
+
+  // Maps Static API (satellite/hybrid) — fallback when Street View has no coverage
+  // Requires "Maps Static API" enabled in Google Cloud (same key)
+  const satelliteUrl = hasKey && encoded && imgMode === "satellite"
+    ? `https://maps.googleapis.com/maps/api/staticmap?center=${encoded}&zoom=18&size=940x220&maptype=hybrid&key=${mapsKey}`
+    : null;
+
+  // Keep legacy variable name for the label below
+  const hasRealKey = hasKey;
 
   const FallbackHouse = () => (
     <svg viewBox="0 0 900 200" style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }} preserveAspectRatio="xMidYMid slice">
@@ -173,7 +187,12 @@ function HousePhoto({ address, height = 200 }: { address: string; height?: numbe
       {streetViewUrl && (
         <img src={streetViewUrl} alt={address}
           style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
-          onError={() => setImgFailed(true)} />
+          onError={() => setImgMode("satellite")} />
+      )}
+      {satelliteUrl && (
+        <img src={satelliteUrl} alt={address}
+          style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover" }}
+          onError={() => setImgMode("none")} />
       )}
       <div style={{ position: "absolute", bottom: 0, left: 0, right: 0,
         background: "linear-gradient(transparent, rgba(10,20,45,0.92))",
@@ -845,9 +864,16 @@ export default function Dashboard() {
 
   useEffect(() => {
     setYear(new Date().getFullYear());
-    checkAuth();
-    loadProperty();
-    loadPlaidData();
+    // checkAuth calls getSession() which refreshes an expired JWT.
+    // loadProperty() uses RLS (auth.uid() = user_id) — if we run it before
+    // the token is refreshed the query returns null and all data is lost.
+    // Chain them so loadProperty only fires after the session is confirmed.
+    checkAuth().then(authed => {
+      if (authed) {
+        loadProperty();
+        loadPlaidData();
+      }
+    });
   }, []);
 
   // When vendorPrefill changes, navigate to Vendors
@@ -947,10 +973,11 @@ export default function Dashboard() {
     } catch { alert("Bank connection failed."); setConnectingPlaid(false); }
   }
 
-  async function checkAuth() {
+  async function checkAuth(): Promise<boolean> {
     const { data: { session } } = await supabase.auth.getSession();
-    if (!session) { router.push("/login"); return; }
+    if (!session) { router.push("/login"); return false; }
     setUser(session.user);
+    return true;
   }
 
   async function logout() { await supabase.auth.signOut(); router.push("/login"); }

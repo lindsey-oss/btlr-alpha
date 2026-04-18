@@ -71,16 +71,19 @@ export default function MyJobsView() {
 
       if (!uid) return;
 
-      // Real-time subscription — filter to this user's jobs only.
-      // The `filter` param enforces the scope at the channel level so
-      // events for other users' rows are never delivered to this client.
+      // Real-time subscription — no server-side column filter.
+      // Supabase postgres_changes UPDATE events only include columns in the
+      // table's REPLICA IDENTITY (default = primary key only). user_id is not
+      // in the primary key, so a filter of `user_id=eq.${uid}` would never
+      // match UPDATE payloads and the callback would never fire for status
+      // changes (e.g. vendor accepting a job). loadJobs() handles user-scoping
+      // via .eq("user_id", uid) in the actual query.
       const channel = supabase
         .channel("my-jobs")
         .on("postgres_changes", {
           event: "*",
           schema: "public",
           table: "job_requests",
-          filter: `user_id=eq.${uid}`,
         }, () => loadJobs(uid))
         .subscribe();
 

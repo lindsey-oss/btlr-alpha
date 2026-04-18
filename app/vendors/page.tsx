@@ -23,4 +23,5 @@ export default function Vendors() {
       </div>
     </main>
   )
+  
 }
