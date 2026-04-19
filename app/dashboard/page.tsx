@@ -873,6 +873,7 @@ export default function Dashboard() {
         loadProperty();
         loadPlaidData();
         loadDocs();
+        loadRepairDocs();
       }
     });
   }, []);
@@ -1159,6 +1160,26 @@ export default function Dashboard() {
     setDocs(prev => [{ name: file.name, path: fileName }, ...prev]);
     setDocLoading(false);
     if (docRef.current) docRef.current.value = "";
+  }
+
+  // ── Load repair history from DB on mount ────────────────────────────────
+  async function loadRepairDocs() {
+    try {
+      const { data, error } = await supabase
+        .from("repair_documents")
+        .select("vendor_name, service_date, repair_summary, system_category, cost, resolved_finding_keys")
+        .order("created_at", { ascending: false })
+        .limit(50);
+      if (error || !data) return;
+      setRepairDocs(data.map(r => ({
+        vendor:       r.vendor_name       ?? undefined,
+        date:         r.service_date      ?? undefined,
+        summary:      r.repair_summary    ?? undefined,
+        category:     r.system_category   ?? undefined,
+        cost:         r.cost              ?? undefined,
+        autoResolved: Array.isArray(r.resolved_finding_keys) ? r.resolved_finding_keys : [],
+      })));
+    } catch { /* silent */ }
   }
 
   // ── Repair document upload and parsing ──────────────────────────────────
@@ -1584,7 +1605,7 @@ export default function Dashboard() {
                 {/* Completed repairs from this session */}
                 {repairDocs.length > 0 && (
                   <div style={{ marginTop: 16 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Parsed This Session</p>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Repair History</p>
                     {repairDocs.map((r, i) => (
                       <div key={i} style={{ background: C.greenBg, border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
                         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>

@@ -216,7 +216,15 @@ export async function POST(req) {
 
     // Match repair to existing findings
     const suggestedMatches = matchRepairToFindings(parsed.system_category, existingFindings || []);
-    const highConfidenceKeys = suggestedMatches.filter(m => m.confidence === "high").map(m => m.key);
+    const isCompleted = parsed.is_completed !== false;
+
+    // Auto-resolve high-confidence matches always.
+    // Also auto-resolve medium-confidence matches when the repair is confirmed complete
+    // (invoice/receipt) — this ensures the score reflects the real repair.
+    // Medium confidence = partial key match (e.g. "HVAC" repair → "HVAC Cooling" finding).
+    const autoResolvedKeys = suggestedMatches
+      .filter(m => m.confidence === "high" || (m.confidence === "medium" && isCompleted))
+      .map(m => m.key);
 
     // Save repair document to DB
     let repairDocId = null;
@@ -231,55 +239,48 @@ export async function POST(req) {
         const { data: repairDoc } = await supabase
           .from("repair_documents")
           .insert({
-            property_id:          existingProp.id,
-            user_id:              userId,
-            filename:             filename || "repair-document.pdf",
-            vendor_name:          parsed.vendor_name || null,
-            service_date:         parsed.service_date || null,
-            repair_summary:       parsed.repair_summary || null,
-            system_category:      parsed.system_category || null,
-            cost:                 parsed.cost || null,
-            is_completed:         parsed.is_completed !== false, // default true
-            warranty_period:      parsed.warranty_period || null,
-            line_items:           parsed.line_items || [],
-            resolved_finding_keys: highConfidenceKeys,
-            raw_text_preview:     extractedText.slice(0, 1000),
+            property_id:           existingProp.id,
+            user_id:               userId,
+            filename:              filename || "repair-document.pdf",
+            vendor_name:           parsed.vendor_name || null,
+            service_date:          parsed.service_date || null,
+            repair_summary:        parsed.repair_summary || null,
+            system_category:       parsed.system_category || null,
+            cost:                  parsed.cost || null,
+            is_completed:          isCompleted,
+            warranty_period:       parsed.warranty_period || null,
+            line_items:            parsed.line_items || [],
+            resolved_finding_keys: autoResolvedKeys,
+            raw_text_preview:      extractedText.slice(0, 1000),
           })
           .select("id")
           .single();
 
         if (repairDoc) repairDocId = repairDoc.id;
 
-        // Auto-update finding statuses for high-confidence matches
-        if (highConfidenceKeys.length > 0 && parsed.is_completed !== false) {
-          const statusUpdate = {};
-          for (const key of highConfidenceKeys) {
-            statusUpdate[key] = "completed";
+        // Persist resolved finding statuses server-side — proper read-merge-write.
+        // The old approach tried supabase.rpc("merge_finding_statuses") which is a
+        // non-existent function; this caused it to silently overwrite (not merge)
+        // existing statuses. Now we read → merge → write to preserve prior repairs.
+        if (autoResolvedKeys.length > 0 && isCompleted) {
+          const { data: propData } = await supabase
+            .from("properties")
+            .select("finding_statuses")
+            .eq("id", existingProp.id)
+            .maybeSingle();
+
+          const current = (propData?.finding_statuses && typeof propData.finding_statuses === "object")
+            ? propData.finding_statuses
+            : {};
+          const merged = { ...current };
+          for (const key of autoResolvedKeys) {
+            merged[key] = "completed";
           }
+
           await supabase
             .from("properties")
-            .update({
-              finding_statuses: supabase.rpc ? undefined : statusUpdate, // handled below
-              updated_at: new Date().toISOString(),
-            })
+            .update({ finding_statuses: merged, updated_at: new Date().toISOString() })
             .eq("id", existingProp.id);
-
-          // Use jsonb merge for finding_statuses
-          await supabase.rpc
-            ? supabase.rpc("merge_finding_statuses", {
-                property_id: existingProp.id,
-                new_statuses: statusUpdate,
-              }).catch(() => {
-                // Fallback: raw update
-                return supabase
-                  .from("properties")
-                  .update({ finding_statuses: statusUpdate })
-                  .eq("id", existingProp.id);
-              })
-            : supabase
-                .from("properties")
-                .update({ finding_statuses: statusUpdate })
-                .eq("id", existingProp.id);
         }
       }
     } catch (dbErr) {
@@ -299,8 +300,8 @@ export async function POST(req) {
       line_items:         parsed.line_items          || [],
       notes:              parsed.notes               || null,
       // Matching results
-      suggested_matches:  suggestedMatches,           // all matches for user review
-      auto_resolved:      highConfidenceKeys,         // auto-resolved (high confidence)
+      suggested_matches:  suggestedMatches,   // all matches for user review
+      auto_resolved:      autoResolvedKeys,   // auto-resolved (high confidence always; medium when completed)
     });
 
   } catch (err) {
