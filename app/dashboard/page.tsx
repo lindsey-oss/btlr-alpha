@@ -1436,10 +1436,12 @@ export default function Dashboard() {
   const completedFindings = (inspectionResult?.findings ?? []).filter(f => !isActiveFinding(f, findingStatuses));
 
   // Deterministic score — pure function, same inputs = same score every time
-  const breakdown   = computeHealthScore(inspectionResult?.findings ?? [], findingStatuses, roofYear, hvacYear, year);
-  const health      = breakdown.score;
-  const healthColor = health >= 90 ? "#22c55e" : health >= 80 ? "#84cc16" : health >= 65 ? C.amber : health >= 50 ? "#f97316" : C.red;
-  const healthSt    = healthStatusInfo(health);
+  const breakdown    = computeHealthScore(inspectionResult?.findings ?? [], findingStatuses, roofYear, hvacYear, year);
+  const health       = breakdown.score;
+  const healthColor  = health >= 90 ? "#22c55e" : health >= 80 ? "#84cc16" : health >= 65 ? C.amber : health >= 50 ? "#f97316" : C.red;
+  const healthSt     = healthStatusInfo(health);
+  const criticalCount = breakdown.deductions.filter(d => d.severity === "critical").length;
+  const warningCount  = breakdown.deductions.filter(d => d.severity === "warning").length;
 
   // Build upcoming costs list (shared between Dashboard and Repairs views)
   // Only includes ACTIVE (open/not_sure) findings — completed repairs are excluded
