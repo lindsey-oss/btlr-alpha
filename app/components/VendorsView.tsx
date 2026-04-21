@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Mic, MicOff, Send, Loader2, Search, ChevronRight,
   AlertTriangle, CheckCircle2, ExternalLink, X, MapPin, Phone, Star,
@@ -115,9 +115,11 @@ interface Props {
   inspectionFindings: Finding[];
   userEmail?: string;
   userId?: string;
+  prefillTrade?: string;    // CATEGORIES key, e.g. "roofing" — auto-selects category on open
+  prefillContext?: string;  // human label for the context banner, e.g. "Roof Replacement"
 }
 
-export default function VendorsView({ address, inspectionFindings, userEmail, userId }: Props) {
+export default function VendorsView({ address, inspectionFindings, userEmail, userId, prefillTrade, prefillContext }: Props) {
   const [input, setInput]             = useState("");
   const [listening, setListening]     = useState(false);
   const [loading, setLoading]         = useState(false);
@@ -127,6 +129,18 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   const [sentJobs, setSentJobs]       = useState<Record<string, string>>({});
   const [sendingJob, setSendingJob]   = useState<string | null>(null);
   const recognitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Auto-select trade when opened via a CTA with a prefill key
+  useEffect(() => {
+    if (!prefillTrade) return;
+    const match = CATEGORIES.find(c => c.key === prefillTrade);
+    if (match) {
+      setSelectedCategory(match.label);
+      setResult(null);
+      setActiveIssue(null);
+      setInput("");
+    }
+  }, [prefillTrade]);
 
   async function requestQuote(vendorName: string) {
     if (!result) return;
@@ -241,6 +255,25 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+
+      {/* ── CTA Context Banner (shown when opened via a repair/issue CTA) ── */}
+      {prefillContext && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "10px 16px", borderRadius: 12,
+          background: "#eff6ff", border: "1px solid #bfdbfe",
+        }}>
+          <Search size={14} color="#2563eb"/>
+          <span style={{ fontSize: 13, fontWeight: 600, color: "#1d4ed8" }}>
+            Showing vendors for: {prefillContext}
+          </span>
+          <button
+            onClick={() => { setSelectedCategory(null); setResult(null); }}
+            style={{ marginLeft: "auto", background: "none", border: "none", cursor: "pointer", color: "#93c5fd", fontSize: 12 }}>
+            Browse all →
+          </button>
+        </div>
+      )}
 
       {/* ── AI Search Bar ───────────────────────────────────────────── */}
       <div style={card({ padding: 20 })}>

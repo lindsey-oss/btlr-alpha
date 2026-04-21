@@ -16,7 +16,7 @@ import MyJobsView from "../components/MyJobsView";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface TimelineEvent { date: string; event: string }
-interface Doc { name: string; path: string }
+interface Doc { name: string; path: string; url?: string }
 type FindingStatus = "open" | "completed" | "monitored" | "not_sure" | "dismissed";
 
 interface Finding {
@@ -485,105 +485,41 @@ function InspectionReviewModal({
 
 // ── Health Score Modal ────────────────────────────────────────────────────
 function HealthScoreModal({
-  score, color, roofYear, hvacYear, year,
-  findings, completedCount, onClose, onFindVendors,
+  breakdown, roofYear, hvacYear, year, onClose, onFindVendors,
 }: {
-  score: number; color: string;
-  roofYear: string; hvacYear: string; year: number;
-  findings: Finding[];
-  completedCount?: number;
-  onClose: () => void;
-  onFindVendors: (trade: string) => void;
+  breakdown:     ScoreBreakdown;
+  roofYear:      string;
+  hvacYear:      string;
+  year:          number;
+  onClose:       () => void;
+  onFindVendors: (trade: string, context?: string) => void;
 }) {
+  const { score, deductions, resolvedDeductions } = breakdown;
+  const st         = healthStatusInfo(score);
+  const scoreColor = score >= 90 ? "#22c55e" : score >= 80 ? "#84cc16" : score >= 65 ? C.amber : score >= 50 ? "#f97316" : C.red;
+
   const roofAge = roofYear ? year - Number(roofYear) : null;
   const hvacAge = hvacYear ? year - Number(hvacYear) : null;
-  const roofSt  = systemStatus(roofAge, 20, 25);
-  const hvacSt  = systemStatus(hvacAge, 10, 15);
 
-  // Build deduplicated system list from findings
-  const findingCategories = new Set(findings.map(f => f.category.toLowerCase()));
-
-  interface HomeSystem {
-    name: string;
-    icon: React.ReactNode;
-    age: number | null;
-    status: { label: string; color: string; dot: string };
-    impact: string;
-    finding?: Finding;
-    deduction: number;
+  function sourceBadge(d: ScoreDeduction) {
+    if (d.source === "system_age")    return { label: "System Age",  color: C.amber, bg: C.amberBg };
+    if (d.severity === "critical")    return { label: "Critical",    color: C.red,   bg: C.redBg   };
+    if (d.severity === "warning")     return { label: "Warning",     color: C.amber, bg: C.amberBg };
+    return                                   { label: "Note",        color: C.text3, bg: C.bg      };
   }
 
-  const systems: HomeSystem[] = [
-    {
-      name: "Roof",
-      icon: <HomeIcon size={16} color={C.text3}/>,
-      age: roofAge,
-      status: roofSt,
-      impact: roofAge !== null && roofAge > 20 ? "-10 pts (age > 20 yrs)" : roofAge !== null ? "No deduction" : "Unknown — enter year",
-      finding: findings.find(f => f.category.toLowerCase().includes("roof")),
-      deduction: roofAge !== null && roofAge > 20 ? 10 : 0,
-    },
-    {
-      name: "HVAC",
-      icon: <Wind size={16} color={C.text3}/>,
-      age: hvacAge,
-      status: hvacSt,
-      impact: hvacAge !== null && hvacAge > 12 ? "-10 pts (age > 12 yrs)" : hvacAge !== null ? "No deduction" : "Unknown — enter year",
-      finding: findings.find(f => f.category.toLowerCase().includes("hvac") || f.category.toLowerCase().includes("heat") || f.category.toLowerCase().includes("cool")),
-      deduction: hvacAge !== null && hvacAge > 12 ? 10 : 0,
-    },
-  ];
-
-  // Add inspection-derived systems
-  const knownCategories = ["roof", "hvac", "heat", "cool"];
-  const extraFindings = findings.filter(f =>
-    !knownCategories.some(k => f.category.toLowerCase().includes(k))
-  );
-
-  const SYSTEM_ICONS: Record<string, React.ReactNode> = {
-    plumbing:    <Droplets size={16} color={C.text3}/>,
-    electrical:  <Zap size={16} color={C.text3}/>,
-    foundation:  <HomeIcon size={16} color={C.text3}/>,
-    mold:        <Bug size={16} color={C.text3}/>,
-    pest:        <Bug size={16} color={C.text3}/>,
-    window:      <Eye size={16} color={C.text3}/>,
-    insurance:   <Shield size={16} color={C.text3}/>,
-  };
-
-  function getIcon(category: string) {
+  function systemIcon(category: string) {
     const k = category.toLowerCase();
-    for (const [key, icon] of Object.entries(SYSTEM_ICONS)) {
-      if (k.includes(key)) return icon;
-    }
-    return <Wrench size={16} color={C.text3}/>;
+    if (k.includes("roof"))                           return <HomeIcon  size={15} color={C.text3}/>;
+    if (k.includes("hvac") || k.includes("heat") ||
+        k.includes("cool") || k.includes("air"))      return <Wind      size={15} color={C.text3}/>;
+    if (k.includes("plumb") || k.includes("water"))   return <Droplets  size={15} color={C.text3}/>;
+    if (k.includes("electric"))                       return <Zap       size={15} color={C.text3}/>;
+    if (k.includes("pest") || k.includes("mold") ||
+        k.includes("bug"))                            return <Bug       size={15} color={C.text3}/>;
+    if (k.includes("window") || k.includes("door"))  return <Eye       size={15} color={C.text3}/>;
+    return                                                   <Wrench    size={15} color={C.text3}/>;
   }
-
-  // Deduplicate by category
-  const seenCategories = new Set<string>();
-  extraFindings.forEach(f => {
-    const key = f.category.toLowerCase();
-    if (!seenCategories.has(key)) {
-      seenCategories.add(key);
-      const st = f.severity === "critical"
-        ? { label: "Critical", color: C.red, dot: C.red }
-        : f.severity === "warning"
-          ? { label: "Needs Attention", color: C.amber, dot: C.amber }
-          : { label: "OK", color: C.green, dot: C.green };
-      const deduction = f.severity === "critical" ? 8 : f.severity === "warning" ? 3 : 0;
-      systems.push({
-        name: f.category,
-        icon: getIcon(f.category),
-        age: null,
-        status: st,
-        impact: deduction > 0 ? `-${deduction} pts (${f.severity})` : "No deduction",
-        finding: f,
-        deduction,
-      });
-    }
-  });
-
-  const criticalCount = findings.filter(f => f.severity === "critical").length;
-  const warningCount  = findings.filter(f => f.severity === "warning").length;
 
   return (
     <div style={{
@@ -592,117 +528,141 @@ function HealthScoreModal({
       overflowY: "auto", padding: "40px 20px",
     }} onClick={onClose}>
       <div style={{
-        background: C.surface, borderRadius: 20, width: "100%", maxWidth: 680,
+        background: C.surface, borderRadius: 20, width: "100%", maxWidth: 660,
         boxShadow: "0 20px 60px rgba(15,31,61,0.25)", overflow: "hidden",
       }} onClick={e => e.stopPropagation()}>
 
-        {/* Header */}
-        <div style={{ background: C.navy, padding: "24px 28px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+        {/* ── Header ──────────────────────────────────────────────────── */}
+        <div style={{ background: C.navy, padding: "24px 28px", display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
           <div>
-            <p style={{ fontSize: 12, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>Home Health Score</p>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginTop: 6 }}>
-              <span style={{ fontSize: 56, fontWeight: 800, color, lineHeight: 1, letterSpacing: "-2px" }}>{score}</span>
-              <span style={{ fontSize: 18, color: "rgba(255,255,255,0.4)" }}>/100</span>
+            <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>Home Health Score</p>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+              <span style={{ fontSize: 58, fontWeight: 800, color: scoreColor, lineHeight: 1, letterSpacing: "-2px" }}>{score}</span>
+              <span style={{ fontSize: 18, color: "rgba(255,255,255,0.35)", alignSelf: "flex-end", marginBottom: 4 }}>/100</span>
             </div>
+            <span style={{ fontSize: 13, fontWeight: 700, padding: "4px 14px", borderRadius: 20, color: st.tagColor, background: `${st.tagColor}25` }}>
+              {st.label}
+            </span>
+            <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: "10px 0 0", lineHeight: 1.5, maxWidth: 380 }}>{st.desc}</p>
           </div>
-          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, padding: 8, cursor: "pointer", color: "white" }}>
+          <button onClick={onClose} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, padding: 8, cursor: "pointer", color: "white", flexShrink: 0 }}>
             <X size={18}/>
           </button>
         </div>
 
-        {/* Score breakdown */}
-        <div style={{ padding: "20px 28px", borderBottom: `1px solid ${C.border}`, background: C.bg }}>
-          <p style={{ fontSize: 12, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>Score Breakdown</p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {[
-              { label: "Starting score", value: "+100", color: C.green },
-              ...(systems.filter(s => s.deduction > 0).map(s => ({
-                label: s.name + (s.age !== null ? ` (${s.age} yrs old)` : ""),
-                value: `-${s.deduction}`,
-                color: C.red,
-              }))),
-              { label: "Final score", value: `${score}`, color },
-            ].map((row, i) => (
-              <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center",
-                fontWeight: row.label === "Final score" ? 700 : 400,
-                borderTop: row.label === "Final score" ? `1px solid ${C.border}` : "none",
-                paddingTop: row.label === "Final score" ? 8 : 0,
-              }}>
-                <span style={{ fontSize: 13, color: C.text2 }}>{row.label}</span>
-                <span style={{ fontSize: 13, fontWeight: 700, color: row.color }}>{row.value}</span>
-              </div>
-            ))}
+        {/* ── Score Breakdown ──────────────────────────────────────────── */}
+        <div style={{ padding: "20px 28px", borderBottom: `1px solid ${C.border}` }}>
+          <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 14px" }}>Score Breakdown</p>
+
+          {/* Starting score row */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 10, borderBottom: `1px solid ${C.border}`, marginBottom: 10 }}>
+            <span style={{ fontSize: 13, color: C.text2 }}>Starting score</span>
+            <span style={{ fontSize: 14, fontWeight: 700, color: C.green }}>100</span>
           </div>
-          {(criticalCount > 0 || warningCount > 0) && (
-            <p style={{ fontSize: 12, color: C.text3, marginTop: 10 }}>
-              {criticalCount > 0 && `${criticalCount} critical finding${criticalCount > 1 ? "s" : ""} (−8 pts each, max −32) · `}
-              {warningCount > 0 && `${warningCount} warning${warningCount > 1 ? "s" : ""} (−3 pts each, max −15)`}
+
+          {/* Active deduction rows */}
+          {deductions.length === 0 ? (
+            <p style={{ fontSize: 13, color: C.green, display: "flex", alignItems: "center", gap: 5, marginBottom: 10 }}>
+              <CheckCircle2 size={14}/> No active deductions — great shape!
             </p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+              {deductions.map((d, i) => {
+                const badge = sourceBadge(d);
+                return (
+                  <div key={i} style={{
+                    background: d.severity === "critical" ? C.redBg : C.bg,
+                    border: `1px solid ${d.severity === "critical" ? "#fecaca" : C.border}`,
+                    borderRadius: 10, padding: "10px 14px",
+                    display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12,
+                  }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flex: 1, minWidth: 0 }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 7, background: C.surface, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+                        {systemIcon(d.category)}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.category}</span>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, color: badge.color, background: badge.bg }}>
+                            {badge.label}
+                          </span>
+                        </div>
+                        <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.5 }}>{d.reason}</p>
+                        <button
+                          onClick={() => { onClose(); onFindVendors(d.category, d.category); }}
+                          style={{ marginTop: 6, fontSize: 11, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 3 }}>
+                          <Users size={10}/> Find Vendors →
+                        </button>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: C.red, flexShrink: 0 }}>{d.points}</span>
+                  </div>
+                );
+              })}
+            </div>
           )}
-          {(completedCount ?? 0) > 0 && (
-            <p style={{ fontSize: 12, color: C.green, marginTop: 6, display: "flex", alignItems: "center", gap: 4 }}>
-              <CheckCircle2 size={12}/>
-              {completedCount} resolved finding{completedCount === 1 ? "" : "s"} excluded from score — repairs confirmed
-            </p>
-          )}
+
+          {/* Final score row */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+            <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Final score</span>
+            <span style={{ fontSize: 16, fontWeight: 800, color: scoreColor }}>{score} / 100</span>
+          </div>
         </div>
 
-        {/* Systems list */}
-        <div style={{ padding: "20px 28px", display: "flex", flexDirection: "column", gap: 10 }}>
-          <p style={{ fontSize: 12, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 4px" }}>All Home Systems</p>
-          {systems.map((sys, i) => (
-            <div key={i} style={{
-              border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px",
-              background: sys.deduction > 0 ? (sys.status.color === C.red ? C.redBg : C.amberBg) : C.surface,
-            }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: sys.finding ? 8 : 0 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 8, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    {sys.icon}
+        {/* ── Resolved / Restored ──────────────────────────────────────── */}
+        {resolvedDeductions.length > 0 && (
+          <div style={{ padding: "18px 28px", borderBottom: `1px solid ${C.border}`, background: C.greenBg }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px", display: "flex", alignItems: "center", gap: 5 }}>
+              <CheckCircle2 size={12}/> Resolved — Deductions Removed
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {resolvedDeductions.map((d, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < resolvedDeductions.length - 1 ? `1px solid #bbf7d0` : "none" }}>
+                  <CheckCircle2 size={13} color={C.green} style={{ flexShrink: 0 }}/>
+                  <div style={{ flex: 1 }}>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{d.category}</span>
+                    <span style={{ fontSize: 12, color: C.text3, marginLeft: 8 }}>repair confirmed</span>
                   </div>
-                  <div>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0 }}>{sys.name}</p>
-                    {sys.age !== null && (
-                      <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>
-                        {sys.age} yrs old {sys.age < 5 ? "· Nearly new" : sys.age < 10 ? "· Good condition" : sys.age < 15 ? "· Aging" : "· Nearing end of life"}
-                      </p>
-                    )}
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.green }}>+{Math.abs(d.points)} restored</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* ── System Snapshot ──────────────────────────────────────────── */}
+        {(roofAge !== null || hvacAge !== null) && (
+          <div style={{ padding: "18px 28px" }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>System Snapshot</p>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {roofAge !== null && (
+                <div style={{ flex: 1, minWidth: 120, background: C.bg, borderRadius: 10, padding: "12px 14px", border: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <HomeIcon size={13} color={C.text3}/><span style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.06em" }}>Roof</span>
                   </div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: sys.status.color,
-                    background: `${sys.status.color}15`, padding: "3px 10px", borderRadius: 20, display: "block" }}>
-                    {sys.status.label}
-                  </span>
-                  <span style={{ fontSize: 11, color: C.text3, display: "block", marginTop: 3 }}>{sys.impact}</span>
-                </div>
-              </div>
-              {sys.finding && (
-                <div style={{ background: "rgba(0,0,0,0.04)", borderRadius: 8, padding: "8px 10px", marginTop: 6 }}>
-                  <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.5 }}>{sys.finding.description}</p>
-                  {sys.finding.estimated_cost && (
-                    <p style={{ fontSize: 12, fontWeight: 700, color: sys.status.color, margin: "4px 0 0" }}>
-                      Est. repair: ${sys.finding.estimated_cost.toLocaleString()}
-                    </p>
-                  )}
+                  <p style={{ fontSize: 20, fontWeight: 800, color: C.text, margin: "0 0 2px", letterSpacing: "-0.5px" }}>{roofAge} yrs</p>
+                  <p style={{ fontSize: 11, color: systemStatus(roofAge, 20, 25).color, margin: 0, fontWeight: 600 }}>{systemStatus(roofAge, 20, 25).label}</p>
                 </div>
               )}
-              {sys.deduction > 0 && (
-                <button onClick={() => { onClose(); onFindVendors(tradeForCategory(sys.name)); }}
-                  style={{ marginTop: 8, fontSize: 12, fontWeight: 600, color: C.accent,
-                    background: "transparent", border: `1px solid ${C.accent}30`, borderRadius: 6,
-                    padding: "4px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-                  <Users size={11}/> Find Vendors
-                </button>
+              {hvacAge !== null && (
+                <div style={{ flex: 1, minWidth: 120, background: C.bg, borderRadius: 10, padding: "12px 14px", border: `1px solid ${C.border}` }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                    <Wind size={13} color={C.text3}/><span style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.06em" }}>HVAC</span>
+                  </div>
+                  <p style={{ fontSize: 20, fontWeight: 800, color: C.text, margin: "0 0 2px", letterSpacing: "-0.5px" }}>{hvacAge} yrs</p>
+                  <p style={{ fontSize: 11, color: systemStatus(hvacAge, 10, 15).color, margin: 0, fontWeight: 600 }}>{systemStatus(hvacAge, 10, 15).label}</p>
+                </div>
               )}
             </div>
-          ))}
-          {systems.length === 0 && (
-            <p style={{ fontSize: 14, color: C.text3, textAlign: "center", padding: "24px 0" }}>
-              Upload an inspection report to see all home systems.
+          </div>
+        )}
+        {(roofAge === null && hvacAge === null && deductions.length === 0 && resolvedDeductions.length === 0) && (
+          <div style={{ padding: "24px 28px", textAlign: "center" }}>
+            <p style={{ fontSize: 14, color: C.text3, margin: 0 }}>
+              Upload an inspection report or enter system years in Settings to see your full breakdown.
             </p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -740,9 +700,10 @@ function ScoreRing({ score, color, size = 130 }: { score: number; color: string;
 }
 
 function healthStatusInfo(score: number) {
-  if (score >= 80) return { label: "Excellent",       tagColor: "#22c55e", tagBg: "rgba(34,197,94,0.18)",  desc: "Your home is in great shape. Keep up with routine maintenance." };
-  if (score >= 60) return { label: "Good",            tagColor: "#84cc16", tagBg: "rgba(132,204,22,0.18)", desc: "Your home is healthy. A few items to monitor over time." };
-  if (score >= 40) return { label: "Needs Attention", tagColor: "#f59e0b", tagBg: "rgba(245,158,11,0.18)", desc: "Some systems need attention. Review the breakdown for next steps." };
+  if (score >= 90) return { label: "Excellent",       tagColor: "#22c55e", tagBg: "rgba(34,197,94,0.18)",  desc: "Your home is in great shape. Keep up with routine maintenance." };
+  if (score >= 80) return { label: "Good",            tagColor: "#84cc16", tagBg: "rgba(132,204,22,0.18)", desc: "Your home is healthy. A few items to monitor over time." };
+  if (score >= 65) return { label: "Fair",            tagColor: "#f59e0b", tagBg: "rgba(245,158,11,0.18)", desc: "Some systems need attention. Review the breakdown for next steps." };
+  if (score >= 50) return { label: "Needs Attention", tagColor: "#f97316", tagBg: "rgba(249,115,22,0.18)", desc: "Multiple issues need attention. Prioritize repairs to protect your home." };
   return                  { label: "Critical",        tagColor: "#ef4444", tagBg: "rgba(239,68,68,0.18)",  desc: "Immediate action needed. See the full breakdown to prioritize repairs." };
 }
 
@@ -753,7 +714,7 @@ function CostDetailModal({
   item: CostItem;
   findings: Finding[];
   onClose: () => void;
-  onFindVendors: (trade: string) => void;
+  onFindVendors: (trade: string, context?: string) => void;
 }) {
   const col = item.severity === "critical" ? C.red : item.severity === "warning" ? C.amber : C.text3;
   const bg  = item.severity === "critical" ? C.redBg : item.severity === "warning" ? C.amberBg : C.bg;
@@ -880,7 +841,7 @@ function CostDetailModal({
 
           {/* CTA buttons */}
           <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
-            <button onClick={() => { onClose(); onFindVendors(trade); }}
+            <button onClick={() => { onClose(); onFindVendors(item.tradeCategory ?? item.label, item.label); }}
               style={{ flex: 1, padding: "12px 16px", borderRadius: 10, background: C.accent,
                 border: "none", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
@@ -947,6 +908,7 @@ export default function Dashboard() {
   const [showCostModal, setShowCostModal]     = useState(false);
   const [selectedCost, setSelectedCost]       = useState<CostItem | null>(null);
   const [vendorPrefill, setVendorPrefill]     = useState<string | null>(null);
+  const [vendorContext, setVendorContext]      = useState<string | null>(null);
 
   // Mortgage
   const [mortgage, setMortgage] = useState<{ lender?: string; balance?: number; payment?: number; due_day?: number; rate?: number } | null>(null);
@@ -997,23 +959,19 @@ export default function Dashboard() {
     });
   }, []);
 
-  // When vendorPrefill changes, navigate to Vendors
-  useEffect(() => {
-    if (vendorPrefill !== null) {
-      setNav("Vendors");
-      setVendorPrefill(null);
-    }
-  }, [vendorPrefill]);
+  // (vendorPrefill is now set directly in handleFindVendors — no useEffect needed)
 
   function openCostModal(item: CostItem) {
     setSelectedCost(item);
     setShowCostModal(true);
   }
 
-  function handleFindVendors(trade: string) {
+  // Navigate to Vendors page pre-filtered to the relevant trade category
+  function handleFindVendors(trade: string, context?: string) {
     setShowHealthModal(false);
     setShowCostModal(false);
-    setVendorPrefill(trade);
+    setVendorPrefill(toVendorKey(trade));
+    setVendorContext(context ?? null);
     setNav("Vendors");
   }
 
@@ -1249,34 +1207,64 @@ export default function Dashboard() {
 
   // ── Load documents from storage on mount ────────────────────────────────
   // General docs are stored at the bucket root with a "docs-" prefix.
-  // Inspections/repairs go into subfolders, so filtering by "docs-" is safe.
+  // Inspections/repairs go into subfolders so filtering by "docs-" is safe.
+  //
+  // IMPORTANT: this requires a SELECT RLS policy on storage.objects scoped to
+  // auth.uid() = owner (see SUPABASE_DOCS_HOTFIX.sql). Without it, list()
+  // returns { data: [], error: null } — silently empty, not an error — so
+  // documents vanish after every refresh even though files exist in storage.
   async function loadDocs() {
     try {
-      await supabase.auth.getSession(); // ensure fresh JWT before storage op
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) return; // not authenticated — nothing to load
+
       const { data, error } = await supabase.storage
         .from("documents")
         .list("", { limit: 200, sortBy: { column: "created_at", order: "desc" } });
-      if (error || !data) return;
-      const files = data
-        .filter(item => item.name.startsWith("docs-"))
-        .map(item => ({
-          // Strip the "docs-{timestamp}-" prefix to restore the original filename
-          name: item.name.replace(/^docs-\d+-/, ""),
-          path: item.name,
-        }));
+
+      if (error) {
+        console.error("[loadDocs] storage.list error:", error.message);
+        return;
+      }
+      if (!data) return;
+
+      const items = data.filter(item => item.id !== null && item.name.startsWith("docs-"));
+
+      // Generate signed URLs for each file so View links work on private buckets.
+      // 1-hour expiry — long enough for a session, short enough to be safe.
+      const files: Doc[] = await Promise.all(
+        items.map(async (item) => {
+          const { data: signed } = await supabase.storage
+            .from("documents")
+            .createSignedUrl(item.name, 3600);
+          return {
+            name: item.name.replace(/^docs-\d+-/, ""),
+            path: item.name,
+            url: signed?.signedUrl ?? undefined,
+          };
+        })
+      );
+
       setDocs(files);
-    } catch { /* silent — show empty list on error rather than crashing */ }
+    } catch (err) {
+      console.error("[loadDocs] unexpected error:", err);
+    }
   }
 
   async function uploadDoc(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setDocLoading(true);
     await supabase.auth.getSession(); // refresh JWT before storage op
-    const fileName = `docs-${Date.now()}-${file.name}`;
-    const { error } = await supabase.storage.from("documents").upload(fileName, file);
+    // Sanitize filename to avoid storage path issues
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const fileName = `docs-${Date.now()}-${safeName}`;
+    // upsert: true avoids "already exists" errors on retry
+    const { error } = await supabase.storage.from("documents").upload(fileName, file, { upsert: true });
     if (error) { alert("Upload failed: " + error.message); setDocLoading(false); return; }
     addEvent(`Document uploaded: ${file.name}`);
-    setDocs(prev => [{ name: file.name, path: fileName }, ...prev]);
+    // Generate a signed URL immediately so View link works without a page reload
+    const { data: signed } = await supabase.storage.from("documents").createSignedUrl(fileName, 3600);
+    setDocs(prev => [{ name: file.name, path: fileName, url: signed?.signedUrl ?? undefined }, ...prev]);
     setDocLoading(false);
     if (docRef.current) docRef.current.value = "";
   }
@@ -1442,32 +1430,16 @@ export default function Dashboard() {
   const roofSt  = systemStatus(roofAge, 20, 25);
   const hvacSt  = systemStatus(hvacAge, 10, 15);
 
-  // Only count ACTIVE findings (open or not_sure) in health score and costs
-  // Completed/dismissed/monitored findings reflect real-world repairs — they should not penalize
-  const activeFindings = (inspectionResult?.findings ?? []).filter(f => isActiveFinding(f, findingStatuses));
+  // Only count ACTIVE findings (open or not_sure) in costs list
+  // Completed/dismissed/monitored findings reflect real-world repairs
+  const activeFindings    = (inspectionResult?.findings ?? []).filter(f =>  isActiveFinding(f, findingStatuses));
   const completedFindings = (inspectionResult?.findings ?? []).filter(f => !isActiveFinding(f, findingStatuses));
 
-  const criticalCount = activeFindings.filter(f => f.severity === "critical").length;
-  const warningCount  = activeFindings.filter(f => f.severity === "warning").length;
-  let health = 100;
-  // Roof deductions (25-yr lifespan)
-  if (roofAge !== null) {
-    if (roofAge >= 25) health -= 20;      // past end-of-life
-    else if (roofAge >= 20) health -= 15; // critical zone
-    else if (roofAge >= 15) health -= 8;  // aging
-  }
-  // HVAC deductions (15-yr lifespan)
-  if (hvacAge !== null) {
-    if (hvacAge >= 15) health -= 20;
-    else if (hvacAge >= 12) health -= 12;
-    else if (hvacAge >= 8) health -= 5;
-  }
-  // Inspection findings
-  health -= Math.min(criticalCount * 10, 35);
-  health -= Math.min(warningCount * 4, 20);
-  health = Math.max(health, 10);
-  const healthColor = health >= 80 ? C.green : health >= 60 ? C.amber : C.red;
-  const healthSt = healthStatusInfo(health);
+  // Deterministic score — pure function, same inputs = same score every time
+  const breakdown   = computeHealthScore(inspectionResult?.findings ?? [], findingStatuses, roofYear, hvacYear, year);
+  const health      = breakdown.score;
+  const healthColor = health >= 90 ? "#22c55e" : health >= 80 ? "#84cc16" : health >= 65 ? C.amber : health >= 50 ? "#f97316" : C.red;
+  const healthSt    = healthStatusInfo(health);
 
   // Build upcoming costs list (shared between Dashboard and Repairs views)
   // Only includes ACTIVE (open/not_sure) findings — completed repairs are excluded
@@ -1515,10 +1487,8 @@ export default function Dashboard() {
       )}
       {showHealthModal && (
         <HealthScoreModal
-          score={health} color={healthColor}
+          breakdown={breakdown}
           roofYear={roofYear} hvacYear={hvacYear} year={year}
-          findings={activeFindings}
-          completedCount={completedFindings.length}
           onClose={() => setShowHealthModal(false)}
           onFindVendors={handleFindVendors}
         />
@@ -1547,7 +1517,11 @@ export default function Dashboard() {
 
         <nav style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
           {navItems.map(({ label, icon, badge }) => (
-            <button key={label} onClick={() => setNav(label)} style={{
+            <button key={label} onClick={() => {
+              setNav(label);
+              // Direct sidebar click to Vendors = generic browse (clears CTA prefill)
+              if (label === "Vendors") { setVendorPrefill(null); setVendorContext(null); }
+            }} style={{
               display: "flex", alignItems: "center", gap: 9,
               padding: "9px 12px", borderRadius: 10, fontSize: 13,
               border: "none", cursor: "pointer", textAlign: "left", width: "100%",
@@ -1609,7 +1583,14 @@ export default function Dashboard() {
 
           {/* ── Vendors ───────────────────────────────────────────────── */}
           {nav === "Vendors" && (
-            <VendorsView address={address} inspectionFindings={inspectionResult?.findings ?? []} userEmail={user?.email} userId={user?.id}/>
+            <VendorsView
+              address={address}
+              inspectionFindings={inspectionResult?.findings ?? []}
+              userEmail={user?.email}
+              userId={user?.id}
+              prefillTrade={vendorPrefill ?? undefined}
+              prefillContext={vendorContext ?? undefined}
+            />
           )}
 
           {/* ── My Jobs ───────────────────────────────────────────────── */}
@@ -1644,7 +1625,7 @@ export default function Dashboard() {
                         </div>
                         <span style={{ fontSize: 16, fontWeight: 800, color: col }}>${c.amount.toLocaleString()}</span>
                         <div style={{ display: "flex", gap: 8 }}>
-                          <button onClick={e => { e.stopPropagation(); handleFindVendors(tradeForCategory(c.tradeCategory ?? c.label)); }}
+                          <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label); }}
                             style={{ padding: "6px 12px", borderRadius: 8, background: C.accent, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                             <Users size={12}/> Find Vendors
                           </button>
@@ -1826,20 +1807,21 @@ export default function Dashboard() {
                 <div style={card()}>
                   <p style={{ fontSize: 13, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 12px" }}>Uploaded Files</p>
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {docs.map((doc, i) => {
-                      const { data } = supabase.storage.from("documents").getPublicUrl(doc.path);
-                      return (
-                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 10, padding: "10px 14px" }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                            <FileText size={14} color={C.text3}/>
-                            <span style={{ fontSize: 14, color: C.text }}>{doc.name}</span>
-                          </div>
-                          <a href={data.publicUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: C.accent, textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}>
+                    {docs.map((doc, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 10, padding: "10px 14px" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                          <FileText size={14} color={C.text3}/>
+                          <span style={{ fontSize: 14, color: C.text }}>{doc.name}</span>
+                        </div>
+                        {doc.url ? (
+                          <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: C.accent, textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}>
                             View <ExternalLink size={11}/>
                           </a>
-                        </div>
-                      );
-                    })}
+                        ) : (
+                          <span style={{ fontSize: 13, color: C.text3 }}>Unavailable</span>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -2393,7 +2375,7 @@ export default function Dashboard() {
                           <span style={{ fontSize: 12, color: C.text3, marginLeft: 8 }}>{c.horizon}</span>
                         </div>
                         <span style={{ fontSize: 14, fontWeight: 700, color: col, flexShrink: 0 }}>${c.amount.toLocaleString()}</span>
-                        <button onClick={e => { e.stopPropagation(); handleFindVendors(tradeForCategory(c.tradeCategory ?? c.label)); }}
+                        <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label); }}
                           style={{ padding: "4px 10px", borderRadius: 7, background: C.accent, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                           <Users size={11}/> Find Vendors
                         </button>
