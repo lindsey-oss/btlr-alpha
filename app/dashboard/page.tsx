@@ -39,6 +39,125 @@ function isActiveFinding(finding: Finding, statuses: Record<string, FindingStatu
   return status === "open" || status === "not_sure";
 }
 
+// ── Deterministic Health Score Engine ────────────────────────────────────
+
+interface ScoreDeduction {
+  id:        string;
+  category:  string;
+  reason:    string;
+  points:    number;          // always negative
+  source:    "finding" | "system_age";
+  severity?: string;          // "critical" | "warning" | "info"
+}
+
+interface ScoreBreakdown {
+  score:              number;
+  deductions:         ScoreDeduction[];  // active — subtract from 100
+  resolvedDeductions: ScoreDeduction[];  // removed by repairs — shown as restored
+  totalDeducted:      number;
+}
+
+// Pure function — same inputs always produce the same score
+function computeHealthScore(
+  allFindings:  Finding[],
+  statuses:     Record<string, FindingStatus>,
+  roofYear:     string,
+  hvacYear:     string,
+  currentYear:  number,
+): ScoreBreakdown {
+  const deductions:         ScoreDeduction[] = [];
+  const resolvedDeductions: ScoreDeduction[] = [];
+
+  function add(ded: ScoreDeduction, isResolved: boolean) {
+    (isResolved ? resolvedDeductions : deductions).push(ded);
+  }
+
+  // A. System age deductions ─────────────────────────────────────────
+  const roofAge = roofYear ? currentYear - Number(roofYear) : null;
+  const hvacAge = hvacYear ? currentYear - Number(hvacYear) : null;
+
+  if (roofAge !== null) {
+    let pts = 0, note = "";
+    if      (roofAge >= 25) { pts = -12; note = `${roofAge} yrs old — past 25yr lifespan`;       }
+    else if (roofAge >= 19) { pts = -7;  note = `${roofAge} yrs old — approaching end of life`;  }
+    else if (roofAge >= 13) { pts = -3;  note = `${roofAge} yrs old — aging`;                    }
+    if (pts !== 0) {
+      const resolved = statuses[toCategoryKey("Roof")] === "completed" || statuses[toCategoryKey("Roof")] === "dismissed";
+      add({ id: "age_roof", category: "Roof", reason: `Roof: ${note}`, points: pts, source: "system_age" }, resolved);
+    }
+  }
+
+  if (hvacAge !== null) {
+    let pts = 0, note = "";
+    if      (hvacAge >= 15) { pts = -10; note = `${hvacAge} yrs old — past 15yr lifespan`;      }
+    else if (hvacAge >= 12) { pts = -7;  note = `${hvacAge} yrs old — nearing end of life`;     }
+    else if (hvacAge >= 8)  { pts = -3;  note = `${hvacAge} yrs old — aging`;                   }
+    if (pts !== 0) {
+      const resolved = statuses[toCategoryKey("HVAC")] === "completed" || statuses[toCategoryKey("HVAC")] === "dismissed";
+      add({ id: "age_hvac", category: "HVAC", reason: `HVAC: ${note}`, points: pts, source: "system_age" }, resolved);
+    }
+  }
+
+  // B. Finding deductions — grouped by category key for per-system cap ─
+  const byKey = new Map<string, Finding[]>();
+  for (const f of allFindings) {
+    const k = toCategoryKey(f.category);
+    if (!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k)!.push(f);
+  }
+
+  for (const [key, findings] of byKey.entries()) {
+    const isResolved = statuses[key] === "completed" || statuses[key] === "dismissed";
+    const category   = findings[0].category;
+
+    // Critical: -15 each, uncapped
+    for (const f of findings.filter(f => f.severity === "critical")) {
+      const desc = f.description.length > 72 ? f.description.slice(0, 72) + "…" : f.description;
+      add({ id: `crit_${key}`, category, reason: desc, points: -15, source: "finding", severity: "critical" }, isResolved);
+    }
+
+    // Non-critical: -5 warning / -2 info — capped at -10 per system
+    const ncs = findings.filter(f => f.severity !== "critical");
+    if (ncs.length > 0) {
+      const raw  = ncs.reduce((s, f) => s + (f.severity === "warning" ? -5 : -2), 0);
+      const pts  = Math.max(raw, -10);
+      const sev  = ncs.some(f => f.severity === "warning") ? "warning" : "info";
+      const desc = ncs.length === 1
+        ? (ncs[0].description.length > 72 ? ncs[0].description.slice(0, 72) + "…" : ncs[0].description)
+        : `${ncs.length} issue${ncs.length > 1 ? "s" : ""} in ${category}${raw < pts ? " (capped)" : ""}`;
+      add({ id: `nc_${key}`, category, reason: desc, points: pts, source: "finding", severity: sev }, isResolved);
+    }
+  }
+
+  const totalDeducted = deductions.reduce((sum, d) => sum + d.points, 0);
+  const score         = Math.max(0, Math.min(100, 100 + totalDeducted));
+  return { score, deductions, resolvedDeductions, totalDeducted };
+}
+
+// ── Vendor key normalizer ─────────────────────────────────────────────────
+// Maps any trade label / finding category to a VendorsView category key
+function toVendorKey(trade: string): string {
+  const t = trade.toLowerCase();
+  if (t.includes("roof"))                                                    return "roofing";
+  if (t.includes("plumb") || t.includes("sink") || t.includes("drain") ||
+      t.includes("toilet") || t.includes("pipe"))                            return "plumbing";
+  if (t.includes("electric") || t.includes("outlet") || t.includes("wiring") ||
+      t.includes("panel"))                                                   return "electrical";
+  if (t.includes("hvac") || t.includes("heat") || t.includes("cool") ||
+      t.includes("furnace") || t.includes("ac") || t.includes("air"))       return "hvac";
+  if (t.includes("pest") || t.includes("termite") || t.includes("bug") ||
+      t.includes("rodent"))                                                  return "pest";
+  if (t.includes("found") || t.includes("struct") || t.includes("crack") ||
+      t.includes("settling"))                                                return "foundation";
+  if (t.includes("mold") || t.includes("water intrusion") ||
+      t.includes("moisture") || t.includes("waterproof"))                   return "mold";
+  if (t.includes("window") || t.includes("door") || t.includes("seal"))    return "windows";
+  if (t.includes("insul"))                                                   return "insulation";
+  if (t.includes("floor"))                                                   return "flooring";
+  if (t.includes("paint"))                                                   return "painting";
+  return "general";
+}
+
 interface CostItem {
   label: string;
   horizon: string;
