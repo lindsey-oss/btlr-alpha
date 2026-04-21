@@ -1,55 +1,49 @@
 -- ============================================================
--- BTLR Docs Storage Hotfix — Run this in Supabase SQL Editor
+-- BTLR Docs Storage Hotfix v3 — Run this in Supabase SQL Editor
 --
--- Root cause: the `documents` bucket had no SELECT RLS policy.
--- supabase.storage.list("") returns { data: [], error: null }
--- (empty array — not an error) so loadDocs() always shows
--- nothing after page refresh, even though files exist in storage.
+-- Root cause: uploads were going to bucket root with no user prefix.
+-- The owner/owner_id column comparison was unreliable.
 --
--- Fix: add SELECT, INSERT, and DELETE policies scoped to the
--- file's owner so each user only sees their own documents.
+-- Fix: docs are now stored at {user_id}/docs-{ts}-{name}.
+-- RLS uses path-based auth (storage.foldername) which is bulletproof —
+-- no dependency on owner or owner_id columns.
 -- ============================================================
 
--- ── Drop any conflicting existing policies ─────────────────
-DO $$ BEGIN
-  DROP POLICY IF EXISTS "Users can view own documents"   ON storage.objects;
-  DROP POLICY IF EXISTS "Users can upload documents"     ON storage.objects;
-  DROP POLICY IF EXISTS "Users can delete own documents" ON storage.objects;
-  DROP POLICY IF EXISTS "Users can update own documents" ON storage.objects;
-  DROP POLICY IF EXISTS "Allow public uploads"           ON storage.objects;
-  DROP POLICY IF EXISTS "Allow authenticated uploads"    ON storage.objects;
-EXCEPTION WHEN OTHERS THEN NULL; END $$;
+DROP POLICY IF EXISTS "Users can view own documents"   ON storage.objects;
+DROP POLICY IF EXISTS "Users can upload documents"     ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete own documents" ON storage.objects;
+DROP POLICY IF EXISTS "Users can update own documents" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public uploads"           ON storage.objects;
+DROP POLICY IF EXISTS "Allow authenticated uploads"    ON storage.objects;
 
--- ── SELECT: list and download own files ────────────────────
--- auth.uid() = owner  →  each user sees only files they uploaded.
--- Supabase sets `owner` automatically to auth.uid() on insert.
+-- SELECT: users can list/download files in their own subfolder
 CREATE POLICY "Users can view own documents"
   ON storage.objects FOR SELECT
   USING (
     bucket_id = 'documents'
-    AND auth.uid() = owner
+    AND (storage.foldername(name))[1] = auth.uid()::text
   );
 
--- ── INSERT: authenticated users can upload ─────────────────
+-- INSERT: users can upload into their own subfolder only
 CREATE POLICY "Users can upload documents"
   ON storage.objects FOR INSERT
   WITH CHECK (
     bucket_id = 'documents'
-    AND auth.role() = 'authenticated'
+    AND (storage.foldername(name))[1] = auth.uid()::text
   );
 
--- ── DELETE: users can remove their own files ───────────────
+-- DELETE: users can delete their own files
 CREATE POLICY "Users can delete own documents"
   ON storage.objects FOR DELETE
   USING (
     bucket_id = 'documents'
-    AND auth.uid() = owner
+    AND (storage.foldername(name))[1] = auth.uid()::text
   );
 
--- ── UPDATE: users can overwrite (upsert) own files ─────────
+-- UPDATE: users can overwrite their own files
 CREATE POLICY "Users can update own documents"
   ON storage.objects FOR UPDATE
   USING (
     bucket_id = 'documents'
-    AND auth.uid() = owner
+    AND (storage.foldername(name))[1] = auth.uid()::text
   );

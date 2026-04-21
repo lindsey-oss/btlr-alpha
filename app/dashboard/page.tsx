@@ -1216,11 +1216,14 @@ export default function Dashboard() {
   async function loadDocs() {
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      if (!session) return; // not authenticated — nothing to load
+      if (!session?.user?.id) return;
+      const userId = session.user.id;
 
+      // Store docs in a user-scoped subfolder: {userId}/docs-{ts}-{name}
+      // list() on the subfolder only returns that user's files — no RLS owner issues.
       const { data, error } = await supabase.storage
         .from("documents")
-        .list("", { limit: 200, sortBy: { column: "created_at", order: "desc" } });
+        .list(userId, { limit: 200, sortBy: { column: "created_at", order: "desc" } });
 
       if (error) {
         console.error("[loadDocs] storage.list error:", error.message);
@@ -1230,16 +1233,15 @@ export default function Dashboard() {
 
       const items = data.filter(item => item.id !== null && item.name.startsWith("docs-"));
 
-      // Generate signed URLs for each file so View links work on private buckets.
-      // 1-hour expiry — long enough for a session, short enough to be safe.
       const files: Doc[] = await Promise.all(
         items.map(async (item) => {
+          const fullPath = `${userId}/${item.name}`;
           const { data: signed } = await supabase.storage
             .from("documents")
-            .createSignedUrl(item.name, 3600);
+            .createSignedUrl(fullPath, 3600);
           return {
             name: item.name.replace(/^docs-\d+-/, ""),
-            path: item.name,
+            path: fullPath,
             url: signed?.signedUrl ?? undefined,
           };
         })
@@ -1254,17 +1256,17 @@ export default function Dashboard() {
   async function uploadDoc(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setDocLoading(true);
-    await supabase.auth.getSession(); // refresh JWT before storage op
-    // Sanitize filename to avoid storage path issues
+    const { data: { session } } = await supabase.auth.getSession();
+    const userId = session?.user?.id;
+    if (!userId) { alert("Not logged in — please refresh and try again."); setDocLoading(false); return; }
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const fileName = `docs-${Date.now()}-${safeName}`;
-    // upsert: true avoids "already exists" errors on retry
-    const { error } = await supabase.storage.from("documents").upload(fileName, file, { upsert: true });
+    // Store under {userId}/docs-{timestamp}-{name} for reliable per-user isolation
+    const fullPath = `${userId}/docs-${Date.now()}-${safeName}`;
+    const { error } = await supabase.storage.from("documents").upload(fullPath, file, { upsert: true });
     if (error) { alert("Upload failed: " + error.message); setDocLoading(false); return; }
     addEvent(`Document uploaded: ${file.name}`);
-    // Generate a signed URL immediately so View link works without a page reload
-    const { data: signed } = await supabase.storage.from("documents").createSignedUrl(fileName, 3600);
-    setDocs(prev => [{ name: file.name, path: fileName, url: signed?.signedUrl ?? undefined }, ...prev]);
+    const { data: signed } = await supabase.storage.from("documents").createSignedUrl(fullPath, 3600);
+    setDocs(prev => [{ name: file.name, path: fullPath, url: signed?.signedUrl ?? undefined }, ...prev]);
     setDocLoading(false);
     if (docRef.current) docRef.current.value = "";
   }
