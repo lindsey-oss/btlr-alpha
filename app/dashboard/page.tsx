@@ -13,6 +13,7 @@ import {
 } from "lucide-react";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
+import type { HomeHealthReport } from "../../lib/scoring-engine";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface TimelineEvent { date: string; event: string }
@@ -485,14 +486,15 @@ function InspectionReviewModal({
 
 // ── Health Score Modal ────────────────────────────────────────────────────
 function HealthScoreModal({
-  breakdown, roofYear, hvacYear, year, onClose, onFindVendors,
+  breakdown, roofYear, hvacYear, year, homeHealthReport, onClose, onFindVendors,
 }: {
-  breakdown:     ScoreBreakdown;
-  roofYear:      string;
-  hvacYear:      string;
-  year:          number;
-  onClose:       () => void;
-  onFindVendors: (trade: string, context?: string) => void;
+  breakdown:         ScoreBreakdown;
+  roofYear:          string;
+  hvacYear:          string;
+  year:              number;
+  homeHealthReport?: HomeHealthReport | null;
+  onClose:           () => void;
+  onFindVendors:     (trade: string, context?: string) => void;
 }) {
   const { score, deductions, resolvedDeductions } = breakdown;
   const st         = healthStatusInfo(score);
@@ -656,12 +658,126 @@ function HealthScoreModal({
             </div>
           </div>
         )}
-        {(roofAge === null && hvacAge === null && deductions.length === 0 && resolvedDeductions.length === 0) && (
+        {(roofAge === null && hvacAge === null && deductions.length === 0 && resolvedDeductions.length === 0) && !homeHealthReport && (
           <div style={{ padding: "24px 28px", textAlign: "center" }}>
             <p style={{ fontSize: 14, color: C.text3, margin: 0 }}>
               Upload an inspection report or enter system years in Settings to see your full breakdown.
             </p>
           </div>
+        )}
+
+        {/* ── Rich Report (from scoring engine) ───────────────────────── */}
+        {homeHealthReport && (
+          <>
+            {/* Sub-scores */}
+            <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}` }}>
+              <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>Score Dimensions</p>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                {[
+                  { label: "Safety",      val: homeHealthReport.safety_score,      color: homeHealthReport.safety_score >= 80 ? C.green : homeHealthReport.safety_score >= 60 ? C.amber : C.red },
+                  { label: "Readiness",   val: homeHealthReport.readiness_score,   color: homeHealthReport.readiness_score >= 80 ? C.green : homeHealthReport.readiness_score >= 60 ? C.amber : C.red },
+                  { label: "Maintenance", val: homeHealthReport.maintenance_score, color: homeHealthReport.maintenance_score >= 80 ? C.green : homeHealthReport.maintenance_score >= 60 ? C.amber : C.red },
+                  { label: "Confidence",  val: homeHealthReport.confidence_score,  color: C.text2 },
+                ].map(({ label, val, color }) => (
+                  <div key={label} style={{ background: C.bg, borderRadius: 10, padding: "10px 14px", border: `1px solid ${C.border}` }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 2px" }}>{label}</p>
+                    <p style={{ fontSize: 22, fontWeight: 800, color, margin: 0, letterSpacing: "-0.5px" }}>{val}<span style={{ fontSize: 12, fontWeight: 400, color: C.text3 }}>/100</span></p>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Category scores */}
+            {homeHealthReport.category_scores.some(cs => !cs.limited_data) && (
+              <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}` }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>System Health</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {homeHealthReport.category_scores
+                    .filter(cs => !cs.limited_data)
+                    .sort((a, b) => a.score - b.score)
+                    .map(cs => {
+                      const barColor = cs.score >= 80 ? C.green : cs.score >= 65 ? C.amber : C.red;
+                      const label = cs.category.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+                      return (
+                        <div key={cs.category}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                            <span style={{ fontSize: 12, color: C.text2, fontWeight: 500 }}>{label}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{cs.score}</span>
+                          </div>
+                          <div style={{ height: 5, borderRadius: 3, background: C.border, overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${cs.score}%`, background: barColor, borderRadius: 3, transition: "width 0.8s ease" }}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+
+            {/* Priority actions */}
+            {homeHealthReport.priority_actions.length > 0 && (
+              <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}` }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>Priority Actions</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {homeHealthReport.priority_actions.slice(0, 5).map((action, i) => {
+                    const urgencyColor = action.urgency === "Act now" ? C.red : action.urgency.includes("3 months") ? "#f97316" : C.amber;
+                    return (
+                      <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 12px", background: C.bg, borderRadius: 10, border: `1px solid ${C.border}` }}>
+                        <div style={{ width: 22, height: 22, borderRadius: 6, background: urgencyColor + "18", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: urgencyColor }}>{i + 1}</span>
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 12, color: C.text, margin: "0 0 2px", lineHeight: 1.4, fontWeight: 500 }}>{action.issue}</p>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: urgencyColor, background: urgencyColor + "15", padding: "1px 7px", borderRadius: 10 }}>{action.urgency}</span>
+                            {action.diy_possible && (
+                              <span style={{ fontSize: 10, color: C.text3 }}>DIY possible</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* Strengths + Watchlist */}
+            {(homeHealthReport.strengths.length > 0 || homeHealthReport.watchlist.length > 0) && (
+              <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 14, flexWrap: "wrap" }}>
+                {homeHealthReport.strengths.length > 0 && (
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.green, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 4 }}>
+                      <CheckCircle2 size={11}/> Strengths
+                    </p>
+                    {homeHealthReport.strengths.map((s, i) => (
+                      <p key={i} style={{ fontSize: 12, color: C.text2, margin: "0 0 4px", lineHeight: 1.4 }}>• {s}</p>
+                    ))}
+                  </div>
+                )}
+                {homeHealthReport.watchlist.length > 0 && (
+                  <div style={{ flex: 1, minWidth: 180 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.amber, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 4 }}>
+                      <AlertTriangle size={11}/> Watchlist
+                    </p>
+                    {homeHealthReport.watchlist.map((w, i) => (
+                      <p key={i} style={{ fontSize: 12, color: C.text2, margin: "0 0 4px", lineHeight: 1.4 }}>• {w}</p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Data gaps */}
+            {homeHealthReport.data_gaps.length > 0 && (
+              <div style={{ padding: "12px 28px 18px", borderTop: `1px solid ${C.border}` }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 6px" }}>Data Gaps</p>
+                <p style={{ fontSize: 11, color: C.text3, margin: 0, lineHeight: 1.5 }}>
+                  {homeHealthReport.data_gaps.slice(0, 3).join(" · ")}
+                </p>
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>
@@ -888,6 +1004,7 @@ export default function Dashboard() {
     inspection_date?: string;
     company_name?: string;
   } | null>(null);
+  const [homeHealthReport, setHomeHealthReport] = useState<HomeHealthReport | null>(null);
   const [docLoading, setDocLoading]         = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved]   = useState(false);
@@ -1190,6 +1307,7 @@ export default function Dashboard() {
         if (result.hvac_year) setHvacYear(String(result.hvac_year));
         if (result.property_address) setAddress(result.property_address);
         setInspectionResult(result);
+        if (result.home_health_report) setHomeHealthReport(result.home_health_report);
         if (result._debug) setParseDebug(result._debug);
         if (result.timeline_events?.length) result.timeline_events.forEach((ev: string) => addEvent(ev));
         else addEvent(`${result.inspection_type ?? "Inspection"} analyzed: ${file.name}`);
@@ -1498,6 +1616,7 @@ export default function Dashboard() {
         <HealthScoreModal
           breakdown={breakdown}
           roofYear={roofYear} hvacYear={hvacYear} year={year}
+          homeHealthReport={homeHealthReport}
           onClose={() => setShowHealthModal(false)}
           onFindVendors={handleFindVendors}
         />

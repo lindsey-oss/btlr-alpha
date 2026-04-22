@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { extractPdfText } from "../../../lib/extractPdfText";
+import { normalizeLegacyFindings, computeHomeHealthReport } from "../../../lib/scoring-engine";
 
 const PROMPT = `Extract structured data from this home inspection report. Respond only with valid JSON in exactly this shape:
 
@@ -78,12 +79,31 @@ export async function POST(req) {
 
   try {
     const parsed = JSON.parse(message);
+    const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
+
+    // ── Scoring Engine Integration ─────────────────────────────────────────
+    // Convert legacy findings + system ages into NormalizedItems, then compute
+    // the full HomeHealthReport. Returned alongside findings for the dashboard.
+    const currentYear = new Date().getFullYear();
+    const roofAgeYears = parsed.roof_year ? currentYear - parsed.roof_year : null;
+    const hvacAgeYears = parsed.hvac_year ? currentYear - parsed.hvac_year : null;
+
+    let home_health_report = null;
+    try {
+      const normalizedItems = normalizeLegacyFindings(findings, roofAgeYears, hvacAgeYears);
+      home_health_report = computeHomeHealthReport(normalizedItems);
+    } catch (engineErr) {
+      console.error("[parse-inspection] Scoring engine error:", engineErr?.message);
+      // Non-fatal — continue without report
+    }
+
     return Response.json({
-      roof_year: parsed.roof_year ?? null,
-      hvac_year: parsed.hvac_year ?? null,
-      findings:  Array.isArray(parsed.findings) ? parsed.findings : [],
+      roof_year:          parsed.roof_year ?? null,
+      hvac_year:          parsed.hvac_year ?? null,
+      findings,
+      home_health_report, // null if engine errored; dashboard falls back gracefully
     });
   } catch {
-    return Response.json({ roof_year: null, hvac_year: null, findings: [] });
+    return Response.json({ roof_year: null, hvac_year: null, findings: [], home_health_report: null });
   }
 }
