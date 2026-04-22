@@ -112,7 +112,7 @@ export async function POST(req) {
       }
 
       // Send to AI (cap at 20k chars — repair docs are usually short)
-      const textToSend = text.slice(0, 20000);
+      const textToSend = extractedText.slice(0, 20000);
 
       const completion = await openai.chat.completions.create({
         model: "gpt-4o-mini",
