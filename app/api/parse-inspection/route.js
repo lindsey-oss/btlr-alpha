@@ -2,6 +2,99 @@ import OpenAI from "openai";
 import { extractPdfTextAsync } from "../../../lib/extractPdfText";
 import { normalizeLegacyFindings, computeHomeHealthReport } from "../../../lib/scoring-engine";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// SMART SECTION EXTRACTOR
+//
+// Inspection reports are structured very differently:
+//   • CBHI / HomeGauge style: 70-100 pages, findings buried mid-report,
+//     "General Summary" section at the end condenses everything.
+//   • HouseMaster / WIN style: shorter, findings inline from page 1.
+//   • Digital / SaaS reports: may start with findings immediately.
+//
+// Strategy:
+//   1. Look for "General Summary" / "Summary of Findings" section — this is
+//      the most information-dense part of long reports.
+//   2. If no summary, look for the first cluster of "Repair or Replace" /
+//      deficiency markers (skip boilerplate intro pages).
+//   3. Fall back to the start of the text if no markers found.
+//
+// Always send up to CHAR_LIMIT chars to OpenAI so we capture all findings.
+// ─────────────────────────────────────────────────────────────────────────────
+const CHAR_LIMIT = 32000; // ~8k tokens — well within gpt-4o-mini context
+
+function smartExtractSection(fullText) {
+  const len = fullText.length;
+
+  // ── Strategy 1: Find "General Summary" / known summary headers ───────────
+  // The second occurrence is the actual section (first is usually the TOC line).
+  const summaryPatterns = [
+    "General Summary",
+    "GENERAL SUMMARY",
+    "Summary of Findings",
+    "SUMMARY OF FINDINGS",
+    "Summary of Conditions",
+    "SUMMARY OF CONDITIONS",
+    "Inspection Summary",
+    "INSPECTION SUMMARY",
+    "DEFICIENCY SUMMARY",
+    "Deficiency Summary",
+    "CONCERNS AND RECOMMENDATIONS",
+    "Concerns and Recommendations",
+  ];
+
+  for (const pattern of summaryPatterns) {
+    let idx = fullText.indexOf(pattern);
+    if (idx === -1) continue;
+
+    // Skip TOC entry — real section is past 30% of the document
+    const threshold = len * 0.3;
+    if (idx < threshold) {
+      // Look for second occurrence (past the TOC)
+      idx = fullText.indexOf(pattern, idx + pattern.length);
+      if (idx === -1 || idx < threshold) continue;
+    }
+
+    const section = fullText.slice(idx, idx + CHAR_LIMIT);
+    console.log(`[parse-inspection] Using "${pattern}" section at char ${idx} (${section.length} chars)`);
+    return section;
+  }
+
+  // ── Strategy 2: Skip intro, find first dense findings block ──────────────
+  // Most reports have Repair/Replace or similar markers where findings start.
+  const findingMarkers = [
+    "Repair or Replace",
+    "REPAIR OR REPLACE",
+    "Repair/Replace",
+    "DEFICIENCY",
+    "Deficiency",
+    "Safety Concern",
+    "SAFETY CONCERN",
+    "Further Evaluation",
+    "FURTHER EVALUATION",
+  ];
+
+  // Search only after first 15% of document (skip cover/intro pages)
+  const searchStart = Math.floor(len * 0.15);
+
+  for (const marker of findingMarkers) {
+    const idx = fullText.indexOf(marker, searchStart);
+    if (idx === -1) continue;
+
+    // Back up 300 chars to capture the section header above the first finding
+    const start = Math.max(searchStart, idx - 300);
+    const section = fullText.slice(start, start + CHAR_LIMIT);
+    console.log(`[parse-inspection] Using findings block at char ${idx} via marker "${marker}" (${section.length} chars)`);
+    return section;
+  }
+
+  // ── Strategy 3: Fall back — send from char 0 but with bigger limit ────────
+  console.log(`[parse-inspection] No summary section found — sending first ${CHAR_LIMIT} chars`);
+  return fullText.slice(0, CHAR_LIMIT);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// PROMPT
+// ─────────────────────────────────────────────────────────────────────────────
 const PROMPT = `Extract structured data from this home inspection report. Respond only with valid JSON in exactly this shape:
 
 {
@@ -9,7 +102,7 @@ const PROMPT = `Extract structured data from this home inspection report. Respon
   "hvac_year": number | null,
   "findings": [
     {
-      "category": "string — e.g. Roof, HVAC, Plumbing, Electrical, Foundation, Pest, Windows, Structural",
+      "category": "string — e.g. Roof, HVAC, Plumbing, Electrical, Foundation, Pest, Windows, Structural, Exterior, Appliances",
       "description": "string — specific issue described in the report",
       "severity": "critical" | "warning" | "info",
       "estimated_cost": number | null,
@@ -24,14 +117,22 @@ Rules:
 - roof_year: the year the roof was last replaced or installed — NOT the year the home was built or constructed. If the report only mentions the home's construction/build year without a specific roof replacement date, return null. Only populate if the report explicitly mentions a roof replacement or installation year.
 - hvac_year: the year the HVAC system was last replaced or installed — NOT the year the home was built or constructed. If the report only mentions the home's construction/build year without a specific HVAC replacement date, return null. Only populate if the report explicitly mentions an HVAC replacement or installation year.
 - findings: ALL deficiencies, repair items, or maintenance issues found in the report
-- severity: "critical" = safety or structural concern; "warning" = significant repair needed; "info" = maintenance recommendation
+- Common report formats use "Repair or Replace" (RR), "Further Evaluation", "Safety Concern", or numbered deficiency items — treat all of these as findings
+- severity rules:
+  • "critical" = immediate safety hazard, structural failure risk, active leak, or mold/pest infestation
+  • "warning" = significant repair needed, system nearing end of life, or recommended by inspector for repair
+  • "info" = maintenance tip, minor cosmetic issue, or informational note
 - estimated_cost: dollar amount if stated in the report, otherwise null
-- age_years: how old this specific system or component is in years, if mentioned in the report; null otherwise
-- remaining_life_years: inspector's stated estimate of remaining useful life in years (e.g. "3-5 years remaining" → 4); null if not stated
-- lifespan_years: typical total expected lifespan for this system type — use these standards: Roof 25, HVAC 15, Water Heater 12, Electrical Panel 40, Plumbing 50, Foundation 100, Windows 20, Deck 15, Siding 20; null if category doesn't apply
+- age_years: how old this specific system or component is in years, if mentioned; null otherwise
+- remaining_life_years: inspector's stated estimate of remaining useful life in years; null if not stated
+- lifespan_years: typical total expected lifespan — use: Roof 25, HVAC 15, Water Heater 12, Electrical Panel 40, Plumbing 50, Foundation 100, Windows 20, Deck 15, Siding 20; null if not applicable
 - Return at most 25 findings, most critical first
-- Omit findings with no description`;
+- Omit findings with no description
+- If the text appears to be a General Summary or list of deficiencies, extract all items listed`;
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ROUTE HANDLER
+// ─────────────────────────────────────────────────────────────────────────────
 export async function POST(req) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -62,8 +163,10 @@ export async function POST(req) {
     try { inspectionText = await req.text(); } catch { /* ignore */ }
   }
 
-  console.log(`[parse-inspection] Extracted ${inspectionText.trim().length} chars from PDF`);
-  if (!inspectionText || inspectionText.trim().length < 20) {
+  const charCount = inspectionText.trim().length;
+  console.log(`[parse-inspection] Extracted ${charCount} chars from PDF`);
+
+  if (!inspectionText || charCount < 20) {
     console.error("[parse-inspection] Text extraction failed or too short — scanned/image PDF or unsupported encoding");
     return Response.json({
       roof_year: null, hvac_year: null, findings: [], home_health_report: null,
@@ -71,10 +174,14 @@ export async function POST(req) {
     });
   }
 
+  // Extract the most findings-rich section of the text
+  const textForAI = smartExtractSection(inspectionText);
+  console.log(`[parse-inspection] Sending ${textForAI.length} chars to OpenAI`);
+
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     response_format: { type: "json_object" },
-    temperature: 0.1, // low but not zero — zero is too strict on imperfect PDF text
+    temperature: 0.1,
     messages: [
       {
         role: "system",
@@ -82,7 +189,7 @@ export async function POST(req) {
       },
       {
         role: "user",
-        content: `${PROMPT}\n\nInspection report:\n${inspectionText.slice(0, 12000)}`,
+        content: `${PROMPT}\n\nInspection report text:\n${textForAI}`,
       },
     ],
   });
@@ -96,15 +203,14 @@ export async function POST(req) {
 
     // ── Sanitize extracted years ───────────────────────────────────────────
     // Roofs last at most ~50 years; HVAC ~30 years. If AI extracted the home's
-    // construction year (e.g. 1940) instead of a system replacement year, the
-    // computed age would be absurd. Null out any year that implies an impossible age.
+    // construction year instead of a system replacement year, null it out.
     const currentYear = new Date().getFullYear();
     const rawRoofYear = parsed.roof_year;
     const rawHvacYear = parsed.hvac_year;
     const safeRoofYear = rawRoofYear && (currentYear - rawRoofYear) <= 50 ? rawRoofYear : null;
     const safeHvacYear = rawHvacYear && (currentYear - rawHvacYear) <= 30 ? rawHvacYear : null;
-    if (rawRoofYear && !safeRoofYear) console.warn(`[parse-inspection] Discarded implausible roof_year ${rawRoofYear} (age ${currentYear - rawRoofYear}y — likely house construction year)`);
-    if (rawHvacYear && !safeHvacYear) console.warn(`[parse-inspection] Discarded implausible hvac_year ${rawHvacYear} (age ${currentYear - rawHvacYear}y — likely house construction year)`);
+    if (rawRoofYear && !safeRoofYear) console.warn(`[parse-inspection] Discarded implausible roof_year ${rawRoofYear}`);
+    if (rawHvacYear && !safeHvacYear) console.warn(`[parse-inspection] Discarded implausible hvac_year ${rawHvacYear}`);
 
     // ── Scoring Engine Integration ─────────────────────────────────────────
     const roofAgeYears = safeRoofYear ? currentYear - safeRoofYear : null;
@@ -116,14 +222,13 @@ export async function POST(req) {
       home_health_report = computeHomeHealthReport(normalizedItems);
     } catch (engineErr) {
       console.error("[parse-inspection] Scoring engine error:", engineErr?.message);
-      // Non-fatal — continue without report
     }
 
     return Response.json({
       roof_year:          safeRoofYear,
       hvac_year:          safeHvacYear,
       findings,
-      home_health_report, // null if engine errored; dashboard falls back gracefully
+      home_health_report,
     });
   } catch {
     return Response.json({ roof_year: null, hvac_year: null, findings: [], home_health_report: null });
