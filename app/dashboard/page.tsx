@@ -1382,15 +1382,11 @@ export default function Dashboard() {
         const newFindings: Finding[] = Array.isArray(result.findings) ? result.findings : [];
 
         // ── Duplicate report detection ──────────────────────────────────────
-        // Primary check: same filename as the last successfully uploaded report.
-        // Fallback: finding-count fingerprint match.
-        // Either match = block the upload and tell the user.
-        const existingFindings = inspectionResult?.findings ?? [];
-        const fingerprint = (f: Finding[]) =>
-          `${f.length}::${[...f].sort((a, b) => a.description.localeCompare(b.description))[0]?.description ?? ""}`;
+        // Only block if the same filename was uploaded in this session already.
+        // We do NOT fingerprint content — after a refresh, findings are loaded
+        // from DB into state, and a legitimate re-upload would falsely match.
         const sameFile = lastInspectionFilename !== null && lastInspectionFilename === file.name;
-        const sameContent = existingFindings.length > 0 && fingerprint(newFindings) === fingerprint(existingFindings);
-        if (sameFile || sameContent) {
+        if (sameFile) {
           setInspectErr("This report is already on file. To update your score, upload a new inspection report.");
           setInspecting(false);
           if (inspRef.current) inspRef.current.value = "";
@@ -1422,7 +1418,8 @@ export default function Dashboard() {
           }
         } catch (dbErr) {
           console.error("[uploadInspection] DB save error:", dbErr);
-          // Non-fatal — findings are still in state for this session
+          // Non-fatal for this session, but log clearly so we can debug
+          addEvent(`⚠️ Inspection parsed but DB save failed: ${dbErr instanceof Error ? dbErr.message : "unknown error"}`);
         }
 
         if (result.roof_year) setRoofYear(String(result.roof_year));
