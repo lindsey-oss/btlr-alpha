@@ -486,6 +486,84 @@ function InspectionReviewModal({
 }
 
 // ── Health Score Modal ────────────────────────────────────────────────────
+// ── Score Dimensions with click-to-reveal info panels ───────────────────────
+const DIMENSION_INFO: Record<string, { what: string; how: string }> = {
+  Safety: {
+    what: "Measures exposure to health and safety hazards — electrical issues, gas leaks, mold, structural risks, and missing safety devices.",
+    how:  "Starts at 100. Each safety-related finding deducts points based on severity: critical hazards (−30), high (−18), medium (−8), low (−3). A score of 100 means no safety concerns were found.",
+  },
+  Readiness: {
+    what: "How prepared your home is for the unexpected — aging systems, deferred maintenance, and conditions that could quickly escalate into costly emergencies.",
+    how:  "Starts at 100. Deductions for systems near end-of-life (−8 each), active safety risks (−10), deferred maintenance (−6), and moisture or leak indicators (−8). Higher means fewer near-term risk factors.",
+  },
+  Maintenance: {
+    what: "Reflects how well the home has been maintained over time — routine upkeep, servicing, and preventative care across all major systems.",
+    how:  "Baseline of 85. Adjusted up for well-maintained systems (+4) and down for deferred (−8) or poor maintenance (−15). Reflects the cumulative care history across all findings.",
+  },
+  Confidence: {
+    what: "How complete and reliable the data behind your score is — based on inspection coverage, document quality, and how many systems were actually observed.",
+    how:  "Average inspector confidence across all findings (0–100%). Low confidence means some areas had limited data and scores are blended toward a neutral baseline of 72. Upload more inspection documents to raise this.",
+  },
+};
+
+function RichScoreDimensions({ report }: { report: HomeHealthReport }) {
+  const [activeTooltip, setActiveTooltip] = useState<string | null>(null);
+
+  const dims = [
+    { label: "Safety",      val: report.safety_score,      color: report.safety_score >= 80 ? C.green : report.safety_score >= 60 ? C.amber : C.red },
+    { label: "Readiness",   val: report.readiness_score,   color: report.readiness_score >= 80 ? C.green : report.readiness_score >= 60 ? C.amber : C.red },
+    { label: "Maintenance", val: report.maintenance_score, color: report.maintenance_score >= 80 ? C.green : report.maintenance_score >= 60 ? C.amber : C.red },
+    { label: "Confidence",  val: report.confidence_score,  color: C.text2 },
+  ];
+
+  return (
+    <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}` }}>
+      <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>Score Dimensions</p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+        {dims.map(({ label, val, color }) => {
+          const isOpen = activeTooltip === label;
+          const info = DIMENSION_INFO[label];
+          return (
+            <div key={label} style={{ background: C.bg, borderRadius: 10, border: `1px solid ${isOpen ? C.accent : C.border}`, overflow: "hidden", transition: "border-color 0.15s" }}>
+              {/* Card header */}
+              <div style={{ padding: "10px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 2 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.06em", margin: 0 }}>{label}</p>
+                  <button
+                    onClick={() => setActiveTooltip(isOpen ? null : label)}
+                    style={{
+                      width: 16, height: 16, borderRadius: "50%",
+                      background: isOpen ? C.accent : C.border,
+                      border: "none", cursor: "pointer", padding: 0,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      flexShrink: 0, transition: "background 0.15s",
+                    }}
+                    aria-label={`Info about ${label} score`}
+                  >
+                    <span style={{ fontSize: 9, fontWeight: 800, color: isOpen ? "white" : C.text3, lineHeight: 1 }}>i</span>
+                  </button>
+                </div>
+                <p style={{ fontSize: 22, fontWeight: 800, color, margin: 0, letterSpacing: "-0.5px" }}>
+                  {val}<span style={{ fontSize: 12, fontWeight: 400, color: C.text3 }}>/100</span>
+                </p>
+              </div>
+              {/* Expandable info panel */}
+              {isOpen && info && (
+                <div style={{ padding: "10px 12px 12px", borderTop: `1px solid ${C.accent}22`, background: `${C.accent}08` }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.accent, margin: "0 0 4px" }}>What it measures</p>
+                  <p style={{ fontSize: 11, color: C.text2, margin: "0 0 8px", lineHeight: 1.5 }}>{info.what}</p>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.accent, margin: "0 0 4px" }}>How it&apos;s calculated</p>
+                  <p style={{ fontSize: 11, color: C.text2, margin: 0, lineHeight: 1.5 }}>{info.how}</p>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function HealthScoreModal({
   breakdown, roofYear, hvacYear, year, homeHealthReport, onClose, onFindVendors,
 }: {
@@ -670,23 +748,8 @@ function HealthScoreModal({
         {/* ── Rich Report (from scoring engine) ───────────────────────── */}
         {homeHealthReport && (
           <>
-            {/* Sub-scores */}
-            <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}` }}>
-              <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>Score Dimensions</p>
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-                {[
-                  { label: "Safety",      val: homeHealthReport.safety_score,      color: homeHealthReport.safety_score >= 80 ? C.green : homeHealthReport.safety_score >= 60 ? C.amber : C.red },
-                  { label: "Readiness",   val: homeHealthReport.readiness_score,   color: homeHealthReport.readiness_score >= 80 ? C.green : homeHealthReport.readiness_score >= 60 ? C.amber : C.red },
-                  { label: "Maintenance", val: homeHealthReport.maintenance_score, color: homeHealthReport.maintenance_score >= 80 ? C.green : homeHealthReport.maintenance_score >= 60 ? C.amber : C.red },
-                  { label: "Confidence",  val: homeHealthReport.confidence_score,  color: C.text2 },
-                ].map(({ label, val, color }) => (
-                  <div key={label} style={{ background: C.bg, borderRadius: 10, padding: "10px 14px", border: `1px solid ${C.border}` }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 2px" }}>{label}</p>
-                    <p style={{ fontSize: 22, fontWeight: 800, color, margin: 0, letterSpacing: "-0.5px" }}>{val}<span style={{ fontSize: 12, fontWeight: 400, color: C.text3 }}>/100</span></p>
-                  </div>
-                ))}
-              </div>
-            </div>
+            {/* Sub-scores with info tooltips */}
+            <RichScoreDimensions report={homeHealthReport} />
 
             {/* Category scores */}
             {homeHealthReport.category_scores.some(cs => !cs.limited_data) && (
