@@ -1251,8 +1251,9 @@ export default function Dashboard() {
   async function loadProperty() {
     try {
       const { data, error } = await supabase.from("properties").select("*").limit(1).maybeSingle();
-      if (error) { console.error("loadProperty error:", error.message); return; }
-      if (!data) return;
+      if (error) { console.error("[loadProperty] DB read error:", error.message, error.code); return; }
+      if (!data) { console.log("[loadProperty] No property row found for this user"); return; }
+      console.log(`[loadProperty] Loaded property — ${(data.inspection_findings ?? []).length} findings, statuses: ${JSON.stringify(data.finding_statuses ?? {})}`)
       setAddress(data.address ?? "My Home");
       setRoofYear(data.roof_year?.toString() ?? "");
       setHvacYear(data.hvac_year?.toString() ?? "");
@@ -1400,34 +1401,44 @@ export default function Dashboard() {
         const freshStatuses: Record<string, FindingStatus> = {};
         setFindingStatuses(freshStatuses);
 
-        // ── Persist to DB — always REPLACE, never append ───────────────────
-        // This is the source of truth. loadProperty() reads from here on refresh.
-        try {
-          const { data: existing } = await supabase.from("properties").select("id").limit(1).maybeSingle();
-          const { data: { session } } = await supabase.auth.getSession();
-          const userId = session?.user?.id;
-          const inspectionData = {
-            inspection_findings:   newFindings,
-            inspection_type:       result.inspection_type    ?? "Home Inspection",
-            inspection_summary:    result.summary            ?? null,
-            recommendations:       result.recommendations    ?? [],
-            total_estimated_cost:  result.total_estimated_cost ?? null,
-            inspection_date:       result.inspection_date    ?? null,
-            inspector_company:     result.company_name       ?? null,
-            finding_statuses:      freshStatuses,   // also clear in DB
-            ...(result.roof_year ? { roof_year: result.roof_year } : {}),
-            ...(result.hvac_year ? { hvac_year: result.hvac_year } : {}),
-            updated_at: new Date().toISOString(),
-          };
-          if (existing?.id) {
-            await supabase.from("properties").update(inspectionData).eq("id", existing.id);
-          } else if (userId) {
-            await supabase.from("properties").insert({ ...inspectionData, address: address || "My Home", user_id: userId });
-          }
-          console.log(`[uploadInspection] Saved ${newFindings.length} findings to DB`);
-        } catch (dbErr) {
-          console.error("[uploadInspection] DB save error:", dbErr);
-          addEvent(`⚠️ Inspection parsed but DB save failed: ${dbErr instanceof Error ? dbErr.message : "unknown error"}`);
+        // ── Persist to DB — upsert by user_id (atomic, no silent failures) ──
+        // Requires: SUPABASE_SCORE_PERSIST_FIX.sql run once in Supabase.
+        // This is the source of truth — loadProperty() reads from here on refresh.
+        const { data: { session: saveSession } } = await supabase.auth.getSession();
+        const userId = saveSession?.user?.id;
+        if (!userId) {
+          setInspectErr("Session expired — please log out and back in, then re-upload.");
+          setInspecting(false);
+          if (inspRef.current) inspRef.current.value = "";
+          return;
+        }
+
+        const inspectionPayload = {
+          user_id:               userId,
+          address:               address || "My Home",
+          inspection_findings:   newFindings,
+          inspection_type:       result.inspection_type      ?? "Home Inspection",
+          inspection_summary:    result.summary              ?? null,
+          recommendations:       result.recommendations      ?? [],
+          total_estimated_cost:  result.total_estimated_cost ?? null,
+          inspection_date:       result.inspection_date      ?? null,
+          inspector_company:     result.company_name         ?? null,
+          finding_statuses:      freshStatuses,
+          ...(result.roof_year ? { roof_year: result.roof_year } : {}),
+          ...(result.hvac_year ? { hvac_year: result.hvac_year } : {}),
+          updated_at:            new Date().toISOString(),
+        };
+
+        const { error: upsertErr } = await supabase
+          .from("properties")
+          .upsert(inspectionPayload, { onConflict: "user_id" });
+
+        if (upsertErr) {
+          // Surface the error visibly — don't hide it
+          console.error("[uploadInspection] DB upsert failed:", upsertErr);
+          setInspectErr(`Report parsed but save failed: ${upsertErr.message}. Your score may not persist after refresh.`);
+        } else {
+          console.log(`[uploadInspection] ✓ Saved ${newFindings.length} findings to DB`);
         }
 
         if (result.roof_year) setRoofYear(String(result.roof_year));
