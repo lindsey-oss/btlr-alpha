@@ -1862,7 +1862,7 @@ export default function Dashboard() {
                 { label: "Account Email",       value: user?.email ?? "—",           connected: false },
                 { label: "OpenAI",              value: "Connected",                   connected: true },
                 { label: "Google Maps",         value: process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ? "Connected" : "Not set — add NEXT_PUBLIC_GOOGLE_MAPS_KEY in Vercel", connected: !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY },
-                { label: "Email Notifications", value: "Add RESEND_API_KEY in Vercel to enable", connected: false },
+                { label: "Email Notifications", value: "Coming soon", connected: false },
               ].map((item, i) => (
                 <div key={i} style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.border}`, padding: "14px 18px" }}>
                   <p style={{ fontSize: 11, color: C.text3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", margin: 0 }}>{item.label}</p>
@@ -1942,7 +1942,7 @@ export default function Dashboard() {
                       <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>Full Breakdown</span>
                       <ChevronRight size={13} color="rgba(255,255,255,0.4)"/>
                     </div>
-                    <p style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", margin: 0 }}>Click to explore</p>
+                    <p style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", margin: 0 }}>Tap to see full breakdown</p>
                   </div>
                   )}
                 </div>
@@ -2423,37 +2423,7 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Demo Mode */}
-            <div style={{ ...card(), background: "#f0fdf4", border: `1px solid ${C.green}` }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
-                <div>
-                  <p style={{ fontWeight: 700, fontSize: 15, color: C.green, marginBottom: 3 }}>Load Demo Property</p>
-                  <p style={{ fontSize: 13, color: C.text2 }}>Instantly populate with a sample home for demos or testing.</p>
-                </div>
-                <button onClick={() => {
-                  setAddress("4589 Warwick Circle, Oceanside CA 92056");
-                  setRoofYear("2004"); setHvacYear("2012");
-                  addEvent("Roof inspection completed — replacement recommended ($12,500)");
-                  addEvent("HVAC system aging — service due ($350)");
-                  addEvent("Electrical panel upgrade needed ($3,200)");
-                  setInspectDone(true); setInspectErr("");
-                  setInspectionResult({
-                    inspection_type: "General Home Inspection",
-                    summary: "97-page inspection completed. Roof is 20+ years old and needs replacement. HVAC is aging. Minor electrical and plumbing items noted.",
-                    findings: [
-                      { category: "Roof",       description: "Roof is original (2004), showing significant wear. Replacement recommended within 1–2 years.", severity: "critical", estimated_cost: 12500 },
-                      { category: "HVAC",       description: "HVAC unit from 2012, nearing end of service life. Annual service recommended.",                 severity: "warning",  estimated_cost: 350   },
-                      { category: "Electrical", description: "Panel upgrade recommended for modern load requirements. Current panel is 100A.",                  severity: "warning",  estimated_cost: 3200  },
-                      { category: "Plumbing",   description: "Minor drip at master bathroom faucet. Easy fix — replace cartridge.",                             severity: "info",     estimated_cost: 150   },
-                    ],
-                    recommendations: ["Replace roof within 1–2 years", "Service HVAC annually", "Budget for electrical panel upgrade"],
-                    total_estimated_cost: 16200,
-                  });
-                }} style={{ padding: "10px 22px", borderRadius: 10, background: C.green, color: "#fff", fontWeight: 600, fontSize: 14, border: "none", cursor: "pointer" }}>
-                  Load Demo
-                </button>
-              </div>
-            </div>
+            {/* Demo Mode — hidden in production */}
 
             {/* Onboarding prompt */}
             {!roofYear && !hvacYear && !inspectDone && (
