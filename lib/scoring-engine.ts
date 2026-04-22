@@ -380,6 +380,11 @@ interface LegacyFinding {
   description: string;
   severity: "critical" | "warning" | "info";
   estimated_cost?: number | null;
+  // Age/lifecycle data extracted from inspection report text
+  age_years?: number | null;           // how old this system/component is
+  remaining_life_years?: number | null; // inspector's stated remaining useful life
+  lifespan_years?: number | null;       // typical total lifespan for this system type
+  source?: string;                      // "photo" | "inspection_report"
 }
 
 function severityToCondition(severity: string): { condition_label: string; condition_score: number } {
@@ -406,10 +411,48 @@ function estimatedRemainingLife(severity: string): number {
   return 65;
 }
 
-function toReplacementWindow(severity: string, cost?: number | null): string {
-  if (severity === "critical") return "immediate_to_1_year";
-  if (severity === "warning")  return "1_to_3_years";
+// Compute remaining life % from real inspection data when available.
+// Priority: remaining_life_years/lifespan_years > age_years/lifespan_years > severity fallback.
+function computeRemainingLifePct(f: LegacyFinding): number {
+  if (f.remaining_life_years != null && f.lifespan_years != null && f.lifespan_years > 0) {
+    return Math.max(0, Math.min(100, (f.remaining_life_years / f.lifespan_years) * 100));
+  }
+  if (f.age_years != null && f.lifespan_years != null && f.lifespan_years > 0) {
+    const remaining = f.lifespan_years - f.age_years;
+    return Math.max(0, Math.min(100, (remaining / f.lifespan_years) * 100));
+  }
+  return estimatedRemainingLife(f.severity);
+}
+
+// Derive replacement window from real remaining life data when available.
+function toReplacementWindow(f: LegacyFinding): string {
+  // Use real remaining life data from inspection report when present
+  const remaining = f.remaining_life_years ?? (
+    f.age_years != null && f.lifespan_years != null ? f.lifespan_years - f.age_years : null
+  );
+  if (remaining !== null) {
+    if (remaining <= 0)  return "immediate_to_1_year";
+    if (remaining <= 2)  return "immediate_to_1_year";
+    if (remaining <= 5)  return "1_to_3_years";
+    return "3_plus_years";
+  }
+  // Fall back to severity-based estimate
+  if (f.severity === "critical") return "immediate_to_1_year";
+  if (f.severity === "warning")  return "1_to_3_years";
   return "3_plus_years";
+}
+
+// Derive condition score from real age/remaining life when available
+function computeConditionFromAge(f: LegacyFinding): { condition_label: string; condition_score: number } | null {
+  if (f.age_years == null || f.lifespan_years == null || f.lifespan_years <= 0) return null;
+  const pctUsed = f.age_years / f.lifespan_years;
+  if (pctUsed >= 0.95) return { condition_label: "failed",      condition_score: 10 };
+  if (pctUsed >= 0.85) return { condition_label: "very_poor",   condition_score: 30 };
+  if (pctUsed >= 0.75) return { condition_label: "poor",        condition_score: 45 };
+  if (pctUsed >= 0.60) return { condition_label: "aged",        condition_score: 60 };
+  if (pctUsed >= 0.45) return { condition_label: "fair",        condition_score: 65 };
+  if (pctUsed >= 0.25) return { condition_label: "average",     condition_score: 75 };
+  return { condition_label: "good", condition_score: 85 };
 }
 
 export function normalizeLegacyFindings(
@@ -418,8 +461,37 @@ export function normalizeLegacyFindings(
   hvacAgeYears?: number | null,
 ): NormalizedItem[] {
   const items: NormalizedItem[] = findings.map(f => {
-    const { condition_label, condition_score } = severityToCondition(f.severity);
+    // Use real age/condition data from inspection report when available;
+    // fall back to severity-based estimates when not.
+    const ageCondition   = computeConditionFromAge(f);
+    const { condition_label, condition_score } = ageCondition ?? severityToCondition(f.severity);
+    const remainingPct   = computeRemainingLifePct(f);
+    const replacementWin = toReplacementWindow(f);
     const category = toCategoryKey(f.category);
+
+    // Inspector confidence is higher when real age data is present
+    const hasRealAgeData = f.age_years != null || f.remaining_life_years != null;
+    const confidence = f.source === "photo" ? 0.85 : hasRealAgeData ? 0.88 : 0.75;
+
+    // Build a rich recommended action that includes replacement timeline when known
+    let recommended_action: string;
+    const remaining = f.remaining_life_years ?? (
+      f.age_years != null && f.lifespan_years != null ? f.lifespan_years - f.age_years : null
+    );
+    if (remaining !== null && remaining <= 0) {
+      recommended_action = `Past expected lifespan — replace immediately`;
+    } else if (remaining !== null && remaining <= 2) {
+      recommended_action = `Replace within ${remaining <= 1 ? "1 year" : "1–2 years"}`;
+    } else if (remaining !== null && remaining <= 5) {
+      recommended_action = `Plan replacement in ${Math.round(remaining)} years`;
+    } else if (f.severity === "critical") {
+      recommended_action = "Address immediately — contact a licensed contractor";
+    } else if (f.severity === "warning") {
+      recommended_action = "Schedule repair within 6–12 months";
+    } else {
+      recommended_action = "Monitor and perform routine maintenance";
+    }
+
     return {
       system:                           f.category,
       component:                        f.category,
@@ -429,20 +501,20 @@ export function normalizeLegacyFindings(
       deficiency_severity:              severityToDeficiency(f.severity),
       safety_impact:                    severityToSafety(f.severity),
       functional_status:                f.severity === "critical" ? "partially" : "functional",
-      estimated_remaining_life_percent: estimatedRemainingLife(f.severity),
+      estimated_remaining_life_percent: remainingPct,
       maintenance_state:                f.severity === "critical" ? "deferred" : f.severity === "warning" ? "adequate" : "adequate",
       issue_count:                      1,
-      inspector_confidence:             0.75,  // moderate confidence for AI-extracted findings
-      source_type:                      "inspection_report",
+      inspector_confidence:             confidence,
+      source_type:                      f.source ?? "inspection_report",
       notes:                            f.description,
-      recommended_action:               f.severity === "critical"
-        ? "Address immediately — contact a licensed contractor"
-        : f.severity === "warning"
-          ? "Schedule repair within 6–12 months"
-          : "Monitor and perform routine maintenance",
-      cost_urgency:                     f.severity === "critical" ? "immediate" : f.severity === "warning" ? "3_to_6_months" : "monitor_only",
-      estimated_age_years:              null,
-      replacement_window:               toReplacementWindow(f.severity, f.estimated_cost),
+      recommended_action,
+      cost_urgency:                     remaining != null && remaining <= 2 ? "immediate"
+                                      : remaining != null && remaining <= 5 ? "3_to_6_months"
+                                      : f.severity === "critical" ? "immediate"
+                                      : f.severity === "warning" ? "3_to_6_months"
+                                      : "monitor_only",
+      estimated_age_years:              f.age_years ?? null,
+      replacement_window:               replacementWin,
     };
   });
 

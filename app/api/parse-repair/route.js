@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
-import { inflateRawSync, inflateSync, unzipSync } from "zlib";
+import { extractPdfTextAsync } from "../../../lib/extractPdfText";
 
 export const maxDuration = 60;
 
@@ -26,74 +26,6 @@ Rules:
 - system_category: pick the closest match from the allowed list
 - line_items: extract specific work items, max 8 items
 - If the document is a warranty, set is_completed to true and note coverage in notes`;
-
-// ── PDF extraction (same 3-strategy approach as parse-inspection) ─────────────
-function extractViaStreams(buffer) {
-  const raw = buffer.toString("latin1");
-  const chunks = [];
-  const streamRe = /stream[\r\n]+([\s\S]*?)[\r\n]+endstream/g;
-  let m;
-  while ((m = streamRe.exec(raw)) !== null) {
-    const bytes = Buffer.from(m[1], "latin1");
-    let content = "";
-    const tries = [
-      () => inflateRawSync(bytes).toString("utf8"),
-      () => inflateSync(bytes).toString("utf8"),
-      () => unzipSync(bytes).toString("utf8"),
-      () => m[1],
-    ];
-    for (const fn of tries) {
-      try { content = fn(); break; } catch {}
-    }
-    const textRe = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*(?:Tj|'|")|(\[(?:[^[\]]*(?:\([^)]*\)[^[\]]*)*)\])\s*TJ/g;
-    let t;
-    while ((t = textRe.exec(content)) !== null) {
-      if (t[1]) {
-        chunks.push(t[1]
-          .replace(/\\n/g, "\n").replace(/\\r/g, "\r")
-          .replace(/\\t/g, "\t").replace(/\\\\/g, "\\")
-          .replace(/\\([0-7]{1,3})/g, (_, o) => String.fromCharCode(parseInt(o, 8)))
-          .replace(/\\(.)/g, "$1"));
-      } else if (t[2]) {
-        const inner = t[2].match(/\(([^)\\]*(?:\\.[^)\\]*)*)\)/g);
-        if (inner) chunks.push(inner.map(s => s.slice(1, -1)).join(""));
-      }
-    }
-  }
-  return chunks.join(" ").replace(/\s+/g, " ").trim();
-}
-
-function extractViaStrings(buffer) {
-  const raw = buffer.toString("latin1");
-  const runs = raw.match(/[ -~]{5,}/g) || [];
-  const useful = runs.filter(s => {
-    const wordChars = (s.match(/[A-Za-z0-9 ,.;:!?'"-]/g) || []).length;
-    return wordChars / s.length > 0.6 && /[A-Za-z]{2,}/.test(s);
-  });
-  return useful.join(" ").replace(/\s+/g, " ").trim();
-}
-
-function extractViaUtf16(buffer) {
-  try {
-    const text = buffer.toString("utf16le");
-    const runs = text.match(/[ -~\u00A0-\u00FF]{5,}/g) || [];
-    return runs.join(" ").replace(/\s+/g, " ").trim();
-  } catch { return ""; }
-}
-
-function extractTextFromPdf(buffer) {
-  const streamText = extractViaStreams(buffer);
-  if (streamText.length >= 200) return { text: streamText, method: "streams" };
-
-  const stringsText = extractViaStrings(buffer);
-  if (stringsText.length >= 100) return { text: stringsText, method: "strings" };
-
-  const utf16Text = extractViaUtf16(buffer);
-  if (utf16Text.length >= 100) return { text: utf16Text, method: "utf16" };
-
-  const best = [streamText, stringsText, utf16Text].sort((a, b) => b.length - a.length)[0];
-  return { text: best, method: "best-effort" };
-}
 
 function safeParseJson(raw) {
   try {
@@ -168,12 +100,11 @@ export async function POST(req) {
       if (!pdfRes.ok) throw new Error(`Download failed: ${pdfRes.status}`);
 
       const pdfBuffer = Buffer.from(await pdfRes.arrayBuffer());
-      const { text, method } = extractTextFromPdf(pdfBuffer);
-      extractedText = text;
+      extractedText = await extractPdfTextAsync(pdfBuffer);
 
-      console.log(`[parse-repair] Extraction: ${method}, ${text.length} chars`);
+      console.log(`[parse-repair] Extraction: ${extractedText.length} chars`);
 
-      if (text.length < 30) {
+      if (extractedText.length < 30) {
         return Response.json({
           success: false,
           error: "Could not extract text from this document. Please try a text-based PDF."

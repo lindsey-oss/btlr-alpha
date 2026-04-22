@@ -3,7 +3,7 @@
 
 import OpenAI from "openai";
 import { createClient } from "@supabase/supabase-js";
-import { extractPdfText } from "../../../lib/extractPdfText";
+import { extractPdfTextAsync } from "../../../lib/extractPdfText";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -18,7 +18,7 @@ export async function POST(req) {
     if (contentType.includes("application/pdf") || contentType.includes("octet-stream")) {
       const arrayBuffer = await req.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      text = extractPdfText(buffer);
+      text = await extractPdfTextAsync(buffer);
     } else {
       text = await req.text();
     }
