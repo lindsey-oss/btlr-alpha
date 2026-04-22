@@ -14,6 +14,7 @@ import {
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
 import type { HomeHealthReport } from "../../lib/scoring-engine";
+import { normalizeLegacyFindings, computeHomeHealthReport } from "../../lib/scoring-engine";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface TimelineEvent { date: string; event: string }
@@ -1207,6 +1208,17 @@ export default function Dashboard() {
           company_name:         data.inspector_company   ?? undefined,
         });
         setInspectDone(true);
+
+        // Recompute the Home Health Report from persisted findings so the
+        // rich breakdown (category scores, priority actions, etc.) survives
+        // page refresh without needing a separate DB column.
+        try {
+          const currentYear = new Date().getFullYear();
+          const roofAge = data.roof_year ? currentYear - data.roof_year : null;
+          const hvacAge = data.hvac_year ? currentYear - data.hvac_year : null;
+          const normalized = normalizeLegacyFindings(data.inspection_findings ?? [], roofAge, hvacAge);
+          setHomeHealthReport(computeHomeHealthReport(normalized));
+        } catch { /* non-fatal — modal just won't show rich sections */ }
       }
       if (data.home_value)          setHomeValue(data.home_value);
       if (data.property_tax_annual) setPropertyTax(data.property_tax_annual);
