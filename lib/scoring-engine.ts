@@ -375,10 +375,12 @@ export function computeHomeHealthReport(items: NormalizedItem[]): HomeHealthRepo
 // NORMALIZE EXISTING FINDINGS → NormalizedItem[]
 // Bridge between the current simple Finding format and the engine
 // ─────────────────────────────────────────────────────────────────
-interface LegacyFinding {
+// Exported so dashboard can type-check calls; severity is widened to string
+// so raw OpenAI/DB findings don't need an explicit cast.
+export interface LegacyFinding {
   category: string;
   description: string;
-  severity: "critical" | "warning" | "info";
+  severity: string;                     // "critical" | "warning" | "info" (widened for callers)
   estimated_cost?: number | null;
   // Age/lifecycle data extracted from inspection report text
   age_years?: number | null;           // how old this system/component is
