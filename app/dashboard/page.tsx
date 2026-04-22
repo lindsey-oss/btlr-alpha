@@ -1286,7 +1286,6 @@ export default function Dashboard() {
       // Load photo findings
       if (data.photo_findings?.length > 0) {
         setPhotoFindings(data.photo_findings ?? []);
-        setPhotosDone(true);
       }
 
       // Enter block when inspection_type is set — it is always written to DB by
