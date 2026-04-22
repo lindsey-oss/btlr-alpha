@@ -1393,6 +1393,13 @@ export default function Dashboard() {
           return;
         }
 
+        // ── Reset finding statuses on new inspection ───────────────────────
+        // Old "completed" statuses from a prior inspection would mask new findings
+        // and keep the score artificially high. Clear them so every finding from
+        // the new report starts as "open" and actually affects the score.
+        const freshStatuses: Record<string, FindingStatus> = {};
+        setFindingStatuses(freshStatuses);
+
         // ── Persist to DB — always REPLACE, never append ───────────────────
         // This is the source of truth. loadProperty() reads from here on refresh.
         try {
@@ -1407,6 +1414,7 @@ export default function Dashboard() {
             total_estimated_cost:  result.total_estimated_cost ?? null,
             inspection_date:       result.inspection_date    ?? null,
             inspector_company:     result.company_name       ?? null,
+            finding_statuses:      freshStatuses,   // also clear in DB
             ...(result.roof_year ? { roof_year: result.roof_year } : {}),
             ...(result.hvac_year ? { hvac_year: result.hvac_year } : {}),
             updated_at: new Date().toISOString(),
@@ -1416,9 +1424,9 @@ export default function Dashboard() {
           } else if (userId) {
             await supabase.from("properties").insert({ ...inspectionData, address: address || "My Home", user_id: userId });
           }
+          console.log(`[uploadInspection] Saved ${newFindings.length} findings to DB`);
         } catch (dbErr) {
           console.error("[uploadInspection] DB save error:", dbErr);
-          // Non-fatal for this session, but log clearly so we can debug
           addEvent(`⚠️ Inspection parsed but DB save failed: ${dbErr instanceof Error ? dbErr.message : "unknown error"}`);
         }
 
@@ -1429,13 +1437,16 @@ export default function Dashboard() {
         setLastInspectionFilename(file.name);
         if (result.home_health_report) setHomeHealthReport(result.home_health_report);
         if (result._debug) setParseDebug(result._debug);
-        if (result.timeline_events?.length) result.timeline_events.forEach((ev: string) => addEvent(ev));
-        else addEvent(`${result.inspection_type ?? "Inspection"} analyzed: ${file.name}`);
+        const findingCount = newFindings.length;
+        addEvent(`${result.inspection_type ?? "Inspection"} analyzed: ${findingCount} finding${findingCount !== 1 ? "s" : ""} detected`);
         setInspectDone(true);
         // Show post-inspection review modal if there are findings to review
         if (newFindings.length > 0) {
           setReviewFindings(newFindings);
           setShowReviewModal(true);
+        } else {
+          // No findings — tell the user so they know something may be wrong
+          setInspectErr("No findings extracted from this document. Try a different PDF or check that it's a readable inspection report.");
         }
       }
     } catch (err: unknown) { setInspectErr(err instanceof Error ? err.message : "Upload failed"); }
