@@ -119,7 +119,7 @@ function computeHealthScore(
     byKey.get(k)!.push({ f, idx: i });
   }
 
-  for (const [_key, items] of byKey.entries()) {
+  for (const [key, items] of byKey.entries()) {
     const findings = items.map(it => it.f);
     // A category is resolved only if ALL its individual findings are resolved
     const isResolved = items.every(it => {
