@@ -1378,6 +1378,49 @@ export default function Dashboard() {
       if (result.error && !result.success) {
         setInspectErr(result.error || "Analysis failed — please try again.");
       } else {
+        const newFindings: Finding[] = Array.isArray(result.findings) ? result.findings : [];
+
+        // ── Duplicate report detection ──────────────────────────────────────
+        // Fingerprint = count + sorted first-finding description.
+        // If identical to what's already stored, don't overwrite — same report.
+        const existingFindings = inspectionResult?.findings ?? [];
+        const fingerprint = (f: Finding[]) =>
+          `${f.length}::${[...f].sort((a, b) => a.description.localeCompare(b.description))[0]?.description ?? ""}`;
+        if (existingFindings.length > 0 && fingerprint(newFindings) === fingerprint(existingFindings)) {
+          setInspectErr("This report appears to already be on file. Upload a different inspection report to replace it.");
+          setInspecting(false);
+          if (inspRef.current) inspRef.current.value = "";
+          return;
+        }
+
+        // ── Persist to DB — always REPLACE, never append ───────────────────
+        // This is the source of truth. loadProperty() reads from here on refresh.
+        try {
+          const { data: existing } = await supabase.from("properties").select("id").limit(1).maybeSingle();
+          const { data: { session } } = await supabase.auth.getSession();
+          const userId = session?.user?.id;
+          const inspectionData = {
+            inspection_findings:   newFindings,
+            inspection_type:       result.inspection_type    ?? "Home Inspection",
+            inspection_summary:    result.summary            ?? null,
+            recommendations:       result.recommendations    ?? [],
+            total_estimated_cost:  result.total_estimated_cost ?? null,
+            inspection_date:       result.inspection_date    ?? null,
+            inspector_company:     result.company_name       ?? null,
+            ...(result.roof_year ? { roof_year: result.roof_year } : {}),
+            ...(result.hvac_year ? { hvac_year: result.hvac_year } : {}),
+            updated_at: new Date().toISOString(),
+          };
+          if (existing?.id) {
+            await supabase.from("properties").update(inspectionData).eq("id", existing.id);
+          } else if (userId) {
+            await supabase.from("properties").insert({ ...inspectionData, address: address || "My Home", user_id: userId });
+          }
+        } catch (dbErr) {
+          console.error("[uploadInspection] DB save error:", dbErr);
+          // Non-fatal — findings are still in state for this session
+        }
+
         if (result.roof_year) setRoofYear(String(result.roof_year));
         if (result.hvac_year) setHvacYear(String(result.hvac_year));
         if (result.property_address) setAddress(result.property_address);
@@ -1388,8 +1431,8 @@ export default function Dashboard() {
         else addEvent(`${result.inspection_type ?? "Inspection"} analyzed: ${file.name}`);
         setInspectDone(true);
         // Show post-inspection review modal if there are findings to review
-        if (result.findings?.length > 0) {
-          setReviewFindings(result.findings);
+        if (newFindings.length > 0) {
+          setReviewFindings(newFindings);
           setShowReviewModal(true);
         }
       }
