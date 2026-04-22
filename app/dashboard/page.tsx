@@ -38,9 +38,15 @@ function toCategoryKey(category: string): string {
   return (category || "general").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+// Per-finding status key: category + global index in allFindings array
+function findingKey(category: string, index: number): string {
+  return `${toCategoryKey(category)}_${index}`;
+}
+
 // Findings are "active" if status is open, not_sure, or not yet set
-function isActiveFinding(finding: Finding, statuses: Record<string, FindingStatus>): boolean {
-  const key = toCategoryKey(finding.category);
+// index = position in the global allFindings array
+function isActiveFinding(finding: Finding, index: number, statuses: Record<string, FindingStatus>): boolean {
+  const key = findingKey(finding.category, index);
   const status = statuses[key] ?? "open";
   return status === "open" || status === "not_sure";
 }
@@ -105,15 +111,21 @@ function computeHealthScore(
   }
 
   // B. Finding deductions — grouped by category key for per-system cap ─
-  const byKey = new Map<string, Finding[]>();
-  for (const f of allFindings) {
+  const byKey = new Map<string, { f: Finding; idx: number }[]>();
+  for (let i = 0; i < allFindings.length; i++) {
+    const f = allFindings[i];
     const k = toCategoryKey(f.category);
     if (!byKey.has(k)) byKey.set(k, []);
-    byKey.get(k)!.push(f);
+    byKey.get(k)!.push({ f, idx: i });
   }
 
-  for (const [key, findings] of byKey.entries()) {
-    const isResolved = statuses[key] === "completed" || statuses[key] === "dismissed";
+  for (const [_key, items] of byKey.entries()) {
+    const findings = items.map(it => it.f);
+    // A category is resolved only if ALL its individual findings are resolved
+    const isResolved = items.every(it => {
+      const s = statuses[findingKey(it.f.category, it.idx)] ?? "open";
+      return s === "completed" || s === "dismissed";
+    });
     const category   = findings[0].category;
 
     // Critical: -15 each, uncapped
@@ -353,15 +365,16 @@ function InspectionReviewModal({
 }) {
   const [localStatuses, setLocalStatuses] = useState<Record<string, FindingStatus>>(() => {
     const init: Record<string, FindingStatus> = {};
-    for (const f of findings) {
-      const key = toCategoryKey(f.category);
+    for (let i = 0; i < findings.length; i++) {
+      const f = findings[i];
+      const key = findingKey(f.category, i);
       init[key] = initialStatuses[key] ?? "open";
     }
     return init;
   });
 
-  function setStatus(category: string, status: FindingStatus) {
-    setLocalStatuses(prev => ({ ...prev, [toCategoryKey(category)]: status }));
+  function setStatus(index: number, category: string, status: FindingStatus) {
+    setLocalStatuses(prev => ({ ...prev, [findingKey(category, index)]: status }));
   }
 
   const completedCount = Object.values(localStatuses).filter(s => s === "completed" || s === "dismissed").length;
@@ -403,7 +416,7 @@ function InspectionReviewModal({
         {/* Findings list */}
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
           {findings.map((finding, i) => {
-            const key = toCategoryKey(finding.category);
+            const key = findingKey(finding.category, i);
             const currentStatus = localStatuses[key] ?? "open";
             const sevColor = finding.severity === "critical" ? C.red : finding.severity === "warning" ? C.amber : C.text3;
 
@@ -438,7 +451,7 @@ function InspectionReviewModal({
                   {statusOptions.map(opt => (
                     <button
                       key={opt.value}
-                      onClick={() => setStatus(finding.category, opt.value)}
+                      onClick={() => setStatus(i, finding.category, opt.value)}
                       style={{
                         padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600,
                         cursor: "pointer", border: `1.5px solid ${currentStatus === opt.value ? opt.color : C.border}`,
@@ -1784,8 +1797,8 @@ export default function Dashboard() {
   }
 
   // ── Toggle a single finding status (inline in findings list) ────────────
-  async function toggleFindingStatus(category: string, status: FindingStatus) {
-    const key = toCategoryKey(category);
+  async function toggleFindingStatus(category: string, index: number, status: FindingStatus) {
+    const key = findingKey(category, index);
     const newStatuses = { ...findingStatuses, [key]: status };
     setFindingStatuses(newStatuses);
     await persistFindingStatuses(newStatuses);
@@ -1840,8 +1853,8 @@ export default function Dashboard() {
   // Completed/dismissed/monitored findings reflect real-world repairs
   // Merge inspection + photo findings so photo evidence also drives cost estimates
   const allFindings       = [...(inspectionResult?.findings ?? []), ...photoFindings];
-  const activeFindings    = allFindings.filter(f =>  isActiveFinding(f, findingStatuses));
-  const completedFindings = allFindings.filter(f => !isActiveFinding(f, findingStatuses));
+  const activeFindings    = allFindings.filter((f, i) =>  isActiveFinding(f, i, findingStatuses));
+  const completedFindings = allFindings.filter((f, i) => !isActiveFinding(f, i, findingStatuses));
 
   // Merge inspection + photo findings for scoring.
   // Photo findings tagged with source:"photo" are visually-derived — same
@@ -2157,7 +2170,7 @@ export default function Dashboard() {
                     </button>
                   </div>
                   {inspectionResult.findings.map((f, i) => {
-                    const key = toCategoryKey(f.category);
+                    const key = findingKey(f.category, i);
                     const status = findingStatuses[key] ?? "open";
                     const statusConfig: Record<FindingStatus, { label: string; color: string; bg: string }> = {
                       open:       { label: "Open",         color: C.red,    bg: C.redBg    },
@@ -2177,7 +2190,7 @@ export default function Dashboard() {
                         <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: status === "completed" || status === "dismissed" ? C.text3 : C.text, textDecoration: status === "completed" ? "line-through" : "none" }}>{f.category}</span>
                         <select
                           value={status}
-                          onChange={e => toggleFindingStatus(f.category, e.target.value as FindingStatus)}
+                          onChange={e => toggleFindingStatus(f.category, i, e.target.value as FindingStatus)}
                           style={{
                             fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 20,
                             border: `1px solid ${cfg.color}40`,
