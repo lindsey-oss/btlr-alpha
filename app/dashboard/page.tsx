@@ -9,7 +9,7 @@ import {
   AlertTriangle, AlertCircle, Info, ChevronRight, Sparkles, X, CloudUpload,
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
-  ExternalLink, ArrowRight, BarChart3, Clock, Camera, Image as ImageIcon,
+  ExternalLink, ArrowRight, BarChart3, Clock,
 } from "lucide-react";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
@@ -1088,13 +1088,8 @@ export default function Dashboard() {
   } | null>(null);
   const [homeHealthReport, setHomeHealthReport] = useState<HomeHealthReport | null>(null);
 
-  // Photo analysis
+  // Photo analysis (upload UI removed; state kept for backward-compat with saved data)
   const [photoFindings, setPhotoFindings]       = useState<Finding[]>([]);
-  const [analyzingPhotos, setAnalyzingPhotos]   = useState(false);
-  const [photosDone, setPhotosDone]             = useState(false);
-  const [photoErr, setPhotoErr]                 = useState("");
-  const [photoSummary, setPhotoSummary]         = useState("");
-  const photoRef = useRef<HTMLInputElement>(null);
 
   const [docLoading, setDocLoading]         = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -1524,93 +1519,6 @@ export default function Dashboard() {
     } catch (err: unknown) { setInspectErr(err instanceof Error ? err.message : "Upload failed"); }
     setInspecting(false);
     if (inspRef.current) inspRef.current.value = "";
-  }
-
-  // ── Analyze home photos via GPT-4o vision ───────────────────────────────
-  // Photos are uploaded to storage (user-scoped path), signed URLs are passed
-  // to /api/analyze-photos which uses GPT-4o vision to extract findings in the
-  // same format as parse-inspection. Photo findings get higher confidence
-  // (0.85 vs 0.75) since they are direct visual evidence.
-  async function uploadPhotos(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = Array.from(e.target.files ?? []).slice(0, 8);
-    if (!files.length) return;
-
-    setAnalyzingPhotos(true);
-    setPhotoErr("");
-
-    try {
-      const { data: photoRefreshed } = await supabase.auth.refreshSession();
-      const photoSession = photoRefreshed?.session ?? (await supabase.auth.getSession()).data.session;
-      const photoUserId = photoSession?.user?.id;
-      if (!photoUserId) throw new Error("Session expired — please log out and back in.");
-
-      // Upload each photo to user-scoped storage path, collect signed URLs
-      const photoUrls: string[] = [];
-      for (const file of files) {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const storagePath = `${photoUserId}/photos-${Date.now()}-${safeName}`;
-        const { error: uploadErr } = await supabase.storage
-          .from("documents")
-          .upload(storagePath, file, { upsert: true });
-        if (uploadErr) throw new Error(`Photo upload failed: ${uploadErr.message}`);
-
-        const { data: signed } = await supabase.storage
-          .from("documents")
-          .createSignedUrl(storagePath, 300); // 5 min — enough for GPT-4o analysis
-        if (signed?.signedUrl) photoUrls.push(signed.signedUrl);
-      }
-
-      if (!photoUrls.length) throw new Error("No photos could be prepared for analysis.");
-
-      const authHeader = await getAuthHeader();
-      const res = await fetch("/api/analyze-photos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", ...authHeader },
-        body: JSON.stringify({ photoUrls }),
-      });
-      const result = await res.json();
-      if (!result.success) throw new Error(result.error || "Photo analysis failed");
-
-      const newPhotoFindings: Finding[] = result.findings ?? [];
-      setPhotoFindings(newPhotoFindings);
-      if (result.photo_summary) setPhotoSummary(result.photo_summary);
-      setPhotosDone(true);
-
-      // Persist photo findings to DB
-      const { data: existingProp } = await supabase.from("properties").select("id").limit(1).maybeSingle();
-      if (existingProp?.id) {
-        await supabase.from("properties")
-          .update({ photo_findings: newPhotoFindings, updated_at: new Date().toISOString() })
-          .eq("id", existingProp.id);
-      } else {
-        await supabase.from("properties").insert({
-          photo_findings: newPhotoFindings,
-          address: address || "My Home",
-          user_id: photoUserId,
-          updated_at: new Date().toISOString(),
-        });
-      }
-
-      // Recompute merged Home Health Report
-      try {
-        const currentYear = new Date().getFullYear();
-        const rA = roofYear ? currentYear - Number(roofYear) : null;
-        const hA = hvacYear ? currentYear - Number(hvacYear) : null;
-        const inspNorm = normalizeLegacyFindings(inspectionResult?.findings ?? [], rA, hA);
-        const photoNorm = normalizeLegacyFindings(newPhotoFindings, null, null)
-          .map(item => ({ ...item, inspector_confidence: 0.85, source_type: "photo" }));
-        setHomeHealthReport(computeHomeHealthReport([...inspNorm, ...photoNorm]));
-      } catch { /* non-fatal */ }
-
-      const fc = newPhotoFindings.length;
-      addEvent(`Home photos analyzed (${files.length} photo${files.length !== 1 ? "s" : ""}) — ${fc} finding${fc !== 1 ? "s" : ""} detected`);
-
-    } catch (err: unknown) {
-      setPhotoErr(err instanceof Error ? err.message : "Photo analysis failed");
-    }
-
-    setAnalyzingPhotos(false);
-    if (photoRef.current) photoRef.current.value = "";
   }
 
   // ── Load documents from storage on mount ────────────────────────────────
@@ -2701,74 +2609,6 @@ export default function Dashboard() {
                   )}
                 </div>
               )}
-
-              {/* ── Home Photos ─────────────────────────────────────────── */}
-              <div style={{ marginTop: 20, paddingTop: 20, borderTop: `1px solid ${C.border}` }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 9, background: `linear-gradient(135deg, #7c3aed, #a855f7)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Camera size={15} color="white"/>
-                    </div>
-                    <div>
-                      <span style={{ fontWeight: 700, fontSize: 15, color: C.text, display: "block" }}>Home Photos</span>
-                      <span style={{ fontSize: 12, color: C.text3 }}>Visual AI analysis · contributes to your score</span>
-                    </div>
-                  </div>
-                  {photosDone && photoFindings.length > 0 && (
-                    <span style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", background: "#f5f3ff", padding: "3px 10px", borderRadius: 20, border: "1px solid #e9d5ff" }}>
-                      {photoFindings.length} finding{photoFindings.length !== 1 ? "s" : ""} from photos
-                    </span>
-                  )}
-                </div>
-
-                <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 12,
-                  cursor: analyzingPhotos ? "default" : "pointer", transition: "all 0.2s",
-                  border: `2px dashed ${analyzingPhotos ? "#7c3aed" : photosDone ? "#7c3aed" : photoErr ? C.red : C.border}`,
-                  background: analyzingPhotos ? "#faf5ff" : photosDone ? "#faf5ff" : photoErr ? C.redBg : "#fafbfc" }}>
-                  {analyzingPhotos
-                    ? <><Loader2 size={18} color="#7c3aed" className="animate-spin"/><span style={{ fontSize: 14, color: "#7c3aed", fontWeight: 500 }}>Analyzing photos… (up to 30s)</span></>
-                    : photosDone
-                      ? <><CheckCircle2 size={18} color="#7c3aed"/><span style={{ fontSize: 14, color: "#7c3aed", fontWeight: 600 }}>Photos analyzed — click to add more</span></>
-                      : photoErr
-                        ? <><AlertTriangle size={18} color={C.red}/><div><span style={{ fontSize: 14, color: C.red, fontWeight: 600, display: "block" }}>Analysis failed</span><span style={{ fontSize: 12, color: C.text3 }}>{photoErr}</span></div></>
-                        : <><ImageIcon size={18} color={C.text3}/><div><span style={{ fontSize: 14, color: C.text, fontWeight: 500, display: "block" }}>Click to upload home photos</span><span style={{ fontSize: 12, color: C.text3 }}>Exterior, roof, HVAC, electrical panel, foundation — AI finds visible issues</span></div></>
-                  }
-                  <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={uploadPhotos} disabled={analyzingPhotos}/>
-                </label>
-
-                {photoSummary && (
-                  <p style={{ fontSize: 13, color: C.text2, lineHeight: 1.6, margin: "10px 0 0", background: "#faf5ff", borderRadius: 8, padding: "9px 11px", border: "1px solid #e9d5ff" }}>
-                    {photoSummary}
-                  </p>
-                )}
-
-                {photoFindings.length > 0 && (
-                  <div style={{ marginTop: 10, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 6 }}>
-                    {photoFindings.map((f, i) => {
-                      const dotColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
-                      return (
-                        <div key={i}
-                          onClick={() => openCostModal({ label: f.category, horizon: f.severity === "critical" ? "Immediate" : "Within 1–2 yrs", amount: f.estimated_cost ?? 0, severity: f.severity, finding: f, tradeCategory: f.category })}
-                          style={{ display: "flex", gap: 10, padding: "9px 12px", borderRadius: 9, background: "#faf5ff", border: `1px solid #e9d5ff`, alignItems: "flex-start", cursor: "pointer", position: "relative" }}
-                          onMouseEnter={e => (e.currentTarget.style.borderColor = "#a855f7")}
-                          onMouseLeave={e => (e.currentTarget.style.borderColor = "#e9d5ff")}>
-                          <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flexShrink: 0, marginTop: 4 }}/>
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{f.category}</span>
-                              <Camera size={10} color="#a855f7" style={{ flexShrink: 0 }}/>
-                            </div>
-                            <span style={{ fontSize: 11, color: C.text3, display: "block", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.description}</span>
-                          </div>
-                          {f.estimated_cost != null && (
-                            <span style={{ fontSize: 12, fontWeight: 700, color: dotColor, flexShrink: 0 }}>${f.estimated_cost.toLocaleString()}</span>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
 
               {/* Debug/QA Panel — hidden toggle */}
               {parseDebug && (
