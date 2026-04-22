@@ -1908,7 +1908,7 @@ export default function Dashboard() {
                       <span style={{ fontSize: 30, fontWeight: 800, color: "white", letterSpacing: "-0.5px" }}>{healthSt.label}</span>
                       <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 12px", borderRadius: 20,
                         background: healthSt.tagBg, color: healthSt.tagColor, border: `1px solid ${healthSt.tagColor}50`, whiteSpace: "nowrap" }}>
-                        {criticalCount > 0 ? `${criticalCount} critical` : warningCount > 0 ? `${warningCount} warnings` : "All systems OK"}
+                        {criticalCount > 0 ? `${criticalCount} critical issue${criticalCount > 1 ? "s" : ""}` : breakdown.deductions.length > 0 ? `${breakdown.deductions.length} item${breakdown.deductions.length > 1 ? "s" : ""} to monitor` : "All systems OK"}
                       </span>
                     </div>
                     <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: "0 0 14px", lineHeight: 1.5 }}>{healthSt.desc}</p>
