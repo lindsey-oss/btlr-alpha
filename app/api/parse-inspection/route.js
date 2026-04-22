@@ -56,15 +56,16 @@ export async function POST(req) {
     try { inspectionText = await req.text(); } catch { /* ignore */ }
   }
 
+  console.log(`[parse-inspection] Extracted ${inspectionText.trim().length} chars from PDF`);
   if (!inspectionText || inspectionText.trim().length < 20) {
-    return Response.json({ roof_year: null, hvac_year: null, findings: [] });
+    console.error("[parse-inspection] Text too short — likely scanned/image PDF");
+    return Response.json({ roof_year: null, hvac_year: null, findings: [], home_health_report: null });
   }
 
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     response_format: { type: "json_object" },
-    temperature: 0,   // deterministic — same PDF always extracts same findings
-    seed: 42,
+    temperature: 0.1, // low but not zero — zero is too strict on imperfect PDF text
     messages: [
       {
         role: "system",
@@ -82,6 +83,7 @@ export async function POST(req) {
   try {
     const parsed = JSON.parse(message);
     const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
+    console.log(`[parse-inspection] OpenAI returned ${findings.length} findings`);
 
     // ── Scoring Engine Integration ─────────────────────────────────────────
     // Convert legacy findings + system ages into NormalizedItems, then compute
