@@ -63,6 +63,8 @@ export async function POST(req) {
   const completion = await openai.chat.completions.create({
     model: "gpt-4o-mini",
     response_format: { type: "json_object" },
+    temperature: 0,   // deterministic — same PDF always extracts same findings
+    seed: 42,
     messages: [
       {
         role: "system",

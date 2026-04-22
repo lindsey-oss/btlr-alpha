@@ -1059,6 +1059,7 @@ export default function Dashboard() {
   const [inspecting, setInspecting] = useState(false);
   const [inspectDone, setInspectDone]   = useState(false);
   const [inspectErr, setInspectErr]     = useState("");
+  const [lastInspectionFilename, setLastInspectionFilename] = useState<string | null>(null);
   const [inspectionResult, setInspectionResult] = useState<{
     inspection_type?: string;
     summary?: string;
@@ -1381,13 +1382,16 @@ export default function Dashboard() {
         const newFindings: Finding[] = Array.isArray(result.findings) ? result.findings : [];
 
         // ── Duplicate report detection ──────────────────────────────────────
-        // Fingerprint = count + sorted first-finding description.
-        // If identical to what's already stored, don't overwrite — same report.
+        // Primary check: same filename as the last successfully uploaded report.
+        // Fallback: finding-count fingerprint match.
+        // Either match = block the upload and tell the user.
         const existingFindings = inspectionResult?.findings ?? [];
         const fingerprint = (f: Finding[]) =>
           `${f.length}::${[...f].sort((a, b) => a.description.localeCompare(b.description))[0]?.description ?? ""}`;
-        if (existingFindings.length > 0 && fingerprint(newFindings) === fingerprint(existingFindings)) {
-          setInspectErr("This report appears to already be on file. Upload a different inspection report to replace it.");
+        const sameFile = lastInspectionFilename !== null && lastInspectionFilename === file.name;
+        const sameContent = existingFindings.length > 0 && fingerprint(newFindings) === fingerprint(existingFindings);
+        if (sameFile || sameContent) {
+          setInspectErr("This report is already on file. To update your score, upload a new inspection report.");
           setInspecting(false);
           if (inspRef.current) inspRef.current.value = "";
           return;
@@ -1425,6 +1429,7 @@ export default function Dashboard() {
         if (result.hvac_year) setHvacYear(String(result.hvac_year));
         if (result.property_address) setAddress(result.property_address);
         setInspectionResult(result);
+        setLastInspectionFilename(file.name);
         if (result.home_health_report) setHomeHealthReport(result.home_health_report);
         if (result._debug) setParseDebug(result._debug);
         if (result.timeline_events?.length) result.timeline_events.forEach((ev: string) => addEvent(ev));
