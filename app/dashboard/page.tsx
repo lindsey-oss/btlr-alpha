@@ -1215,7 +1215,9 @@ export default function Dashboard() {
   // documents vanish after every refresh even though files exist in storage.
   async function loadDocs() {
     try {
-      const { data: { session } } = await supabase.auth.getSession();
+      // refreshSession() ensures a fresh JWT — avoids "exp claim" errors on storage ops.
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      const session = refreshed?.session ?? (await supabase.auth.getSession()).data.session;
       if (!session?.user?.id) return;
       const userId = session.user.id;
 
@@ -1256,11 +1258,14 @@ export default function Dashboard() {
   async function uploadDoc(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setDocLoading(true);
-    const { data: { session } } = await supabase.auth.getSession();
+    // Always refresh the session to get a fresh JWT — getSession() can return an
+    // expired token if the background refresh timer missed, causing "exp claim" errors.
+    const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
+    const session = refreshed?.session ?? (await supabase.auth.getSession()).data.session;
+    if (refreshErr && !session) { alert("Session expired — please log out and back in."); setDocLoading(false); return; }
     const userId = session?.user?.id;
     if (!userId) { alert("Not logged in — please refresh and try again."); setDocLoading(false); return; }
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    // Store under {userId}/docs-{timestamp}-{name} for reliable per-user isolation
     const fullPath = `${userId}/docs-${Date.now()}-${safeName}`;
     const { error } = await supabase.storage.from("documents").upload(fullPath, file, { upsert: true });
     if (error) { alert("Upload failed: " + error.message); setDocLoading(false); return; }
