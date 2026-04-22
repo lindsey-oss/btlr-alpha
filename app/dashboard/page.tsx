@@ -1876,6 +1876,35 @@ export default function Dashboard() {
               <button onClick={logout} style={{ padding: "12px 20px", borderRadius: 12, border: `1.5px solid ${C.red}`, background: C.redBg, color: C.red, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, width: "fit-content" }}>
                 <LogOut size={14}/> Sign Out
               </button>
+
+              {/* Demo Mode — for pitch and testing */}
+              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 18, marginTop: 4 }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Demo Mode</p>
+                <p style={{ fontSize: 13, color: C.text3, marginBottom: 10 }}>Load a sample property for demos and testing.</p>
+                <button onClick={() => {
+                  setAddress("4589 Warwick Circle, Oceanside CA 92056");
+                  setRoofYear("2004"); setHvacYear("2012");
+                  addEvent("Roof inspection completed — replacement recommended ($12,500)");
+                  addEvent("HVAC system aging — service due ($350)");
+                  addEvent("Electrical panel upgrade needed ($3,200)");
+                  setInspectDone(true); setInspectErr("");
+                  setInspectionResult({
+                    inspection_type: "General Home Inspection",
+                    summary: "97-page inspection completed. Roof is 20+ years old and needs replacement. HVAC is aging. Minor electrical and plumbing items noted.",
+                    findings: [
+                      { category: "Roof",       description: "Roof is original (2004), showing significant wear. Replacement recommended within 1–2 years.", severity: "critical", estimated_cost: 12500 },
+                      { category: "HVAC",       description: "HVAC unit from 2012, nearing end of service life. Annual service recommended.",                 severity: "warning",  estimated_cost: 350   },
+                      { category: "Electrical", description: "Panel upgrade recommended for modern load requirements. Current panel is 100A.",                  severity: "warning",  estimated_cost: 3200  },
+                      { category: "Plumbing",   description: "Minor drip at master bathroom faucet. Easy fix — replace cartridge.",                             severity: "info",     estimated_cost: 150   },
+                    ],
+                    recommendations: ["Replace roof within 1–2 years", "Service HVAC annually", "Budget for electrical panel upgrade"],
+                    total_estimated_cost: 16200,
+                  });
+                  setNav("Dashboard");
+                }} style={{ padding: "9px 18px", borderRadius: 10, background: C.green, color: "#fff", fontWeight: 600, fontSize: 13, border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                  <Sparkles size={13}/> Load Demo Property
+                </button>
+              </div>
             </div>
           )}
 
@@ -2052,57 +2081,7 @@ export default function Dashboard() {
             {/* House Photo */}
             <HousePhoto address={toTitleCase(address)} height={isMobile ? 140 : 200} />
 
-            {/* Roof + HVAC status row */}
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
-              {/* Roof */}
-              <div style={card({ background: roofYear ? roofSt.bg : C.surface })}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 10px" }}>Roof</p>
-                {roofYear ? (
-                  <>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: roofSt.dot, flexShrink: 0 }}/>
-                      <span style={{ fontWeight: 700, fontSize: 18, color: roofSt.color }}>{roofSt.label}</span>
-                    </div>
-                    <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>Installed {roofYear} · {roofAge} yrs old</p>
-                    {roofAge !== null && roofAge >= 15 && (
-                      <p style={{ fontSize: 12, color: C.text3, margin: "6px 0 0" }}>~{Math.max(0, 25 - roofAge)} yrs remaining typical life</p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 8px" }}>Year not found — enter manually:</p>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <input value={roofYear} onChange={e => setRoofYear(e.target.value)} placeholder="e.g. 2005" style={{ flex: 1, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 13, color: C.text, background: C.bg, outline: "none" }}/>
-                      <button onClick={saveSettings} style={{ padding: "7px 12px", borderRadius: 8, background: C.accent, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
-                    </div>
-                  </>
-                )}
-              </div>
-              {/* HVAC */}
-              <div style={card({ background: hvacYear ? hvacSt.bg : C.surface })}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.08em", textTransform: "uppercase", margin: "0 0 10px" }}>HVAC</p>
-                {hvacYear ? (
-                  <>
-                    <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 5 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: "50%", background: hvacSt.dot, flexShrink: 0 }}/>
-                      <span style={{ fontWeight: 700, fontSize: 18, color: hvacSt.color }}>{hvacSt.label}</span>
-                    </div>
-                    <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>Installed {hvacYear} · {hvacAge} yrs old</p>
-                    {hvacAge !== null && hvacAge >= 8 && (
-                      <p style={{ fontSize: 12, color: C.text3, margin: "6px 0 0" }}>~{Math.max(0, 15 - hvacAge)} yrs remaining typical life</p>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 8px" }}>Year not found — enter manually:</p>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      <input value={hvacYear} onChange={e => setHvacYear(e.target.value)} placeholder="e.g. 2015" style={{ flex: 1, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${C.border}`, fontSize: 13, color: C.text, background: C.bg, outline: "none" }}/>
-                      <button onClick={saveSettings} style={{ padding: "7px 12px", borderRadius: 8, background: C.accent, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
-                    </div>
-                  </>
-                )}
-              </div>
-            </div>
+            {/* Roof + HVAC status row — removed, shown in health score card and repairs */}
 
             {/* Financial row */}
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 14 }}>
@@ -2218,27 +2197,19 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Property Tax */}
-              <div style={card({ display: "flex", gap: 14, alignItems: "center" })}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#7c3aed18", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <BarChart3 size={18} color="#7c3aed"/>
+              {/* Repair Fund */}
+              <div style={card({ display: "flex", gap: 14, alignItems: "flex-start" })}>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#16a34a18", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 2 }}>
+                  <DollarSign size={18} color="#16a34a"/>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.07em", textTransform: "uppercase", margin: 0 }}>Property Tax</p>
-                  {propertyTax ? (
-                    <>
-                      <p style={{ fontSize: 20, fontWeight: 700, color: C.text, margin: "3px 0 2px" }}>${propertyTax.toLocaleString()}/yr</p>
-                      <p style={{ fontSize: 12, color: C.text3 }}>~${Math.round(propertyTax / 12).toLocaleString()}/mo{homeValue ? ` · Est. $${Math.round(homeValue / 1000)}K` : ""}</p>
-                    </>
-                  ) : (
-                    <>
-                      <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "3px 0 6px" }}>—</p>
-                      <button onClick={() => fetchPropertyData(address)} disabled={fetchingProperty} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 6, border: "1px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer", opacity: fetchingProperty ? 0.6 : 1 }}>
-                        {fetchingProperty ? <Loader2 size={11} className="animate-spin"/> : <Sparkles size={11}/>}
-                        {fetchingProperty ? "Fetching…" : "Auto-Fetch"}
-                      </button>
-                    </>
-                  )}
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.07em", textTransform: "uppercase", margin: "0 0 2px" }}>Repair Fund</p>
+                  <p style={{ fontSize: 20, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>$0.00</p>
+                  <p style={{ fontSize: 11, color: C.text3, margin: "0 0 8px", lineHeight: 1.4 }}>Round up purchases to save for repairs automatically.</p>
+                  <button onClick={connectPlaid} disabled={connectingPlaid || plaidConnected} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 6, border: `1px solid #16a34a`, background: plaidConnected ? "#16a34a18" : "transparent", color: "#16a34a", fontSize: 12, fontWeight: 600, cursor: plaidConnected ? "default" : "pointer", opacity: connectingPlaid ? 0.6 : 1 }}>
+                    {connectingPlaid ? <Loader2 size={11} className="animate-spin"/> : <Zap size={11}/>}
+                    {plaidConnected ? "Bank Connected ✓" : connectingPlaid ? "Connecting…" : "Connect Bank"}
+                  </button>
                 </div>
               </div>
             </div>
