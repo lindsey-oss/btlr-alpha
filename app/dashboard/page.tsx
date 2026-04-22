@@ -1302,8 +1302,12 @@ export default function Dashboard() {
       // Recompute Home Health Report merging inspection + photo findings.
       // Photo findings get higher inspector_confidence (0.85 vs 0.75) since
       // they are based on visual evidence rather than text extraction.
+      // IMPORTANT: also run when roof_year or hvac_year are set even with 0
+      // findings — normalizeLegacyFindings synthesizes age-based items for
+      // those systems so Roof/HVAC bars appear in the breakdown immediately.
       const hasAnyFindings = (data.inspection_findings?.length > 0) || (data.photo_findings?.length > 0);
-      if (hasAnyFindings || data.inspection_summary) {
+      const hasSystemAge   = !!(data.roof_year || data.hvac_year);
+      if (hasAnyFindings || data.inspection_summary || hasSystemAge) {
         try {
           const currentYear = new Date().getFullYear();
           const roofAge = data.roof_year ? currentYear - data.roof_year : null;
