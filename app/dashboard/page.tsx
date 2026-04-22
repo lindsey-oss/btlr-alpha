@@ -1366,8 +1366,14 @@ export default function Dashboard() {
     const file = e.target.files?.[0]; if (!file) return;
     setInspecting(true); setInspectDone(false); setInspectErr(""); setInspectionResult(null);
     try {
-      await supabase.auth.getSession(); // refresh JWT before storage op
-      const storagePath = `inspections/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      // Refresh session first — also gives us the userId for the storage path
+      const { data: refreshed } = await supabase.auth.refreshSession();
+      const session = refreshed?.session ?? (await supabase.auth.getSession()).data.session;
+      const uploadUserId = session?.user?.id;
+      if (!uploadUserId) throw new Error("Session expired — please log out and back in.");
+      // Storage path must start with userId/ to satisfy RLS policy
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storagePath = `${uploadUserId}/inspections-${Date.now()}-${safeName}`;
       const { error: storageErr } = await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
       if (storageErr) throw new Error("Storage upload failed: " + storageErr.message);
       const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
@@ -1401,21 +1407,10 @@ export default function Dashboard() {
         const freshStatuses: Record<string, FindingStatus> = {};
         setFindingStatuses(freshStatuses);
 
-        // ── Persist to DB — upsert by user_id (atomic, no silent failures) ──
-        // Requires: SUPABASE_SCORE_PERSIST_FIX.sql run once in Supabase.
-        // This is the source of truth — loadProperty() reads from here on refresh.
-        const { data: { session: saveSession } } = await supabase.auth.getSession();
-        const userId = saveSession?.user?.id;
-        if (!userId) {
-          setInspectErr("Session expired — please log out and back in, then re-upload.");
-          setInspecting(false);
-          if (inspRef.current) inspRef.current.value = "";
-          return;
-        }
-
+        // ── Persist to DB — select then update or insert ──────────────────
+        // This is the source of truth. loadProperty() reads from here on refresh.
+        // uploadUserId is already available from the storage upload above.
         const inspectionPayload = {
-          user_id:               userId,
-          address:               address || "My Home",
           inspection_findings:   newFindings,
           inspection_type:       result.inspection_type      ?? "Home Inspection",
           inspection_summary:    result.summary              ?? null,
@@ -1428,17 +1423,20 @@ export default function Dashboard() {
           ...(result.hvac_year ? { hvac_year: result.hvac_year } : {}),
           updated_at:            new Date().toISOString(),
         };
-
-        const { error: upsertErr } = await supabase
-          .from("properties")
-          .upsert(inspectionPayload, { onConflict: "user_id" });
-
-        if (upsertErr) {
-          // Surface the error visibly — don't hide it
-          console.error("[uploadInspection] DB upsert failed:", upsertErr);
-          setInspectErr(`Report parsed but save failed: ${upsertErr.message}. Your score may not persist after refresh.`);
+        const { data: existingProp, error: propLookupErr } = await supabase
+          .from("properties").select("id").limit(1).maybeSingle();
+        if (propLookupErr) {
+          console.error("[uploadInspection] property lookup failed:", propLookupErr.message);
+        } else if (existingProp?.id) {
+          const { error: updateErr } = await supabase
+            .from("properties").update(inspectionPayload).eq("id", existingProp.id);
+          if (updateErr) console.error("[uploadInspection] update failed:", updateErr.message);
+          else console.log(`[uploadInspection] ✓ Saved ${newFindings.length} findings to DB`);
         } else {
-          console.log(`[uploadInspection] ✓ Saved ${newFindings.length} findings to DB`);
+          const { error: insertErr } = await supabase
+            .from("properties").insert({ ...inspectionPayload, address: address || "My Home", user_id: uploadUserId });
+          if (insertErr) console.error("[uploadInspection] insert failed:", insertErr.message);
+          else console.log(`[uploadInspection] ✓ Created property with ${newFindings.length} findings`);
         }
 
         if (result.roof_year) setRoofYear(String(result.roof_year));
@@ -1561,8 +1559,11 @@ export default function Dashboard() {
     const file = e.target.files?.[0]; if (!file) return;
     setUploadingRepair(true);
     try {
-      await supabase.auth.getSession(); // refresh JWT before storage op
-      const storagePath = `repairs/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+      const { data: repairRefreshed } = await supabase.auth.refreshSession();
+      const repairSession = repairRefreshed?.session ?? (await supabase.auth.getSession()).data.session;
+      const repairUserId = repairSession?.user?.id;
+      if (!repairUserId) throw new Error("Session expired — please log out and back in.");
+      const storagePath = `${repairUserId}/repairs-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
       const { error: storageErr } = await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
       if (storageErr) throw new Error("Upload failed: " + storageErr.message);
       const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 300);
