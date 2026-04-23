@@ -274,29 +274,49 @@ export function computeHomeHealthReport(items: NormalizedItem[]): HomeHealthRepo
   const home_health_score = Math.round(Math.max(0, Math.min(100, rawHealth)));
 
   // ── Sub-scores ────────────────────────────────────────────────
+  //
+  // All three sub-scores use additive per-item deductions. Without caps they
+  // collapse to 0 on rich inspection reports (25 items × any penalty = huge).
+  // Floors prevent that while still communicating real concern levels.
 
-  // Safety score: 100 minus all safety penalties only
-  const safetyPenaltyTotal = items.reduce((sum, i) => {
+  // Safety score: 100 minus safety penalties — floor 30
+  // Cap the raw penalty sum so a report with 10 "high" items doesn't zero out.
+  const rawSafetyPenalty = items.reduce((sum, i) => {
     return sum + (SAFETY_PENALTY[i.safety_impact] ?? 0);
   }, 0);
-  const safety_score = Math.round(Math.max(0, Math.min(100, 100 - safetyPenaltyTotal)));
+  const safety_score = Math.round(Math.max(30, Math.min(100, 100 - rawSafetyPenalty)));
 
-  // Maintenance score: base 85, +/- maintenance state
+  // Maintenance score: base 85, +/- maintenance adjustments — floor 30
   const maintBase = 85;
   const maintDelta = items.reduce((sum, i) => {
     return sum + (MAINTENANCE_ADJ[i.maintenance_state] ?? MAINTENANCE_ADJ.unknown);
   }, 0);
-  const maintenance_score = Math.round(Math.max(0, Math.min(100, maintBase + maintDelta)));
+  const maintenance_score = Math.round(Math.max(30, Math.min(100, maintBase + maintDelta)));
 
-  // Readiness score: start 100, subtract risk factors
+  // Readiness score: start 100, subtract risk factors — floor 30
+  // Each item can subtract at most ~32 pts; with 20+ items this collapses.
+  // Use per-*category* caps instead of per-item to prevent pile-on.
+  const readinessSeenCategories = new Set<string>();
   let readiness = 100;
   for (const item of items) {
-    if (item.estimated_remaining_life_percent <= 20) readiness -= 8;
-    if (item.safety_impact === "high" || item.safety_impact === "critical") readiness -= 10;
-    if (item.maintenance_state === "deferred" || item.maintenance_state === "poor") readiness -= 6;
-    if (item.notes.toLowerCase().includes("leak") || item.notes.toLowerCase().includes("moisture")) readiness -= 8;
+    const cat = item.category;
+    const alreadySeen = readinessSeenCategories.has(cat);
+    // Life-percent and maintenance deductions: once per category
+    if (!alreadySeen) {
+      readinessSeenCategories.add(cat);
+      if (item.estimated_remaining_life_percent <= 20) readiness -= 8;
+      if (item.maintenance_state === "deferred" || item.maintenance_state === "poor") readiness -= 6;
+    }
+    // Safety deductions: once per category (already bounded by safety_score above)
+    if (!alreadySeen && (item.safety_impact === "high" || item.safety_impact === "critical")) readiness -= 10;
+    // Leak/moisture: still per-item (each is a distinct risk) but capped at -24 total
   }
-  const readiness_score = Math.round(Math.max(0, Math.min(100, readiness)));
+  // Leak/moisture — separate pass, cap at -24 across entire report
+  const leakDeduction = Math.min(24, items.filter(i =>
+    i.notes.toLowerCase().includes("leak") || i.notes.toLowerCase().includes("moisture")
+  ).length * 8);
+  readiness -= leakDeduction;
+  const readiness_score = Math.round(Math.max(30, Math.min(100, readiness)));
 
   // Confidence score: average inspector confidence across items
   const avgConf = items.length > 0

@@ -110,7 +110,21 @@ function computeHealthScore(
     }
   }
 
-  // B. Finding deductions — grouped by category key for per-system cap ─
+  // B. Finding deductions — ONE deduction per system, not per finding ────
+  //
+  // Root-cause of the "score = 8" bug: the old logic looped over every critical
+  // finding and subtracted -15 each. A rich 25-finding report with 8 criticals
+  // across 6 categories produced -120 from criticals alone, crushing the score
+  // to 0 before age deductions even ran.
+  //
+  // Fix: deduct once per *system* (category group), then apply a hard total cap
+  // so richer inspection data never catastrophically penalises a normal home.
+  //
+  //   Critical system  : -8  (regardless of how many criticals are in it)
+  //   Warning system   : -3  (system has ≥1 warning but no criticals)
+  //   Info-only system : -1
+  //   Total cap        : -60  (score floor = 40 for the absolute worst homes)
+
   const byKey = new Map<string, { f: Finding; idx: number }[]>();
   for (let i = 0; i < allFindings.length; i++) {
     const f = allFindings[i];
@@ -121,33 +135,41 @@ function computeHealthScore(
 
   for (const [key, items] of byKey.entries()) {
     const findings = items.map(it => it.f);
-    // A category is resolved only if ALL its individual findings are resolved
+    // A category is "resolved" only when ALL its individual findings are resolved
     const isResolved = items.every(it => {
       const s = statuses[findingKey(it.f.category, it.idx)] ?? "open";
       return s === "completed" || s === "dismissed";
     });
-    const category   = findings[0].category;
+    const category = findings[0].category;
 
-    // Critical: -15 each, uncapped
-    for (const f of findings.filter(f => f.severity === "critical")) {
-      const desc = f.description.length > 72 ? f.description.slice(0, 72) + "…" : f.description;
-      add({ id: `crit_${key}`, category, reason: desc, points: -15, source: "finding", severity: "critical" }, isResolved);
+    const criticals = findings.filter(f => f.severity === "critical");
+    const ncs       = findings.filter(f => f.severity !== "critical");
+
+    // One deduction for the whole system if it has any critical findings
+    if (criticals.length > 0) {
+      const desc = criticals.length === 1
+        ? (criticals[0].description.length > 72 ? criticals[0].description.slice(0, 72) + "…" : criticals[0].description)
+        : `${criticals.length} critical issues — ${category}`;
+      add({ id: `crit_${key}`, category, reason: desc, points: -8, source: "finding", severity: "critical" }, isResolved);
     }
 
-    // Non-critical: -5 warning / -2 info — capped at -10 per system
-    const ncs = findings.filter(f => f.severity !== "critical");
+    // One deduction for the whole system for non-critical findings
     if (ncs.length > 0) {
-      const raw  = ncs.reduce((s, f) => s + (f.severity === "warning" ? -5 : -2), 0);
-      const pts  = Math.max(raw, -10);
-      const sev  = ncs.some(f => f.severity === "warning") ? "warning" : "info";
+      const hasWarning = ncs.some(f => f.severity === "warning");
+      const pts = hasWarning ? -3 : -1;
+      const sev = hasWarning ? "warning" : "info";
       const desc = ncs.length === 1
         ? (ncs[0].description.length > 72 ? ncs[0].description.slice(0, 72) + "…" : ncs[0].description)
-        : `${ncs.length} issue${ncs.length > 1 ? "s" : ""} in ${category}${raw < pts ? " (capped)" : ""}`;
+        : `${ncs.length} issue${ncs.length > 1 ? "s" : ""} in ${category}`;
       add({ id: `nc_${key}`, category, reason: desc, points: pts, source: "finding", severity: sev }, isResolved);
     }
   }
 
-  const totalDeducted = deductions.reduce((sum, d) => sum + d.points, 0);
+  // Hard cap: total deductions cannot exceed -60 regardless of finding count.
+  // This prevents a richer inspection report from producing a lower score than
+  // a sparse one — the cap ensures the score reflects home condition, not data volume.
+  const rawDeductions = deductions.reduce((sum, d) => sum + d.points, 0);
+  const totalDeducted = Math.max(-60, rawDeductions);
   const score         = Math.max(0, Math.min(100, 100 + totalDeducted));
   return { score, deductions, resolvedDeductions, totalDeducted };
 }
