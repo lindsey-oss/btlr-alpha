@@ -981,7 +981,7 @@ function CostDetailModal({
   item: CostItem;
   findings: Finding[];
   onClose: () => void;
-  onFindVendors: (trade: string, context?: string) => void;
+  onFindVendors: (trade: string, context?: string, issue?: string) => void;
 }) {
   const col = item.severity === "critical" ? C.red : item.severity === "warning" ? C.amber : C.text3;
   const bg  = item.severity === "critical" ? C.redBg : item.severity === "warning" ? C.amberBg : C.bg;
