@@ -2,9 +2,9 @@
 import { useState, useRef, useEffect } from "react";
 import {
   Mic, MicOff, Send, Loader2, Search, ChevronRight,
-  AlertTriangle, CheckCircle2, ExternalLink, X, MapPin, Phone, Star,
-  Home, Droplets, Zap, Wind, Bug, Layers, Wrench, Hammer,
-  DollarSign, HelpCircle, MessageSquare, Info, AlertOctagon,
+  AlertTriangle, CheckCircle2, ExternalLink, X, MapPin,
+  Home, Droplets, Zap, Wind, Bug, Layers, Wrench,
+  DollarSign, HelpCircle, MessageSquare, AlertOctagon,
   Thermometer, Paintbrush, AlignLeft, Clock,
 } from "lucide-react";
 
@@ -79,15 +79,36 @@ const URGENCY_STYLE: Record<string, { color: string; bg: string; label: string; 
   low:       { color: C.green,  bg: C.greenBg, label: "Low Priority",icon: <CheckCircle2  size={13}/> },
 };
 
-// Placeholder vendor cards shown before Google Places API is connected
-function getMockVendors(categoryLabel: string, address: string) {
-  const city = address?.split(",")[1]?.trim() || "your area";
-  return [
-    { name: `${city} ${categoryLabel} Pros`,      rating: 4.8, reviews: 312, phone: "(760) 555-0142", badge: "Top Rated",     badgeColor: C.green,  years: "12 yrs in business", license: "Licensed & Insured" },
-    { name: `Pacific ${categoryLabel} Solutions`, rating: 4.6, reviews: 187, phone: "(760) 555-0287", badge: "Fast Response", badgeColor: C.accent, years: "8 yrs in business",  license: "Licensed & Insured" },
-    { name: `Quality ${categoryLabel} Services`,  rating: 4.5, reviews: 94,  phone: "(760) 555-0391", badge: "Free Estimates",badgeColor: C.amber,  years: "5 yrs in business",  license: "Licensed & Insured" },
-  ];
-}
+// Platform search configs for real vendor discovery
+const PLATFORMS = [
+  {
+    key: "google",
+    name: "Google Maps",
+    description: "Verified reviews + photos",
+    color: "#4285F4",
+    bg: "#f0f5ff",
+    border: "#c7d9ff",
+    logo: "G",
+  },
+  {
+    key: "yelp",
+    name: "Yelp",
+    description: "Ratings, quotes & portfolios",
+    color: "#d32323",
+    bg: "#fff5f5",
+    border: "#ffc9c9",
+    logo: "y",
+  },
+  {
+    key: "angi",
+    name: "Angi",
+    description: "Background-checked pros",
+    color: "#f27a1a",
+    bg: "#fff8f0",
+    border: "#ffd9aa",
+    logo: "A",
+  },
+];
 
 interface Finding {
   category: string;
@@ -127,8 +148,9 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   const [result, setResult]           = useState<ClassifyResult | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [activeIssue, setActiveIssue] = useState<Finding | null>(null);
-  const [sentJobs, setSentJobs]       = useState<Record<string, string>>({});
-  const [sendingJob, setSendingJob]   = useState<string | null>(null);
+  const [briefSent, setBriefSent]     = useState(false);
+  const [sendingBrief, setSendingBrief] = useState(false);
+  const [briefUrl, setBriefUrl]       = useState<string | null>(null);
   const recognitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep a stable ref to classifyIssue so the useEffect below can call it
@@ -159,9 +181,9 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prefillTrade, prefillIssue]);
 
-  async function requestQuote(vendorName: string) {
+  async function emailContractorBrief() {
     if (!result) return;
-    setSendingJob(vendorName);
+    setSendingBrief(true);
     try {
       const res = await fetch("/api/request-job", {
         method: "POST",
@@ -189,11 +211,11 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
       });
       const data = await res.json();
       if (data.job_id) {
-        const jobUrl = `${window.location.origin}/job/${data.job_id}`;
-        setSentJobs(prev => ({ ...prev, [vendorName]: jobUrl }));
+        setBriefUrl(`${window.location.origin}/job/${data.job_id}`);
+        setBriefSent(true);
       }
     } catch { /* silent */ }
-    setSendingJob(null);
+    setSendingBrief(false);
   }
 
   function toggleListen() {
@@ -230,6 +252,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
     // Keep ref current so the prefill useEffect can call this before render
     classifyRef.current = classifyIssue;
     setLoading(true); setResult(null); setSelectedCategory(null); setActiveIssue(null);
+    setBriefSent(false); setBriefUrl(null);
     try {
       const res = await fetch("/api/classify-issue", {
         method: "POST",
@@ -258,9 +281,10 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   }
 
   const urgencyInfo = result ? (URGENCY_STYLE[result.urgency] ?? URGENCY_STYLE.normal) : null;
-  const vendors = selectedCategory ? getMockVendors(selectedCategory, address) : [];
   const city    = address?.split(",").slice(1).join(",").trim() || "your area";
   const zip     = address?.match(/\d{5}/)?.[0] || "";
+  // Use AI-generated search terms when available, otherwise fall back to category label
+  const searchTerm = result?.search_terms?.[0] ?? selectedCategory ?? "";
 
   function googleLink(term: string) {
     return `https://www.google.com/maps/search/${encodeURIComponent(term + " near " + (zip || city))}`;
@@ -524,116 +548,113 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
         </div>
       </div>
 
-      {/* ── Vendor Cards ───────────────────────────────────────────── */}
+      {/* ── Find Real Vendors ──────────────────────────────────────── */}
       {selectedCategory && (
         <div style={card()}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-            <div>
-              <p style={{ fontSize: 17, fontWeight: 700, color: C.text, margin: 0 }}>
-                {selectedCategory} Contractors Near You
-              </p>
-              <p style={{ fontSize: 14, color: C.text3, display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
-                <MapPin size={12}/> {city}
-              </p>
-            </div>
-            {/* External search links */}
-            <div style={{ display: "flex", gap: 6 }}>
-              {(result?.search_terms ?? [selectedCategory.toLowerCase()]).slice(0, 1).map(term => (
-                <div key={term} style={{ display: "flex", gap: 6 }}>
-                  <a href={googleLink(term)} target="_blank" rel="noopener noreferrer"
-                    style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text2, fontSize: 12, fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-                    <ExternalLink size={11}/> Google Maps
-                  </a>
-                  <a href={yelpLink(term)} target="_blank" rel="noopener noreferrer"
-                    style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: "#d32323", fontSize: 12, fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-                    <ExternalLink size={11}/> Yelp
-                  </a>
-                  <a href={angiLink(term)} target="_blank" rel="noopener noreferrer"
-                    style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: "#f27a1a", fontSize: 12, fontWeight: 600, textDecoration: "none", display: "flex", alignItems: "center", gap: 4 }}>
-                    <ExternalLink size={11}/> Angi
-                  </a>
-                </div>
-              ))}
-            </div>
+          {/* Header */}
+          <div style={{ marginBottom: 18 }}>
+            <p style={{ fontSize: 17, fontWeight: 700, color: C.text, margin: 0 }}>
+              {selectedCategory} Contractors Near You
+            </p>
+            <p style={{ fontSize: 14, color: C.text3, display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
+              <MapPin size={12}/> Searching near {zip || city}
+            </p>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {vendors.map((v, i) => (
-              <div key={i} style={{
-                display: "flex", alignItems: "center", gap: 16, padding: "14px 16px",
-                borderRadius: 12, border: `1px solid ${C.border}`, background: C.bg,
-              }}>
-                {/* Avatar — initial letter, no emoji */}
-                <div style={{
-                  width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-                  background: `linear-gradient(135deg, ${C.navyMid}, ${C.accent})`,
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                  fontSize: 18, color: "white", fontWeight: 800,
-                }}>
-                  {v.name[0]}
-                </div>
-
-                {/* Info */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
-                    <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{v.name}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: `${v.badgeColor}18`, color: v.badgeColor }}>
-                      {v.badge}
-                    </span>
+          {/* Platform cards */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
+            {PLATFORMS.map(p => {
+              const href = p.key === "google"
+                ? googleLink(searchTerm)
+                : p.key === "yelp"
+                ? yelpLink(searchTerm)
+                : angiLink(searchTerm);
+              return (
+                <a key={p.key} href={href} target="_blank" rel="noopener noreferrer"
+                  style={{
+                    display: "flex", alignItems: "center", gap: 16, padding: "16px 18px",
+                    borderRadius: 12, border: `1.5px solid ${p.border}`,
+                    background: p.bg, textDecoration: "none",
+                    transition: "box-shadow 0.15s",
+                  }}>
+                  {/* Logo circle */}
+                  <div style={{
+                    width: 44, height: 44, borderRadius: 12, flexShrink: 0,
+                    background: p.color,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 20, color: "white", fontWeight: 900,
+                    fontFamily: "Georgia, serif",
+                  }}>
+                    {p.logo}
                   </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                    <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 13, color: C.amber }}>
-                      <Star size={11} fill={C.amber}/> {v.rating} ({v.reviews} reviews)
-                    </span>
-                    <span style={{ fontSize: 13, color: C.text3 }}>·</span>
-                    <span style={{ fontSize: 13, color: C.text3 }}>{v.years}</span>
-                    <span style={{ fontSize: 13, color: C.text3 }}>·</span>
-                    <span style={{ fontSize: 13, color: C.green }}>{v.license}</span>
-                  </div>
-                </div>
 
-                {/* Phone + Quote */}
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "flex-end", flexShrink: 0 }}>
-                  <a href={`tel:${v.phone}`} style={{ display: "flex", alignItems: "center", gap: 5, fontSize: 13, color: C.text2, textDecoration: "none", fontWeight: 600 }}>
-                    <Phone size={12}/> {v.phone}
-                  </a>
-                  {sentJobs[v.name] ? (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
-                      <span style={{ fontSize: 12, color: C.green, fontWeight: 700, display: "flex", alignItems: "center", gap: 4 }}>
-                        <CheckCircle2 size={12}/> Job Sent
-                      </span>
-                      <a href={sentJobs[v.name]} target="_blank" rel="noopener noreferrer"
-                        style={{ fontSize: 11, color: C.accent, textDecoration: "underline" }}>
-                        View job link <ChevronRight size={10} style={{ verticalAlign: "middle" }}/>
-                      </a>
-                    </div>
-                  ) : (
-                    <button
-                      onClick={() => requestQuote(v.name)}
-                      disabled={sendingJob === v.name || !result}
-                      style={{
-                        padding: "7px 14px", borderRadius: 8, border: "none",
-                        cursor: result ? "pointer" : "not-allowed",
-                        background: result ? C.navyMid : C.text3, color: "white",
-                        fontSize: 13, fontWeight: 600,
-                        display: "flex", alignItems: "center", gap: 5,
-                        opacity: sendingJob === v.name ? 0.7 : 1,
-                      }}>
-                      {sendingJob === v.name
-                        ? <><Loader2 size={11} className="animate-spin"/> Sending…</>
-                        : result
-                          ? <><Send size={11}/> Send Job</>
-                          : "Describe issue first"}
-                    </button>
+                  {/* Text */}
+                  <div style={{ flex: 1 }}>
+                    <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>
+                      Search {p.name}
+                    </p>
+                    <p style={{ fontSize: 13, color: C.text3, margin: "2px 0 0" }}>
+                      {p.description} · &ldquo;{searchTerm}&rdquo; near {zip || city}
+                    </p>
+                  </div>
+
+                  {/* Arrow */}
+                  <div style={{
+                    display: "flex", alignItems: "center", gap: 4,
+                    fontSize: 13, fontWeight: 700, color: p.color, flexShrink: 0,
+                  }}>
+                    Open <ExternalLink size={13}/>
+                  </div>
+                </a>
+              );
+            })}
+          </div>
+
+          {/* Contractor brief email CTA */}
+          {result && (
+            <div style={{
+              padding: "16px 18px", borderRadius: 12,
+              background: briefSent ? C.greenBg : "#eff6ff",
+              border: `1px solid ${briefSent ? C.green + "40" : C.accent + "30"}`,
+            }}>
+              <p style={{ fontSize: 13, fontWeight: 700, color: briefSent ? C.green : C.accent, margin: "0 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
+                {briefSent ? <><CheckCircle2 size={14}/> Contractor brief sent!</> : <><Send size={13}/> Email yourself the contractor brief</>}
+              </p>
+              {briefSent ? (
+                <div>
+                  <p style={{ fontSize: 13, color: C.text2, margin: "0 0 6px" }}>
+                    Check <strong>{userEmail}</strong> — it has everything: what to say, cost range, and questions to ask.
+                  </p>
+                  {briefUrl && (
+                    <a href={briefUrl} target="_blank" rel="noopener noreferrer"
+                      style={{ fontSize: 12, color: C.accent, textDecoration: "underline", display: "flex", alignItems: "center", gap: 4 }}>
+                      View shareable job brief <ChevronRight size={11}/>
+                    </a>
                   )}
                 </div>
-              </div>
-            ))}
-          </div>
-
-          <p style={{ fontSize: 12, color: C.text3, marginTop: 14, textAlign: "center", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
-            <Info size={11}/> Vendor listings are illustrative. Connect Google Places API for live local results.
-          </p>
+              ) : (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                  <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>
+                    Get a ready-to-share brief with cost estimates, what to tell the contractor, and questions to ask — sent to {userEmail || "your email"}.
+                  </p>
+                  <button
+                    onClick={emailContractorBrief}
+                    disabled={sendingBrief}
+                    style={{
+                      padding: "8px 16px", borderRadius: 8, border: "none",
+                      cursor: "pointer", background: C.navyMid, color: "white",
+                      fontSize: 13, fontWeight: 600, flexShrink: 0,
+                      display: "flex", alignItems: "center", gap: 6,
+                      opacity: sendingBrief ? 0.7 : 1,
+                    }}>
+                    {sendingBrief
+                      ? <><Loader2 size={12} className="animate-spin"/> Sending…</>
+                      : <><Send size={12}/> Email Brief</>}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
