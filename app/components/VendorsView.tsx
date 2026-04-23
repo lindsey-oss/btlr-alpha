@@ -117,9 +117,10 @@ interface Props {
   userId?: string;
   prefillTrade?: string;    // CATEGORIES key, e.g. "roofing" — auto-selects category on open
   prefillContext?: string;  // human label for the context banner, e.g. "Roof Replacement"
+  prefillIssue?: string;    // pre-typed issue text — auto-fills search and triggers classification
 }
 
-export default function VendorsView({ address, inspectionFindings, userEmail, userId, prefillTrade, prefillContext }: Props) {
+export default function VendorsView({ address, inspectionFindings, userEmail, userId, prefillTrade, prefillContext, prefillIssue }: Props) {
   const [input, setInput]             = useState("");
   const [listening, setListening]     = useState(false);
   const [loading, setLoading]         = useState(false);
@@ -130,17 +131,33 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   const [sendingJob, setSendingJob]   = useState<string | null>(null);
   const recognitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Auto-select trade when opened via a CTA with a prefill key
+  // Keep a stable ref to classifyIssue so the useEffect below can call it
+  // without needing it in the dependency array (which would cause a loop).
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const classifyRef = useRef<(text?: string) => Promise<void>>(null as any);
+
+  // Auto-prefill: if an issue string is provided, populate the search box and
+  // trigger classification right away so the user lands on the results.
+  // Otherwise, if only a trade key is provided, just pre-select the category.
   useEffect(() => {
-    if (!prefillTrade) return;
-    const match = CATEGORIES.find(c => c.key === prefillTrade);
-    if (match) {
-      setSelectedCategory(match.label);
+    if (prefillIssue) {
+      setInput(prefillIssue);
       setResult(null);
       setActiveIssue(null);
-      setInput("");
+      setSelectedCategory(null);
+      // Defer until classifyRef is wired up (next tick)
+      setTimeout(() => classifyRef.current?.(prefillIssue), 0);
+    } else if (prefillTrade) {
+      const match = CATEGORIES.find(c => c.key === prefillTrade);
+      if (match) {
+        setSelectedCategory(match.label);
+        setResult(null);
+        setActiveIssue(null);
+        setInput("");
+      }
     }
-  }, [prefillTrade]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [prefillTrade, prefillIssue]);
 
   async function requestQuote(vendorName: string) {
     if (!result) return;
@@ -210,6 +227,8 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   async function classifyIssue(text?: string) {
     const query = (text ?? input).trim();
     if (!query) return;
+    // Keep ref current so the prefill useEffect can call this before render
+    classifyRef.current = classifyIssue;
     setLoading(true); setResult(null); setSelectedCategory(null); setActiveIssue(null);
     try {
       const res = await fetch("/api/classify-issue", {

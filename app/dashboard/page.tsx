@@ -6,7 +6,7 @@ import { supabase } from "../../lib/supabase";
 import {
   Home as HomeIcon, Upload, FileText, Activity,
   Wrench, Users, Settings, Send, Loader2, CheckCircle2,
-  AlertTriangle, AlertCircle, Info, ChevronRight, Sparkles, X, CloudUpload,
+  AlertTriangle, AlertCircle, Info, ChevronRight, ChevronDown, Sparkles, X, CloudUpload,
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
   ExternalLink, ArrowRight, BarChart3, Clock,
@@ -42,6 +42,54 @@ function toCategoryKey(category: string): string {
 function findingKey(category: string, index: number): string {
   return `${toCategoryKey(category)}_${index}`;
 }
+
+// Maps a raw finding category to a broader display group key
+function toGroupKey(category: string): string {
+  const t = category.toLowerCase();
+  if (t.includes("roof"))                                                       return "roof";
+  if (t.includes("garage"))                                                     return "garage";
+  if (t.includes("exterior") || t.includes("siding") || t.includes("deck") ||
+      t.includes("patio") || t.includes("fence") || t.includes("driveway") ||
+      t.includes("walkway") || t.includes("cladding"))                         return "exterior";
+  if (t.includes("plumb") || t.includes("sink") || t.includes("drain") ||
+      t.includes("toilet") || t.includes("pipe") || t.includes("water heater") ||
+      t.includes("sewer") || t.includes("hose bibb"))                          return "plumbing";
+  if (t.includes("electric") || t.includes("panel") || t.includes("outlet") ||
+      t.includes("wiring") || t.includes("gfci") || t.includes("circuit"))    return "electrical";
+  if (t.includes("hvac") || t.includes("heat") || t.includes("cool") ||
+      t.includes("furnace") || t.includes("ductwork") || t.includes("air handler") ||
+      t.includes(" ac ") || t.includes("thermostat"))                          return "hvac";
+  if (t.includes("found") || t.includes("crawl") || t.includes("basement") ||
+      t.includes("structural") || t.includes("settling"))                      return "foundation";
+  if (t.includes("attic") || t.includes("insul"))                             return "attic";
+  if (t.includes("window") || t.includes("door"))                             return "windows";
+  if (t.includes("appliance") || t.includes("washer") || t.includes("dryer") ||
+      t.includes("dishwasher") || t.includes("oven") || t.includes("stove") ||
+      t.includes("refrigerator") || t.includes("range") || t.includes("hood"))return "appliances";
+  if (t.includes("safety") || t.includes("smoke") || t.includes("carbon") ||
+      t.includes("radon") || t.includes("pest") || t.includes("termite") ||
+      t.includes("mold") || t.includes("bug"))                                 return "safety";
+  if (t.includes("interior") || t.includes("floor") || t.includes("ceiling") ||
+      t.includes("stair") || t.includes("handrail") || t.includes("paint"))   return "interior";
+  return "general";
+}
+
+// Display label + icon for each group key
+const GROUP_META: Record<string, { label: string; iconFn: (color: string) => React.ReactNode }> = {
+  roof:       { label: "Roof",            iconFn: c => <HomeIcon    size={16} color={c}/> },
+  exterior:   { label: "Exterior",        iconFn: c => <Shield      size={16} color={c}/> },
+  garage:     { label: "Garage",          iconFn: c => <HomeIcon    size={16} color={c}/> },
+  plumbing:   { label: "Plumbing",        iconFn: c => <Droplets    size={16} color={c}/> },
+  electrical: { label: "Electrical",      iconFn: c => <Zap         size={16} color={c}/> },
+  hvac:       { label: "HVAC",            iconFn: c => <Wind        size={16} color={c}/> },
+  foundation: { label: "Foundation",      iconFn: c => <Activity    size={16} color={c}/> },
+  attic:      { label: "Attic",           iconFn: c => <HomeIcon    size={16} color={c}/> },
+  windows:    { label: "Windows & Doors", iconFn: c => <Eye         size={16} color={c}/> },
+  appliances: { label: "Appliances",      iconFn: c => <Wrench      size={16} color={c}/> },
+  safety:     { label: "Safety",          iconFn: c => <AlertTriangle size={16} color={c}/> },
+  interior:   { label: "Interior",        iconFn: c => <HomeIcon    size={16} color={c}/> },
+  general:    { label: "General",         iconFn: c => <Wrench      size={16} color={c}/> },
+};
 
 // Findings are "active" if status is open, not_sure, or not yet set
 // index = position in the global allFindings array
@@ -612,7 +660,7 @@ function HealthScoreModal({
   year:              number;
   homeHealthReport?: HomeHealthReport | null;
   onClose:           () => void;
-  onFindVendors:     (trade: string, context?: string) => void;
+  onFindVendors:     (trade: string, context?: string, issue?: string) => void;
 }) {
   const { score, deductions, resolvedDeductions } = breakdown;
   const st         = healthStatusInfo(score);
@@ -709,7 +757,7 @@ function HealthScoreModal({
                         </div>
                         <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.5 }}>{d.reason}</p>
                         <button
-                          onClick={() => { onClose(); onFindVendors(d.category, d.category); }}
+                          onClick={() => { onClose(); onFindVendors(d.category, d.category, d.reason); }}
                           style={{ marginTop: 6, fontSize: 11, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 3 }}>
                           <Users size={10}/> Find Vendors →
                         </button>
@@ -1060,7 +1108,7 @@ function CostDetailModal({
 
           {/* CTA buttons */}
           <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
-            <button onClick={() => { onClose(); onFindVendors(item.tradeCategory ?? item.label, item.label); }}
+            <button onClick={() => { onClose(); onFindVendors(item.tradeCategory ?? item.label, item.label, item.finding?.description ?? item.label); }}
               style={{ flex: 1, padding: "12px 16px", borderRadius: 10, background: C.accent,
                 border: "none", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer",
                 display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
@@ -1134,6 +1182,10 @@ export default function Dashboard() {
   const [selectedCost, setSelectedCost]       = useState<CostItem | null>(null);
   const [vendorPrefill, setVendorPrefill]     = useState<string | null>(null);
   const [vendorContext, setVendorContext]      = useState<string | null>(null);
+  const [vendorIssue,   setVendorIssue]       = useState<string | null>(null);
+
+  // Inspection findings accordion — set of expanded group keys
+  const [expandedGroups, setExpandedGroups]   = useState<Set<string>>(new Set());
 
   // Mortgage
   const [mortgage, setMortgage] = useState<{ lender?: string; balance?: number; payment?: number; due_day?: number; rate?: number } | null>(null);
@@ -1186,17 +1238,30 @@ export default function Dashboard() {
 
   // (vendorPrefill is now set directly in handleFindVendors — no useEffect needed)
 
+  // Auto-expand groups that contain critical findings when inspection data first loads
+  useEffect(() => {
+    const findings = inspectionResult?.findings ?? [];
+    if (!findings.length) return;
+    const criticalKeys = new Set<string>();
+    for (const f of findings) {
+      if (f.severity === "critical") criticalKeys.add(toGroupKey(f.category));
+    }
+    if (criticalKeys.size > 0) setExpandedGroups(criticalKeys);
+  }, [inspectionResult]);
+
   function openCostModal(item: CostItem) {
     setSelectedCost(item);
     setShowCostModal(true);
   }
 
-  // Navigate to Vendors page pre-filtered to the relevant trade category
-  function handleFindVendors(trade: string, context?: string) {
+  // Navigate to Vendors page pre-filtered to the relevant trade category.
+  // Pass issue to pre-populate the search input and auto-trigger AI classification.
+  function handleFindVendors(trade: string, context?: string, issue?: string) {
     setShowHealthModal(false);
     setShowCostModal(false);
     setVendorPrefill(toVendorKey(trade));
     setVendorContext(context ?? null);
+    setVendorIssue(issue ?? null);
     setNav("Vendors");
   }
 
@@ -1878,7 +1943,7 @@ export default function Dashboard() {
             <button key={label} onClick={() => {
               setNav(label);
               // Direct sidebar click to Vendors = generic browse (clears CTA prefill)
-              if (label === "Vendors") { setVendorPrefill(null); setVendorContext(null); }
+              if (label === "Vendors") { setVendorPrefill(null); setVendorContext(null); setVendorIssue(null); }
             }} style={{
               display: "flex", alignItems: "center", gap: 9,
               padding: "9px 12px", borderRadius: 10, fontSize: 13,
@@ -1948,6 +2013,7 @@ export default function Dashboard() {
               userId={user?.id}
               prefillTrade={vendorPrefill ?? undefined}
               prefillContext={vendorContext ?? undefined}
+              prefillIssue={vendorIssue ?? undefined}
             />
           )}
 
@@ -1983,7 +2049,7 @@ export default function Dashboard() {
                         </div>
                         <span style={{ fontSize: 16, fontWeight: 800, color: col }}>${c.amount.toLocaleString()}</span>
                         <div style={{ display: "flex", gap: 8 }}>
-                          <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label); }}
+                          <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label, c.finding?.description ?? c.label); }}
                             style={{ padding: "6px 12px", borderRadius: 8, background: C.accent, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                             <Users size={12}/> Find Vendors
                           </button>
@@ -2086,69 +2152,211 @@ export default function Dashboard() {
                 )}
               </div>
 
-              {/* Inspection findings status overview */}
-              {inspectionResult?.findings && inspectionResult.findings.length > 0 && (
-                <div style={card()}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                    <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>Inspection Findings Status</p>
-                    <button
-                      onClick={() => { setReviewFindings(inspectionResult.findings ?? []); setShowReviewModal(true); }}
-                      style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}
-                    >
-                      Review All →
-                    </button>
+              {/* ── Inspection Findings — Grouped Accordion ─────────── */}
+              {allFindings.length > 0 && (() => {
+                // Build groups preserving each finding's global index in allFindings
+                const groupMap = new Map<string, { label: string; items: { f: Finding; globalIdx: number }[] }>();
+                for (let gi = 0; gi < allFindings.length; gi++) {
+                  const f = allFindings[gi];
+                  const gk = toGroupKey(f.category);
+                  const meta = GROUP_META[gk] ?? GROUP_META.general;
+                  if (!groupMap.has(gk)) groupMap.set(gk, { label: meta.label, items: [] });
+                  groupMap.get(gk)!.items.push({ f, globalIdx: gi });
+                }
+                const groups = [...groupMap.entries()].map(([gk, v]) => ({ gk, ...v }));
+
+                const statusConfig: Record<FindingStatus, { label: string; color: string; bg: string }> = {
+                  open:      { label: "Open",      color: C.red,    bg: C.redBg   },
+                  completed: { label: "Completed", color: C.green,  bg: C.greenBg },
+                  monitored: { label: "Monitoring",color: C.accent, bg: "#eff6ff" },
+                  not_sure:  { label: "Not Sure",  color: C.amber,  bg: C.amberBg },
+                  dismissed: { label: "Dismissed", color: C.text3,  bg: C.bg      },
+                };
+
+                return (
+                  <div style={card({ padding: 0, overflow: "hidden" })}>
+                    {/* Header */}
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: `1px solid ${C.border}` }}>
+                      <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>
+                        Inspection Findings
+                        <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 600, color: C.text3 }}>
+                          {allFindings.length} total · {groups.length} {groups.length === 1 ? "system" : "systems"}
+                        </span>
+                      </p>
+                      <button
+                        onClick={() => { setReviewFindings(inspectionResult?.findings ?? []); setShowReviewModal(true); }}
+                        style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>
+                        Review All →
+                      </button>
+                    </div>
+
+                    {/* Summary row */}
+                    <div style={{ display: "flex", gap: 16, padding: "10px 22px", background: C.bg, borderBottom: `1px solid ${C.border}` }}>
+                      <span style={{ fontSize: 12, color: C.red, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.red, display: "inline-block" }}/>
+                        {allFindings.filter(f => f.severity === "critical").length} critical
+                      </span>
+                      <span style={{ fontSize: 12, color: C.amber, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.amber, display: "inline-block" }}/>
+                        {allFindings.filter(f => f.severity === "warning").length} warnings
+                      </span>
+                      <span style={{ fontSize: 12, color: C.green, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
+                        <CheckCircle2 size={12} color={C.green}/>
+                        {completedFindings.length} resolved
+                      </span>
+                    </div>
+
+                    {/* Accordion groups */}
+                    {groups.map(({ gk, label, items }, gi) => {
+                      const isOpen = expandedGroups.has(gk);
+                      const meta = GROUP_META[gk] ?? GROUP_META.general;
+                      const hasCritical = items.some(({ f }) => f.severity === "critical");
+                      const hasWarning  = items.some(({ f }) => f.severity === "warning");
+                      const allResolved = items.every(({ f, globalIdx }) => {
+                        const s = findingStatuses[findingKey(f.category, globalIdx)] ?? "open";
+                        return s === "completed" || s === "dismissed";
+                      });
+                      const worstColor = hasCritical ? C.red : hasWarning ? C.amber : allResolved ? C.green : C.text3;
+                      const worstLabel = hasCritical ? "Critical" : hasWarning ? "Warning" : allResolved ? "Resolved" : "Good";
+                      const worstBg    = hasCritical ? C.redBg   : hasWarning ? C.amberBg : allResolved ? C.greenBg : C.bg;
+
+                      return (
+                        <div key={gk} style={{ borderBottom: gi < groups.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                          {/* Category row — clickable */}
+                          <button
+                            onClick={() => setExpandedGroups(prev => {
+                              const next = new Set(prev);
+                              if (next.has(gk)) next.delete(gk); else next.add(gk);
+                              return next;
+                            })}
+                            style={{
+                              width: "100%", display: "flex", alignItems: "center", gap: 14,
+                              padding: "14px 22px", background: "transparent", border: "none",
+                              cursor: "pointer", textAlign: "left",
+                              transition: "background 0.15s",
+                            }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = C.bg; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                          >
+                            {/* Icon */}
+                            <div style={{
+                              width: 36, height: 36, borderRadius: 10, flexShrink: 0,
+                              background: worstBg, display: "flex", alignItems: "center", justifyContent: "center",
+                              border: `1px solid ${worstColor}25`,
+                            }}>
+                              {meta.iconFn(worstColor)}
+                            </div>
+
+                            {/* Label + count */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{label}</span>
+                                <span style={{
+                                  fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
+                                  background: worstBg, color: worstColor,
+                                }}>
+                                  {worstLabel}
+                                </span>
+                              </div>
+                              <span style={{ fontSize: 12, color: C.text3 }}>
+                                {items.length} {items.length === 1 ? "finding" : "findings"}
+                                {allResolved ? " — all resolved" : hasCritical ? " — needs attention" : ""}
+                              </span>
+                            </div>
+
+                            {/* Expand chevron */}
+                            <div style={{ transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}>
+                              <ChevronDown size={16} color={C.text3}/>
+                            </div>
+                          </button>
+
+                          {/* Expanded findings */}
+                          {isOpen && (
+                            <div style={{ padding: "0 22px 16px", background: "#fafbfc" }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                {items.map(({ f, globalIdx }, fi) => {
+                                  const fk = findingKey(f.category, globalIdx);
+                                  const status = findingStatuses[fk] ?? "open";
+                                  const cfg = statusConfig[status];
+                                  const isResolved = status === "completed" || status === "dismissed";
+                                  const sevColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
+
+                                  return (
+                                    <div key={fi} style={{
+                                      background: C.surface, borderRadius: 12, padding: "14px 16px",
+                                      border: `1px solid ${isResolved ? C.border : sevColor + "30"}`,
+                                      display: "flex", flexDirection: "column", gap: 10,
+                                    }}>
+                                      {/* Finding header row */}
+                                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: sevColor, flexShrink: 0, marginTop: 5 }}/>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                                            <span style={{
+                                              fontSize: 13, fontWeight: 700, color: isResolved ? C.text3 : C.text,
+                                              textDecoration: status === "completed" ? "line-through" : "none",
+                                            }}>
+                                              {f.category}
+                                            </span>
+                                            {f.severity && f.severity !== "info" && (
+                                              <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: sevColor + "18", color: sevColor, textTransform: "capitalize" }}>
+                                                {f.severity}
+                                              </span>
+                                            )}
+                                          </div>
+                                          <p style={{ fontSize: 13, color: isResolved ? C.text3 : C.text2, margin: 0, lineHeight: 1.55 }}>
+                                            {f.description}
+                                          </p>
+                                          {f.estimated_cost != null && (
+                                            <p style={{ fontSize: 12, color: C.text3, margin: "5px 0 0", fontWeight: 600 }}>
+                                              Est. ${f.estimated_cost.toLocaleString()}
+                                            </p>
+                                          )}
+                                        </div>
+                                      </div>
+
+                                      {/* Action row */}
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 2 }}>
+                                        <select
+                                          value={status}
+                                          onChange={e => toggleFindingStatus(f.category, globalIdx, e.target.value as FindingStatus)}
+                                          style={{
+                                            fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 20,
+                                            border: `1px solid ${cfg.color}40`,
+                                            background: cfg.bg, color: cfg.color,
+                                            cursor: "pointer", outline: "none",
+                                          }}>
+                                          <option value="open">Open</option>
+                                          <option value="completed">Completed</option>
+                                          <option value="monitored">Monitoring</option>
+                                          <option value="not_sure">Not Sure</option>
+                                          <option value="dismissed">Dismissed</option>
+                                        </select>
+                                        {!isResolved && (
+                                          <button
+                                            onClick={() => handleFindVendors(f.category, f.category, f.description)}
+                                            style={{
+                                              marginLeft: "auto", fontSize: 11, fontWeight: 600, color: C.accent,
+                                              background: "#eff6ff", border: `1px solid ${C.accent}30`,
+                                              borderRadius: 20, padding: "4px 12px",
+                                              cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
+                                            }}>
+                                            <Users size={10}/> Find Vendors
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  {inspectionResult.findings.map((f, i) => {
-                    const key = findingKey(f.category, i);
-                    const status = findingStatuses[key] ?? "open";
-                    const statusConfig: Record<FindingStatus, { label: string; color: string; bg: string }> = {
-                      open:       { label: "Open",         color: C.red,    bg: C.redBg    },
-                      completed:  { label: "Completed",    color: C.green,  bg: C.greenBg  },
-                      monitored:  { label: "Monitoring",   color: C.accent, bg: "#eff6ff"  },
-                      not_sure:   { label: "Not Sure",     color: C.amber,  bg: C.amberBg  },
-                      dismissed:  { label: "Dismissed",    color: C.text3,  bg: C.bg       },
-                    };
-                    const cfg = statusConfig[status];
-                    return (
-                      <div key={i} style={{
-                        display: "flex", alignItems: "center", gap: 10,
-                        padding: "10px 0",
-                        borderBottom: i < (inspectionResult.findings?.length ?? 0) - 1 ? `1px solid ${C.border}` : "none",
-                      }}>
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3, flexShrink: 0 }}/>
-                        <span style={{ flex: 1, fontSize: 13, fontWeight: 500, color: status === "completed" || status === "dismissed" ? C.text3 : C.text, textDecoration: status === "completed" ? "line-through" : "none" }}>{f.category}</span>
-                        <select
-                          value={status}
-                          onChange={e => toggleFindingStatus(f.category, i, e.target.value as FindingStatus)}
-                          style={{
-                            fontSize: 11, fontWeight: 600, padding: "3px 8px", borderRadius: 20,
-                            border: `1px solid ${cfg.color}40`,
-                            background: cfg.bg, color: cfg.color,
-                            cursor: "pointer", outline: "none",
-                          }}
-                        >
-                          <option value="open">Open</option>
-                          <option value="completed">Completed</option>
-                          <option value="monitored">Monitoring</option>
-                          <option value="not_sure">Not Sure</option>
-                          <option value="dismissed">Dismissed</option>
-                        </select>
-                      </div>
-                    );
-                  })}
-                  <div style={{ marginTop: 14, padding: "10px 14px", background: C.bg, borderRadius: 10 }}>
-                    <span style={{ fontSize: 13, color: C.green, fontWeight: 600 }}>
-                      {completedFindings.length} resolved
-                    </span>
-                    <span style={{ fontSize: 13, color: C.text3, marginLeft: 8 }}>
-                      · {activeFindings.length} still open
-                    </span>
-                    <span style={{ fontSize: 13, color: C.text3, marginLeft: 8 }}>
-                      · {activeFindings.filter(f => f.severity === "critical").length} critical
-                    </span>
-                  </div>
-                </div>
-              )}
+                );
+              })()}
 
               {/* Generic document upload */}
               <div style={card()}>
@@ -2704,7 +2912,7 @@ export default function Dashboard() {
                           <span style={{ fontSize: 12, color: C.text3, marginLeft: 8 }}>{c.horizon}</span>
                         </div>
                         <span style={{ fontSize: 14, fontWeight: 700, color: col, flexShrink: 0 }}>${c.amount.toLocaleString()}</span>
-                        <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label); }}
+                        <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label, c.finding?.description ?? c.label); }}
                           style={{ padding: "4px 10px", borderRadius: 7, background: C.accent, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
                           <Users size={11}/> Find Vendors
                         </button>
