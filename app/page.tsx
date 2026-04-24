@@ -317,7 +317,7 @@ export default function Landing() {
       </section>
 
       {/* ── Footer ───────────────────────────────────────────────── */}
-      <footer style={{ padding: "28px 48px", borderTop: `1px solid ${border}`, background: bg, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <footer style={{ padding: "28px 48px", borderTop: `1px solid ${border}`, background: bg, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <div style={{ width: 28, height: 28, borderRadius: 8, background: `linear-gradient(135deg, ${accent}, #1d4ed8)`, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Home size={13} color="white" />
@@ -325,6 +325,10 @@ export default function Landing() {
           <span style={{ fontWeight: 800, fontSize: 15, letterSpacing: "-0.3px", color: text }}>BTLR</span>
         </div>
         <p style={{ fontSize: 13, color: text3, margin: 0 }}>© 2026 BTLR. All rights reserved.</p>
+        <div style={{ display: "flex", gap: 24 }}>
+          <a href="/privacy" style={{ fontSize: 13, color: text3, textDecoration: "none" }}>Privacy Policy</a>
+          <a href="/terms" style={{ fontSize: 13, color: text3, textDecoration: "none" }}>Terms of Service</a>
+        </div>
       </footer>
 
     </div>
