@@ -2814,28 +2814,104 @@ export default function Dashboard() {
                       {inspectionResult.summary.replace(/^\[Extracted[\s\S]*?\]\s*/, "")}
                     </p>
                   )}
-                  {inspectionResult.findings && inspectionResult.findings.length > 0 && (
-                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 6 }}>
-                      {inspectionResult.findings.map((f, i) => {
-                        const dotColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
-                        return (
-                          <div key={i} onClick={() => openCostModal({ label: f.category, horizon: f.severity === "critical" ? "Immediate" : "Within 1–2 yrs", amount: f.estimated_cost ?? 0, severity: f.severity, finding: f, tradeCategory: f.category })}
-                            style={{ display: "flex", gap: 10, padding: "9px 12px", borderRadius: 9, background: C.bg, border: `1px solid ${C.border}`, alignItems: "flex-start", cursor: "pointer" }}
-                            onMouseEnter={e => e.currentTarget.style.borderColor = C.accent}
-                            onMouseLeave={e => e.currentTarget.style.borderColor = C.border}>
-                            <span style={{ width: 8, height: 8, borderRadius: "50%", background: dotColor, flexShrink: 0, marginTop: 4 }}/>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{f.category}</span>
-                              <span style={{ fontSize: 11, color: C.text3, display: "block", marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{f.description}</span>
+                  {inspectionResult.findings && inspectionResult.findings.length > 0 && (() => {
+                    // Build groups for the compact accordion inside the upload card
+                    const grpMap = new Map<string, { label: string; items: { f: Finding; globalIdx: number }[] }>();
+                    for (let gi = 0; gi < inspectionResult.findings.length; gi++) {
+                      const f   = inspectionResult.findings[gi];
+                      const gk  = toGroupKey(f.category);
+                      const meta = GROUP_META[gk] ?? GROUP_META.general;
+                      if (!grpMap.has(gk)) grpMap.set(gk, { label: meta.label, items: [] });
+                      grpMap.get(gk)!.items.push({ f, globalIdx: gi });
+                    }
+                    const grps = [...grpMap.entries()].map(([gk, v]) => ({ gk, ...v }));
+                    return (
+                      <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden" }}>
+                        {grps.map(({ gk, label, items }, gi) => {
+                          const isOpen      = expandedGroups.has("upload_" + gk);
+                          const hasCritical = items.some(({ f }) => f.severity === "critical");
+                          const hasWarning  = items.some(({ f }) => f.severity === "warning");
+                          const meta        = GROUP_META[gk] ?? GROUP_META.general;
+                          const worstColor  = hasCritical ? C.red : hasWarning ? C.amber : C.green;
+                          const worstBg     = hasCritical ? C.redBg : hasWarning ? C.amberBg : C.greenBg;
+                          const worstLabel  = hasCritical ? "Critical" : hasWarning ? "Warning" : "Good";
+                          return (
+                            <div key={gk} style={{ borderBottom: gi < grps.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                              {/* Group row */}
+                              <button
+                                onClick={() => setExpandedGroups(prev => {
+                                  const next = new Set(prev);
+                                  const key  = "upload_" + gk;
+                                  if (next.has(key)) next.delete(key); else next.add(key);
+                                  return next;
+                                })}
+                                style={{
+                                  width: "100%", display: "flex", alignItems: "center", gap: 10,
+                                  padding: "11px 14px", background: isOpen ? C.bg : "white",
+                                  border: "none", cursor: "pointer", textAlign: "left",
+                                }}>
+                                {/* Icon */}
+                                <div style={{
+                                  width: 30, height: 30, borderRadius: 8, flexShrink: 0,
+                                  background: worstBg, display: "flex", alignItems: "center", justifyContent: "center",
+                                }}>
+                                  {meta.iconFn(worstColor)}
+                                </div>
+                                {/* Label */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                  <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{label}</span>
+                                  <span style={{ fontSize: 11, color: C.text3, marginLeft: 6 }}>
+                                    {items.length} {items.length === 1 ? "finding" : "findings"}
+                                  </span>
+                                </div>
+                                {/* Severity badge */}
+                                <span style={{
+                                  fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
+                                  background: worstBg, color: worstColor, flexShrink: 0,
+                                }}>
+                                  {worstLabel}
+                                </span>
+                                {/* Chevron */}
+                                <div style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s", flexShrink: 0 }}>
+                                  <ChevronDown size={14} color={C.text3}/>
+                                </div>
+                              </button>
+
+                              {/* Expanded findings */}
+                              {isOpen && (
+                                <div style={{ borderTop: `1px solid ${C.border}`, background: C.bg }}>
+                                  {items.map(({ f, globalIdx }, fi) => {
+                                    const dotColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
+                                    return (
+                                      <div key={fi}
+                                        onClick={() => openCostModal({ label: f.category, horizon: f.severity === "critical" ? "Immediate" : "Within 1–2 yrs", amount: f.estimated_cost ?? 0, severity: f.severity, finding: f, tradeCategory: f.category })}
+                                        style={{
+                                          display: "flex", gap: 10, padding: "9px 14px 9px 54px",
+                                          borderBottom: fi < items.length - 1 ? `1px solid ${C.border}` : "none",
+                                          alignItems: "flex-start", cursor: "pointer",
+                                          transition: "background 0.1s",
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = "#f1f5f9"}
+                                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flexShrink: 0, marginTop: 5 }}/>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{f.category}</span>
+                                          <span style={{ fontSize: 11, color: C.text2, display: "block", marginTop: 1, lineHeight: 1.4 }}>{f.description}</span>
+                                        </div>
+                                        {f.estimated_cost != null && (
+                                          <span style={{ fontSize: 12, fontWeight: 700, color: dotColor, flexShrink: 0 }}>${f.estimated_cost.toLocaleString()}</span>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
                             </div>
-                            {f.estimated_cost != null && (
-                              <span style={{ fontSize: 12, fontWeight: 700, color: dotColor, flexShrink: 0 }}>${f.estimated_cost.toLocaleString()}</span>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
 
