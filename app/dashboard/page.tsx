@@ -2407,7 +2407,7 @@ export default function Dashboard() {
                   ].map(({ label, val, set, ph }) => (
                     <div key={label}>
                       <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: 5 }}>{label}</label>
-                      <input value={val} onChange={e => set(e.target.value)} placeholder={ph} style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${C.border}`, fontSize: 14, color: C.text, background: C.bg, outline: "none", boxSizing: "border-box" }}/>
+                      <input value={val} onChange={e => set(e.target.value)} placeholder={ph} style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${C.border}`, fontSize: 16, color: C.text, background: C.bg, outline: "none", boxSizing: "border-box" }}/>
                     </div>
                   ))}
                 </div>
@@ -2611,7 +2611,7 @@ export default function Dashboard() {
               <div style={{ display: "flex", gap: 8 }}>
                 <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && askAI()}
                   placeholder={chatMessages.length > 0 ? "Ask a follow-up…" : inspectDone ? `"What's my most urgent repair?"` : `"What home maintenance should I do this season?"`}
-                  style={{ flex: 1, borderRadius: 10, padding: "11px 14px", fontSize: 14, border: `1.5px solid ${C.border}`, background: C.surface, color: C.text, outline: "none" }}/>
+                  style={{ flex: 1, borderRadius: 10, padding: "11px 14px", fontSize: 16, border: `1.5px solid ${C.border}`, background: C.surface, color: C.text, outline: "none" }}/>
                 <button onClick={askAI} disabled={aiLoading || !q.trim()}
                   style={{ borderRadius: 10, padding: "11px 18px", border: "none", cursor: "pointer", background: C.accent, color: "white", opacity: aiLoading || !q.trim() ? 0.4 : 1, display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13 }}>
                   {aiLoading ? <Loader2 size={14} className="animate-spin"/> : <><Send size={13}/> Ask</>}

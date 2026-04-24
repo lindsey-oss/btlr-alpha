@@ -151,6 +151,14 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   const [briefSent, setBriefSent]     = useState(false);
   const [sendingBrief, setSendingBrief] = useState(false);
   const [briefUrl, setBriefUrl]       = useState<string | null>(null);
+  const [isMobile, setIsMobile]       = useState(false);
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768);
+    check();
+    window.addEventListener("resize", check);
+    return () => window.removeEventListener("resize", check);
+  }, []);
   const recognitionRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Keep a stable ref to classifyIssue so the useEffect below can call it
@@ -327,8 +335,8 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
           Describe any issue — AI will route you to the right contractor instantly.
         </p>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          {/* Mic button */}
+        {/* Input row: mic + text field */}
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <button onClick={toggleListen} style={{
             width: 46, height: 46, borderRadius: 12, border: "none", cursor: "pointer", flexShrink: 0,
             background: listening ? C.red : C.navy,
@@ -338,32 +346,29 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
           }}>
             {listening ? <MicOff size={18} color="white"/> : <Mic size={18} color="white"/>}
           </button>
-
-          {/* Text input */}
           <input
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => e.key === "Enter" && classifyIssue()}
-            placeholder={listening ? "Listening — speak your issue, then press Find Vendors" : '"I have a leak under my sink" or "roof is missing shingles"'}
+            placeholder={listening ? "Listening…" : '"Leak under sink" or "missing shingles"'}
             style={{
-              flex: 1, height: 46, borderRadius: 12, padding: "0 14px", fontSize: 15,
+              flex: 1, height: 46, borderRadius: 12, padding: "0 14px", fontSize: isMobile ? 16 : 15,
               border: `1.5px solid ${listening ? C.red : C.border}`,
               background: listening ? C.redBg : C.bg, color: C.text, outline: "none",
               transition: "all 0.2s",
             }}
           />
-
-          {/* Find vendors button */}
-          <button onClick={() => classifyIssue()} disabled={loading || !input.trim()} style={{
-            height: 46, padding: "0 18px", borderRadius: 12, border: "none", cursor: "pointer",
-            background: C.navyMid, color: "white", fontSize: 15, fontWeight: 600,
-            display: "flex", alignItems: "center", gap: 7,
-            opacity: loading || !input.trim() ? 0.5 : 1, transition: "opacity 0.2s",
-          }}>
-            {loading ? <Loader2 size={15} className="animate-spin"/> : <Search size={15}/>}
-            {loading ? "Finding…" : "Find Vendors"}
-          </button>
         </div>
+        {/* Find vendors button — full width on mobile */}
+        <button onClick={() => classifyIssue()} disabled={loading || !input.trim()} style={{
+          width: "100%", height: 48, borderRadius: 12, border: "none", cursor: "pointer",
+          background: C.navyMid, color: "white", fontSize: 15, fontWeight: 600,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+          opacity: loading || !input.trim() ? 0.5 : 1, transition: "opacity 0.2s",
+        }}>
+          {loading ? <Loader2 size={15} className="animate-spin"/> : <Search size={15}/>}
+          {loading ? "Finding…" : "Find Vendors"}
+        </button>
 
         {listening && (
           <p style={{ fontSize: 14, color: C.red, marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
@@ -411,7 +416,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
             </div>
           </div>
 
-          <div style={{ padding: 22, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 18 }}>
+          <div style={{ padding: isMobile ? 16 : 22, display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 14 }}>
 
             {/* What to tell the contractor */}
             <div style={{ gridColumn: "1 / -1", background: "#eff6ff", borderRadius: 10, padding: "12px 16px", border: `1px solid ${C.accent}30` }}>
@@ -516,7 +521,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
         <p style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 14 }}>
           Browse by Trade
         </p>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: 10 }}>
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(3, 1fr)" : "repeat(6, 1fr)", gap: 10 }}>
           {CATEGORIES.map(cat => {
             const isSelected = selectedCategory === cat.label;
             return (
@@ -633,7 +638,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
                   )}
                 </div>
               ) : (
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: 10 }}>
                   <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>
                     Get a ready-to-share brief with cost estimates, what to tell the contractor, and questions to ask — sent to {userEmail || "your email"}.
                   </p>
@@ -641,10 +646,10 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
                     onClick={emailContractorBrief}
                     disabled={sendingBrief}
                     style={{
-                      padding: "8px 16px", borderRadius: 8, border: "none",
+                      padding: "10px 16px", borderRadius: 8, border: "none",
                       cursor: "pointer", background: C.navyMid, color: "white",
                       fontSize: 13, fontWeight: 600, flexShrink: 0,
-                      display: "flex", alignItems: "center", gap: 6,
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
                       opacity: sendingBrief ? 0.7 : 1,
                     }}>
                     {sendingBrief
