@@ -86,13 +86,18 @@ export default function PrivacyPage() {
             "Bank account data via Plaid (only if you choose to connect your bank)",
             "Property data from third-party sources like ATTOM",
           ]} />
-          <p style={{ fontSize: 15, fontWeight: 600, color: text, margin: "12px 0 6px" }}>Information we collect automatically</p>
+          <p style={{ fontSize: 15, fontWeight: 600, color: text, margin: "12px 0 6px" }}>Information We Collect Automatically</p>
           <UL items={[
-            "Basic usage data: which features you use, how often",
-            "Device type and browser (for compatibility)",
-            "Error logs so we can fix bugs",
+            "Basic usage data (such as which features you use and how often)",
+            "Device and browser information (to ensure compatibility and performance)",
+            "Error logs (to help us identify and fix bugs)",
           ]} />
-          <Note>We do not sell your data. Ever. We do not run ads. Your home documents are yours.</Note>
+          <Note>
+            We do not sell your personal data.<br/>
+            We may use aggregated, anonymized data to improve the product and understand general home maintenance trends. This data cannot be used to identify you or your property.<br/>
+            We do not run ads.<br/>
+            Your home documents and data belong to you.
+          </Note>
         </Section>
 
         <Section title="2. How We Use Your Information">
