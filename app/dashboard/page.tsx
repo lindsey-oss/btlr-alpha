@@ -2186,16 +2186,14 @@ export default function Dashboard() {
           ...(result.property_address ? { address: result.property_address }          : {}),
           updated_at:            new Date().toISOString(),
         };
-        const { data: existingProp, error: propLookupErr } = await supabase
-          .from("properties").select("id").limit(1).maybeSingle();
-        if (propLookupErr) {
-          console.error("[uploadInspection] property lookup failed:", propLookupErr.message);
-        } else if (existingProp?.id) {
+        const activePropId = activePropertyIdRef.current;
+        if (activePropId) {
           const { error: updateErr } = await supabase
-            .from("properties").update(inspectionPayload).eq("id", existingProp.id);
+            .from("properties").update(inspectionPayload).eq("id", activePropId);
           if (updateErr) console.error("[uploadInspection] update failed:", updateErr.message);
-          else console.log(`[uploadInspection] ✓ Saved ${newFindings.length} findings to DB`);
+          else console.log(`[uploadInspection] ✓ Saved ${newFindings.length} findings to property ${activePropId}`);
         } else {
+          // No active property yet — create one
           const { error: insertErr } = await supabase
             .from("properties").insert({ ...inspectionPayload, address: address || "My Home", user_id: uploadUserId });
           if (insertErr) console.error("[uploadInspection] insert failed:", insertErr.message);

@@ -25,6 +25,11 @@ const CHAR_LIMIT = 32000; // ~8k tokens — well within gpt-4o-mini context
 function smartExtractSection(fullText) {
   const len = fullText.length;
 
+  // Always grab the cover page / first ~1500 chars so property address,
+  // inspection date, and company name can be found even when we jump ahead
+  // to the summary section for findings.
+  const coverPage = fullText.slice(0, 1500);
+
   // ── Strategy 1: Find "General Summary" / known summary headers ───────────
   // The second occurrence is the actual section (first is usually the TOC line).
   const summaryPatterns = [
@@ -56,7 +61,7 @@ function smartExtractSection(fullText) {
 
     const section = fullText.slice(idx, idx + CHAR_LIMIT);
     console.log(`[parse-inspection] Using "${pattern}" section at char ${idx} (${section.length} chars)`);
-    return section;
+    return coverPage + "\n\n---SUMMARY SECTION---\n\n" + section;
   }
 
   // ── Strategy 2: Skip intro, find first dense findings block ──────────────
@@ -84,7 +89,7 @@ function smartExtractSection(fullText) {
     const start = Math.max(searchStart, idx - 300);
     const section = fullText.slice(start, start + CHAR_LIMIT);
     console.log(`[parse-inspection] Using findings block at char ${idx} via marker "${marker}" (${section.length} chars)`);
-    return section;
+    return coverPage + "\n\n---FINDINGS SECTION---\n\n" + section;
   }
 
   // ── Strategy 3: Fall back — send from char 0 but with bigger limit ────────
@@ -98,11 +103,15 @@ function smartExtractSection(fullText) {
 const PROMPT = `Extract structured data from this home inspection report. Respond only with valid JSON in exactly this shape:
 
 {
+  "property_address": "string | null",
+  "inspection_date": "string | null",
+  "company_name": "string | null",
+  "summary": "string | null",
   "roof_year": number | null,
   "hvac_year": number | null,
   "findings": [
     {
-      "category": "string — e.g. Roof, HVAC, Plumbing, Electrical, Foundation, Pest, Windows, Structural, Exterior, Appliances",
+      "category": "string — e.g. Roof, HVAC, Plumbing, Electrical, Foundation, Pest, Windows, Structural, Exterior, Appliances, Pool, Spa",
       "description": "string — specific issue described in the report",
       "severity": "critical" | "warning" | "info",
       "estimated_cost": number | null,
@@ -114,9 +123,13 @@ const PROMPT = `Extract structured data from this home inspection report. Respon
 }
 
 Rules:
+- property_address: the full street address of the inspected property, including city and state if present. Look for labels like "Property Address:", "Subject Property:", "Inspection Address:", "Site Address:", or similar. Return null if not found.
+- inspection_date: the date the inspection was performed (as a string in the format it appears, e.g. "March 15, 2024" or "2024-03-15"). Return null if not found.
+- company_name: the name of the inspection company or inspector. Return null if not found.
+- summary: a 1-2 sentence plain-language summary of the overall condition of the home. Write it yourself based on the findings — do NOT copy the inspector's boilerplate.
 - roof_year: the year the roof was last replaced or installed — NOT the year the home was built or constructed. If the report only mentions the home's construction/build year without a specific roof replacement date, return null. Only populate if the report explicitly mentions a roof replacement or installation year.
 - hvac_year: the year the HVAC system was last replaced or installed — NOT the year the home was built or constructed. If the report only mentions the home's construction/build year without a specific HVAC replacement date, return null. Only populate if the report explicitly mentions an HVAC replacement or installation year.
-- findings: ALL deficiencies, repair items, or maintenance issues found in the report
+- findings: ALL deficiencies, repair items, or maintenance issues found in the report. Include pool/spa findings if present.
 - Common report formats use "Repair or Replace" (RR), "Further Evaluation", "Safety Concern", or numbered deficiency items — treat all of these as findings
 - severity rules:
   • "critical" = immediate safety hazard, structural failure risk, active leak, or mold/pest infestation
@@ -125,7 +138,7 @@ Rules:
 - estimated_cost: dollar amount if stated in the report, otherwise null
 - age_years: how old this specific system or component is in years, if mentioned; null otherwise
 - remaining_life_years: inspector's stated estimate of remaining useful life in years; null if not stated
-- lifespan_years: typical total expected lifespan — use: Roof 25, HVAC 15, Water Heater 12, Electrical Panel 40, Plumbing 50, Foundation 100, Windows 20, Deck 15, Siding 20; null if not applicable
+- lifespan_years: typical total expected lifespan — use: Roof 25, HVAC 15, Water Heater 12, Electrical Panel 40, Plumbing 50, Foundation 100, Windows 20, Deck 15, Siding 20, Pool Equipment 10; null if not applicable
 - Return at most 25 findings, most critical first
 - Omit findings with no description
 - If the text appears to be a General Summary or list of deficiencies, extract all items listed`;
@@ -169,6 +182,7 @@ export async function POST(req) {
   if (!inspectionText || charCount < 20) {
     console.error("[parse-inspection] Text extraction failed or too short — scanned/image PDF or unsupported encoding");
     return Response.json({
+      property_address: null, inspection_date: null, company_name: null, summary: null,
       roof_year: null, hvac_year: null, findings: [], home_health_report: null,
       _error: "Could not extract text from this PDF. Please ensure it is a text-based PDF, not a scanned image.",
     });
@@ -225,12 +239,16 @@ export async function POST(req) {
     }
 
     return Response.json({
-      roof_year:          safeRoofYear,
-      hvac_year:          safeHvacYear,
+      property_address:    parsed.property_address  ?? null,
+      inspection_date:     parsed.inspection_date   ?? null,
+      company_name:        parsed.company_name      ?? null,
+      summary:             parsed.summary           ?? null,
+      roof_year:           safeRoofYear,
+      hvac_year:           safeHvacYear,
       findings,
       home_health_report,
     });
   } catch {
-    return Response.json({ roof_year: null, hvac_year: null, findings: [], home_health_report: null });
+    return Response.json({ property_address: null, inspection_date: null, company_name: null, summary: null, roof_year: null, hvac_year: null, findings: [], home_health_report: null });
   }
 }
