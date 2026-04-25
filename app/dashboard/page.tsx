@@ -721,6 +721,38 @@ function HealthScoreModal({
           </button>
         </div>
 
+        {/* ── Score Dimensions + System Health (shown first) ─────────── */}
+        {homeHealthReport && (
+          <>
+            <RichScoreDimensions report={homeHealthReport} />
+            {homeHealthReport.category_scores.some(cs => !cs.limited_data) && (
+              <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}` }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>System Health</p>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {homeHealthReport.category_scores
+                    .filter(cs => !cs.limited_data)
+                    .sort((a, b) => a.score - b.score)
+                    .map(cs => {
+                      const barColor = cs.score >= 80 ? C.green : cs.score >= 65 ? C.amber : C.red;
+                      const label = cs.category.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+                      return (
+                        <div key={cs.category}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
+                            <span style={{ fontSize: 12, color: C.text2, fontWeight: 500 }}>{label}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{cs.score}</span>
+                          </div>
+                          <div style={{ height: 5, borderRadius: 3, background: C.border, overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${cs.score}%`, background: barColor, borderRadius: 3, transition: "width 0.8s ease" }}/>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
         {/* ── Score Breakdown ──────────────────────────────────────────── */}
         <div style={{ padding: "20px 28px", borderBottom: `1px solid ${C.border}` }}>
           <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 14px" }}>Score Breakdown</p>
@@ -835,39 +867,9 @@ function HealthScoreModal({
           </div>
         )}
 
-        {/* ── Rich Report (from scoring engine) ───────────────────────── */}
+        {/* ── Priority Actions + Strengths + Data Gaps ────────────────── */}
         {homeHealthReport && (
           <>
-            {/* Sub-scores with info tooltips */}
-            <RichScoreDimensions report={homeHealthReport} />
-
-            {/* Category scores */}
-            {homeHealthReport.category_scores.some(cs => !cs.limited_data) && (
-              <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}` }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>System Health</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {homeHealthReport.category_scores
-                    .filter(cs => !cs.limited_data)
-                    .sort((a, b) => a.score - b.score)
-                    .map(cs => {
-                      const barColor = cs.score >= 80 ? C.green : cs.score >= 65 ? C.amber : C.red;
-                      const label = cs.category.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
-                      return (
-                        <div key={cs.category}>
-                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                            <span style={{ fontSize: 12, color: C.text2, fontWeight: 500 }}>{label}</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{cs.score}</span>
-                          </div>
-                          <div style={{ height: 5, borderRadius: 3, background: C.border, overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${cs.score}%`, background: barColor, borderRadius: 3, transition: "width 0.8s ease" }}/>
-                          </div>
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            )}
-
             {/* Priority actions */}
             {homeHealthReport.priority_actions.length > 0 && (
               <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}` }}>
@@ -1296,6 +1298,13 @@ export default function Dashboard() {
   const [uploadingRepair, setUploadingRepair] = useState(false);
   const repairRef = useRef<HTMLInputElement>(null);
 
+  // Feedback
+  const [showFeedback, setShowFeedback]       = useState(false);
+  const [feedbackWhat, setFeedbackWhat]       = useState("");
+  const [feedbackTrying, setFeedbackTrying]   = useState("");
+  const [feedbackSending, setFeedbackSending] = useState(false);
+  const [feedbackSent, setFeedbackSent]       = useState(false);
+
   // Modals
   const [showHealthModal, setShowHealthModal] = useState(false);
   const [showCostModal, setShowCostModal]     = useState(false);
@@ -1637,6 +1646,30 @@ export default function Dashboard() {
   }
 
   async function logout() { await supabase.auth.signOut(); router.push("/login"); }
+
+  async function submitFeedback() {
+    if (!feedbackWhat.trim()) return;
+    setFeedbackSending(true);
+    try {
+      await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          whatHappened: feedbackWhat,
+          whatTrying:   feedbackTrying,
+          currentPage:  nav,
+          userId:       user?.id ?? null,
+          userEmail:    user?.email ?? null,
+          userAgent:    navigator.userAgent,
+        }),
+      });
+      setFeedbackSent(true);
+      setFeedbackWhat("");
+      setFeedbackTrying("");
+      setTimeout(() => { setFeedbackSent(false); setShowFeedback(false); }, 2200);
+    } catch { /* silent — never block the user */ }
+    setFeedbackSending(false);
+  }
 
   async function getAuthHeader(): Promise<Record<string, string>> {
     const { data: { session } } = await supabase.auth.getSession();
@@ -2610,7 +2643,7 @@ export default function Dashboard() {
                         <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                           <button onClick={e => { e.stopPropagation(); setChatMessages([{ role: "user", content: c.finding?.description ?? c.label }]); askAI(c.finding?.description ?? c.label); setNav("Dashboard"); }}
                             style={{ padding: "6px 12px", borderRadius: 8, background: C.accentLt, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                            Shield Check Coverage
+                            <Shield size={12}/> Check Coverage
                           </button>
                           <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label, c.finding?.description ?? c.label); }}
                             style={{ padding: "6px 12px", borderRadius: 8, background: C.accent, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
@@ -3119,34 +3152,6 @@ export default function Dashboard() {
                 <LogOut size={14}/> Sign Out
               </button>
 
-              {/* Demo Mode — for pitch and testing */}
-              <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 18, marginTop: 4 }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 8 }}>Demo Mode</p>
-                <p style={{ fontSize: 13, color: C.text3, marginBottom: 10 }}>Load a sample property for demos and testing.</p>
-                <button onClick={() => {
-                  setAddress("4589 Warwick Circle, Oceanside CA 92056");
-                  setRoofYear("2004"); setHvacYear("2012");
-                  addEvent("Roof inspection completed — replacement recommended ($12,500)");
-                  addEvent("HVAC system aging — service due ($350)");
-                  addEvent("Electrical panel upgrade needed ($3,200)");
-                  setInspectDone(true); setInspectErr("");
-                  setInspectionResult({
-                    inspection_type: "General Home Inspection",
-                    summary: "97-page inspection completed. Roof is 20+ years old and needs replacement. HVAC is aging. Minor electrical and plumbing items noted.",
-                    findings: [
-                      { category: "Roof",       description: "Roof is original (2004), showing significant wear. Replacement recommended within 1–2 years.", severity: "critical", estimated_cost: 12500 },
-                      { category: "HVAC",       description: "HVAC unit from 2012, nearing end of service life. Annual service recommended.",                 severity: "warning",  estimated_cost: 350   },
-                      { category: "Electrical", description: "Panel upgrade recommended for modern load requirements. Current panel is 100A.",                  severity: "warning",  estimated_cost: 3200  },
-                      { category: "Plumbing",   description: "Minor drip at master bathroom faucet. Easy fix — replace cartridge.",                             severity: "info",     estimated_cost: 150   },
-                    ],
-                    recommendations: ["Replace roof within 1–2 years", "Service HVAC annually", "Budget for electrical panel upgrade"],
-                    total_estimated_cost: 16200,
-                  });
-                  setNav("Dashboard");
-                }} style={{ padding: "9px 18px", borderRadius: 10, background: C.green, color: "#fff", fontWeight: 600, fontSize: 13, border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                  <Sparkles size={13}/> Load Demo Property
-                </button>
-              </div>
             </div>
           )}
 
@@ -3246,6 +3251,9 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+
+            {/* Street View — directly under home score */}
+            <HousePhoto address={toTitleCase(address)} height={isMobile ? 140 : 200} />
 
             {/* ── REPAIR FUND CARD ─────────────────────────────────── */}
             {(costs.length > 0 || repairFundAllTime > 0) ? (
@@ -3735,9 +3743,6 @@ export default function Dashboard() {
                 }
               `}</style>
             </div>
-
-            {/* House Photo */}
-            <HousePhoto address={toTitleCase(address)} height={isMobile ? 140 : 200} />
 
             {/* Roof + HVAC status row — removed, shown in health score card and repairs */}
 
@@ -4326,52 +4331,6 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Upcoming Costs — CLICKABLE */}
-            {costs.length > 0 && (
-              <div style={card()}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <TrendingDown size={14} color={C.red}/>
-                    <span style={{ fontWeight: 600, fontSize: 15, color: C.text }}>Upcoming Costs</span>
-                  </div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: C.red, background: C.redBg, padding: "3px 10px", borderRadius: 20 }}>
-                      ${costs.reduce((s, c) => s + c.amount, 0).toLocaleString()} projected
-                    </span>
-                    <button onClick={() => setNav("Repairs")} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "transparent", border: `1px solid ${C.accent}30`, borderRadius: 6, padding: "3px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-                      View all <ArrowRight size={11}/>
-                    </button>
-                  </div>
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                  {costs.map((c, i) => {
-                    const col = c.severity === "critical" ? C.red : c.severity === "warning" ? C.amber : C.text3;
-                    const bg  = c.severity === "critical" ? C.redBg : c.severity === "warning" ? C.amberBg : C.bg;
-                    return (
-                      <div key={i} onClick={() => openCostModal(c)}
-                        style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 10, background: bg, border: `1px solid ${col}22`, cursor: "pointer", transition: "all 0.15s" }}
-                        onMouseEnter={e => { e.currentTarget.style.transform = "translateX(2px)"; e.currentTarget.style.borderColor = col + "55"; }}
-                        onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.borderColor = col + "22"; }}>
-                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: col, flexShrink: 0 }}/>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{c.label}</span>
-                          <span style={{ fontSize: 12, color: C.text3, marginLeft: 8 }}>{c.horizon}</span>
-                        </div>
-                        <span style={{ fontSize: 14, fontWeight: 700, color: col, flexShrink: 0 }}>${c.amount.toLocaleString()}</span>
-                        <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label, c.finding?.description ?? c.label); }}
-                          style={{ padding: "4px 10px", borderRadius: 7, background: C.accent, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                          <Users size={11}/> Find Vendors
-                        </button>
-                        <ChevronRight size={14} color={C.text3} style={{ flexShrink: 0 }}/>
-                      </div>
-                    );
-                  })}
-                </div>
-                <p style={{ fontSize: 12, color: C.text3, marginTop: 10 }}>
-                  * Estimates based on national averages and system ages. Click any item for details.
-                </p>
-              </div>
-            )}
 
             {/* Timeline */}
             {timeline.length > 0 && (
@@ -4415,6 +4374,137 @@ export default function Dashboard() {
 
         </div>
       </main>
+
+      {/* ── Feedback: floating button ─────────────────────────────── */}
+      <button
+        onClick={() => { setShowFeedback(true); setFeedbackSent(false); }}
+        title="Report an issue"
+        style={{
+          position: "fixed",
+          bottom: isMobile ? 72 : 24,
+          right: 20,
+          zIndex: 400,
+          width: 44, height: 44, borderRadius: "50%",
+          background: C.navy,
+          border: "2px solid rgba(255,255,255,0.12)",
+          boxShadow: "0 4px 16px rgba(15,31,61,0.28)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          cursor: "pointer",
+          transition: "transform 0.15s, box-shadow 0.15s",
+        }}
+        onMouseEnter={e => { e.currentTarget.style.transform = "scale(1.08)"; e.currentTarget.style.boxShadow = "0 6px 22px rgba(15,31,61,0.38)"; }}
+        onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 4px 16px rgba(15,31,61,0.28)"; }}
+      >
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <path d="M8 2l1.88 1.88M15.12 3.88 17 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/>
+          <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6z"/>
+          <path d="M12 20v-9M6.53 9C4.6 8.8 3 7.1 3 5M6 13H2M20 13h-4M20.47 9C22.4 8.8 24 7.1 24 5"/>
+        </svg>
+      </button>
+
+      {/* ── Feedback modal ────────────────────────────────────────── */}
+      {showFeedback && (
+        <div
+          onClick={() => setShowFeedback(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(15,31,61,0.55)", zIndex: 1100, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ background: C.surface, borderRadius: 20, width: "100%", maxWidth: 460, boxShadow: "0 20px 60px rgba(15,31,61,0.25)", overflow: "hidden" }}
+          >
+            {/* Header */}
+            <div style={{ background: C.navy, padding: "20px 24px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M8 2l1.88 1.88M15.12 3.88 17 2M9 7.13v-1a3.003 3.003 0 1 1 6 0v1"/>
+                    <path d="M12 20c-3.3 0-6-2.7-6-6v-3a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v3c0 3.3-2.7 6-6 6z"/>
+                    <path d="M12 20v-9M6.53 9C4.6 8.8 3 7.1 3 5M6 13H2M20 13h-4M20.47 9C22.4 8.8 24 7.1 24 5"/>
+                  </svg>
+                </div>
+                <div>
+                  <p style={{ fontSize: 15, fontWeight: 700, color: "white", margin: 0 }}>Report an Issue</p>
+                  <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: 0 }}>Page: {nav} · {new Date().toLocaleTimeString()}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowFeedback(false)} style={{ background: "rgba(255,255,255,0.1)", border: "none", borderRadius: 8, padding: 7, cursor: "pointer", color: "white", lineHeight: 1 }}>
+                <X size={16}/>
+              </button>
+            </div>
+
+            {feedbackSent ? (
+              <div style={{ padding: "40px 24px", textAlign: "center" }}>
+                <CheckCircle2 size={40} color={C.green} style={{ margin: "0 auto 14px" }}/>
+                <p style={{ fontSize: 16, fontWeight: 700, color: C.text, margin: "0 0 6px" }}>Thanks for the report!</p>
+                <p style={{ fontSize: 14, color: C.text3, margin: 0 }}>We&apos;ll look into it right away.</p>
+              </div>
+            ) : (
+              <div style={{ padding: "22px 24px" }}>
+                <div style={{ marginBottom: 16 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: C.text2, display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    What happened? <span style={{ color: C.red }}>*</span>
+                  </label>
+                  <textarea
+                    value={feedbackWhat}
+                    onChange={e => setFeedbackWhat(e.target.value)}
+                    placeholder="Describe the bug or unexpected behavior…"
+                    rows={4}
+                    autoFocus
+                    style={{
+                      width: "100%", borderRadius: 10, padding: "10px 14px",
+                      fontSize: 14, lineHeight: 1.6, color: C.text,
+                      border: `1.5px solid ${feedbackWhat.trim() ? C.accent : C.border}`,
+                      background: C.bg, outline: "none", resize: "vertical",
+                      fontFamily: "inherit", boxSizing: "border-box",
+                      transition: "border-color 0.15s",
+                    }}
+                  />
+                </div>
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ fontSize: 12, fontWeight: 700, color: C.text2, display: "block", marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                    What were you trying to do?
+                  </label>
+                  <textarea
+                    value={feedbackTrying}
+                    onChange={e => setFeedbackTrying(e.target.value)}
+                    placeholder="I was trying to…"
+                    rows={3}
+                    style={{
+                      width: "100%", borderRadius: 10, padding: "10px 14px",
+                      fontSize: 14, lineHeight: 1.6, color: C.text,
+                      border: `1.5px solid ${C.border}`,
+                      background: C.bg, outline: "none", resize: "vertical",
+                      fontFamily: "inherit", boxSizing: "border-box",
+                    }}
+                  />
+                </div>
+                <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 9, padding: "8px 12px", marginBottom: 18, display: "flex", gap: 8, alignItems: "flex-start" }}>
+                  <Info size={13} color="#0891b2" style={{ flexShrink: 0, marginTop: 1 }}/>
+                  <p style={{ fontSize: 11, color: "#0369a1", margin: 0, lineHeight: 1.5 }}>
+                    Automatically attached: current page ({nav}), your user ID, and timestamp.
+                  </p>
+                </div>
+                <button
+                  onClick={submitFeedback}
+                  disabled={feedbackSending || !feedbackWhat.trim()}
+                  style={{
+                    width: "100%", padding: "12px 0", borderRadius: 11, border: "none",
+                    background: feedbackWhat.trim() ? C.navy : C.border,
+                    color: feedbackWhat.trim() ? "white" : C.text3,
+                    fontSize: 14, fontWeight: 700, cursor: feedbackWhat.trim() ? "pointer" : "default",
+                    display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                    transition: "background 0.15s",
+                  }}
+                >
+                  {feedbackSending
+                    ? <><Loader2 size={14} className="animate-spin"/> Sending…</>
+                    : <><Send size={13}/> Submit Report</>}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Mobile Bottom Nav ────────────────────────────────────────── */}
       {isMobile && (
