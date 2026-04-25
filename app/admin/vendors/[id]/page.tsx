@@ -184,7 +184,7 @@ export default function VendorDetail() {
             <Row label="Business Name"    value={app.business_name} />
             <Row label="Owner Name"       value={app.owner_name} />
             <Row label="Email"            value={app.business_email} />
-            <Row label="Phone"            value={app.phone} />
+            <Row label="Phone"            value={app.business_phone} />
             <Row label="Website"          value={app.website} />
             <Row label="Years in Business" value={app.years_in_business} />
             <Row label="Team Size"        value={app.team_size} />
@@ -194,7 +194,7 @@ export default function VendorDetail() {
             <Row label="LinkedIn"         value={app.social_linkedin} />
             <TagList label="Service Categories" value={app.service_categories} />
             <TagList label="Service ZIP Codes"  value={app.service_zip_codes} />
-            <Row label="Emergency Service" value={app.offers_emergency_service} />
+            <Row label="Emergency Service" value={app.emergency_service} />
           </Section>
 
           {/* Step 2: Licensing */}
@@ -213,7 +213,7 @@ export default function VendorDetail() {
           <Section title="Services & Specialties">
             <Row label="Primary Specialty"   value={app.primary_specialty} />
             <TagList label="Secondary Services" value={app.secondary_services} />
-            <Row label="Avg Job Size"        value={app.avg_job_size} />
+            <Row label="Avg Job Size"        value={app.average_job_size} />
             <TagList label="Property Types"  value={app.property_types} />
             <Row label="Brands / Systems"    value={app.brands_systems} />
             <Row label="Services NOT Offered" value={app.services_not_offered} />
@@ -235,7 +235,7 @@ export default function VendorDetail() {
                 </div>
               </div>
             )}
-            <Row label="Video Link" value={app.video_link} />
+            <Row label="Video Link" value={app.video_walkthrough_url} />
             {[1, 2].map(n => (
               <div key={n} style={{ background: "#FDFAF7", border: `1px solid ${C.border}`, borderRadius: 4, padding: "14px 16px", marginBottom: 12 }}>
                 <p style={{ fontWeight: 700, fontSize: 13, color: C.gold, margin: "0 0 10px" }}>Project Example {n}</p>
@@ -248,18 +248,22 @@ export default function VendorDetail() {
 
           {/* Step 5: Reputation */}
           <Section title="Reputation & References">
-            <Row label="Google Reviews URL" value={app.google_reviews_url} />
+            <Row label="Google Profile URL" value={app.google_profile_url} />
             <Row label="Yelp URL"           value={app.yelp_url} />
+            <Row label="Other Review URLs"  value={app.other_review_urls} />
             {[1, 2, 3].map(n => (
               <div key={n} style={{ background: "#FDFAF7", border: `1px solid ${C.border}`, borderRadius: 4, padding: "14px 16px", marginBottom: 10 }}>
                 <p style={{ fontWeight: 700, fontSize: 13, color: C.gold, margin: "0 0 8px" }}>Client Reference {n}</p>
-                <Row label="Name"         value={app[`ref_${n}_name`]} />
-                <Row label="Phone"        value={app[`ref_${n}_phone`]} />
-                <Row label="Email"        value={app[`ref_${n}_email`]} />
-                <Row label="Project Type" value={app[`ref_${n}_project`]} />
+                <Row label="Name"         value={app[`ref${n}_name`]} />
+                <Row label="Phone"        value={app[`ref${n}_phone`]} />
+                <Row label="Email"        value={app[`ref${n}_email`]} />
+                <Row label="Project Type" value={app[`ref${n}_project_type`]} />
               </div>
             ))}
-            <Row label="Industry Reference" value={app.industry_reference} />
+            <Row label="Industry Ref Name"         value={app.industry_ref_name} />
+            <Row label="Industry Ref Phone"        value={app.industry_ref_phone} />
+            <Row label="Industry Ref Email"        value={app.industry_ref_email} />
+            <Row label="Industry Ref Relationship" value={app.industry_ref_relationship} />
           </Section>
 
           {/* Step 6: Communication */}
@@ -267,11 +271,11 @@ export default function VendorDetail() {
             <Row label="Response Time"         value={app.response_time} />
             <Row label="Written Estimates"     value={app.provides_written_estimates} />
             <Row label="Upfront Pricing"       value={app.upfront_pricing} />
-            <Row label="Proactive Delay Comms" value={app.proactive_delay_communication} />
-            <TagList label="Comm Preferences"  value={app.communication_preferences} />
+            <Row label="Proactive Delay Comms" value={app.proactive_delays} />
+            <TagList label="Comm Preferences"  value={app.preferred_communication} />
             <div style={{ marginTop: 12 }}>
-              <Row label="Scenario answer"    value={app.scenario_answer} />
-              <Row label="5-star definition"  value={app.five_star_definition} />
+              <Row label="Scenario answer"    value={app.scenario_response} />
+              <Row label="5-star definition"  value={app.five_star_meaning} />
               <Row label="Industry critique"  value={app.industry_wrongs} />
               <Row label="Why BTLR"           value={app.why_btlr} />
             </div>
@@ -281,11 +285,12 @@ export default function VendorDetail() {
           <Section title="Pricing & Availability">
             <Row label="Pricing Model"     value={app.pricing_model} />
             <Row label="Service Call Fee"  value={app.service_call_fee} />
-            <Row label="Estimates"         value={app.estimates_free_or_paid} />
+            <Row label="Estimates Free?"   value={app.estimates_free} />
             <Row label="Lead Time"         value={app.typical_lead_time} />
-            <Row label="Monthly Capacity"  value={app.monthly_capacity} />
-            <TagList label="Service Hours" value={app.service_hours} />
-            <Row label="Emergency / After Hours" value={app.emergency_after_hours} />
+            <Row label="Weekly Capacity"   value={app.weekly_job_capacity} />
+            <Row label="Service Hours"     value={app.service_hours} />
+            <Row label="After Hours"       value={app.after_hours} />
+            <Row label="Emergency Avail."  value={app.emergency_availability} />
           </Section>
 
           {/* Step 8: Agreements */}

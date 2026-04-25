@@ -232,6 +232,60 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [email, setEmail]       = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  // ── Scroll-scrub video effect ──
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+    video.pause();
+
+    let raf: number;
+    let targetTime = 0;
+    let currentTime = 0;
+
+    function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
+
+    function tick() {
+      if (!video || !video.duration) { raf = requestAnimationFrame(tick); return; }
+      currentTime = lerp(currentTime, targetTime, 0.12);
+      if (Math.abs(currentTime - video.currentTime) > 0.016) {
+        video.currentTime = Math.max(0, Math.min(video.duration, currentTime));
+      }
+      raf = requestAnimationFrame(tick);
+    }
+
+    function showLabel(id: string, show: boolean) {
+      const el = document.getElementById(id);
+      if (el) {
+        el.style.opacity = show ? "1" : "0";
+        el.style.transform = show ? "translateY(0)" : "translateY(6px)";
+      }
+    }
+
+    function onScroll() {
+      const section = document.getElementById("dollhouse");
+      if (!section || !video || !video.duration) return;
+      const rect = section.getBoundingClientRect();
+      const total = section.offsetHeight - window.innerHeight;
+      const raw = Math.max(0, Math.min(1, -rect.top / total));
+      const progress = raw < 0.10 ? 0 : raw > 0.90 ? 1 : (raw - 0.10) / 0.80;
+      targetTime = progress * video.duration;
+      showLabel("lbl-roof",        raw > 0.15);
+      showLabel("lbl-hvac",        raw > 0.25);
+      showLabel("lbl-landscaping", raw > 0.35);
+      showLabel("lbl-plumbing",    raw > 0.50);
+      showLabel("lbl-electrical",  raw > 0.60);
+      showLabel("lbl-all",         raw > 0.75);
+    }
+
+    raf = requestAnimationFrame(tick);
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("scroll", onScroll);
+    };
+  }, []);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -416,7 +470,7 @@ export default function LandingPage() {
           {/* Scroll-scrubbed video */}
           <div style={{ position: "relative", zIndex: 2, width: "min(900px,92vw)" }}>
             <video
-              id="house-scroll-video"
+              ref={videoRef}
               src="/house-scroll.mp4"
               preload="auto"
               muted
@@ -461,44 +515,7 @@ export default function LandingPage() {
           </div>
         </div>
 
-        {/* Inline scroll script for video scrubbing */}
-        <script dangerouslySetInnerHTML={{ __html: `
-          (function() {
-            var section = document.getElementById('dollhouse');
-            var video, raf, targetTime = 0, currentTime = 0;
-            function lerp(a,b,t){return a+(b-a)*t;}
-            function tick(){
-              if(!video||!video.duration){raf=requestAnimationFrame(tick);return;}
-              currentTime=lerp(currentTime,targetTime,0.12);
-              if(Math.abs(currentTime-video.currentTime)>0.016){
-                video.currentTime=Math.max(0,Math.min(video.duration,currentTime));
-              }
-              raf=requestAnimationFrame(tick);
-            }
-            function showLabel(id,show){
-              var el=document.getElementById(id);
-              if(el){el.style.opacity=show?'1':'0';el.style.transform=show?'translateY(0)':'translateY(6px)';}
-            }
-            window.addEventListener('scroll',function(){
-              if(!section)return;
-              var rect=section.getBoundingClientRect();
-              var total=section.offsetHeight-window.innerHeight;
-              var raw=Math.max(0,Math.min(1,-rect.top/total));
-              var progress=raw<0.10?0:raw>0.90?1:(raw-0.10)/0.80;
-              if(video&&video.duration){targetTime=progress*video.duration;}
-              showLabel('lbl-roof',        raw>0.15);
-              showLabel('lbl-hvac',        raw>0.25);
-              showLabel('lbl-landscaping', raw>0.35);
-              showLabel('lbl-plumbing',    raw>0.50);
-              showLabel('lbl-electrical',  raw>0.60);
-              showLabel('lbl-all',         raw>0.75);
-            });
-            document.addEventListener('DOMContentLoaded',function(){
-              video=document.getElementById('house-scroll-video');
-              if(video){video.pause();raf=requestAnimationFrame(tick);}
-            });
-          })();
-        ` }}/>
+        {/* Scroll scrubbing handled by useEffect above */}
       </section>
 
       {/* ── REALITY ── */}
