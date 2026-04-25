@@ -155,10 +155,10 @@ function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; locati
               if (pStatus !== g.maps.places.PlacesServiceStatus.OK || !places) {
                 setError("No results found nearby."); setLoading(false); return;
               }
-              const top3 = places.slice(0, 3);
+              const top3: any[] = places.slice(0, 3);
               const bounds = new g.maps.LatLngBounds();
 
-              top3.forEach((place, i) => {
+              top3.forEach((place: any, i: number) => {
                 if (!place.geometry?.location) return;
                 bounds.extend(place.geometry.location);
 
@@ -179,7 +179,7 @@ function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; locati
 
               // Fetch details for each
               let done = 0;
-              const results2: VendorResult[] = top3.map(p => ({
+              const results2: VendorResult[] = top3.map((p: any) => ({
                 name: p.name ?? "Unknown",
                 rating: p.rating,
                 userRatingsTotal: p.user_ratings_total,
@@ -187,7 +187,7 @@ function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; locati
                 placeId: p.place_id,
               }));
 
-              top3.forEach((place, i) => {
+              top3.forEach((place: any, i: number) => {
                 if (!place.place_id) { done++; if (done === top3.length) { setVendors(results2); setLoading(false); } return; }
                 service.getDetails(
                   { placeId: place.place_id, fields: ["formatted_phone_number", "website", "url"] },
