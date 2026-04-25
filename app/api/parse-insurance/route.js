@@ -82,52 +82,57 @@ Use null for any field not found. coverageItems, exclusions, and endorsements mu
 
     const parsed = JSON.parse(completion.choices[0].message.content);
 
-    // Persist to Supabase if we have user/property context
+    // Persist to Supabase — isolated try/catch so a missing key never kills the parse response
     if (userId && propId) {
-      const supabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.SUPABASE_SERVICE_ROLE_KEY
-      );
-
-      const { error } = await supabase.from("home_insurance").upsert({
-        user_id:                     userId,
-        property_id:                 parseInt(propId),
-        provider:                    parsed.provider,
-        policy_number:               parsed.policyNumber,
-        policy_type:                 parsed.policyType,
-        agent_name:                  parsed.agentName,
-        agent_phone:                 parsed.agentPhone,
-        agent_email:                 parsed.agentEmail,
-        dwelling_coverage:           parsed.dwellingCoverage,
-        other_structures:            parsed.otherStructures,
-        personal_property:           parsed.personalProperty,
-        loss_of_use:                 parsed.lossOfUse,
-        liability_coverage:          parsed.liabilityCoverage,
-        medical_payments:            parsed.medicalPayments,
-        deductible_standard:         parsed.deductibleStandard,
-        deductible_wind:             parsed.deductibleWind,
-        deductible_hurricane:        parsed.deductibleHurricane,
-        annual_premium:              parsed.annualPremium,
-        payment_amount:              parsed.paymentAmount,
-        payment_frequency:           parsed.paymentFrequency,
-        payment_due_date:            parsed.paymentDueDate,
-        payment_method:              parsed.paymentMethod,
-        effective_date:              parsed.effectiveDate,
-        expiration_date:             parsed.expirationDate,
-        auto_renews:                 parsed.autoRenews,
-        coverage_items:              parsed.coverageItems  ?? [],
-        exclusions:                  parsed.exclusions     ?? [],
-        endorsements:                parsed.endorsements   ?? [],
-        replacement_cost_dwelling:   parsed.replacementCostDwelling,
-        replacement_cost_contents:   parsed.replacementCostContents,
-        claim_phone:                 parsed.claimPhone,
-        claim_url:                   parsed.claimUrl,
-        claim_email:                 parsed.claimEmail,
-        claim_hours:                 parsed.claimHours,
-        parsed_at:                   new Date().toISOString(),
-      }, { onConflict: "user_id,property_id" });
-
-      if (error) console.error("[parse-insurance] DB error:", error.message);
+      try {
+        const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+        const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+        if (!supabaseUrl || !supabaseKey) {
+          console.warn("[parse-insurance] Skipping DB save — SUPABASE_SERVICE_ROLE_KEY not set");
+        } else {
+          const supabase = createClient(supabaseUrl, supabaseKey);
+          const { error } = await supabase.from("home_insurance").upsert({
+            user_id:                     userId,
+            property_id:                 parseInt(propId),
+            provider:                    parsed.provider,
+            policy_number:               parsed.policyNumber,
+            policy_type:                 parsed.policyType,
+            agent_name:                  parsed.agentName,
+            agent_phone:                 parsed.agentPhone,
+            agent_email:                 parsed.agentEmail,
+            dwelling_coverage:           parsed.dwellingCoverage,
+            other_structures:            parsed.otherStructures,
+            personal_property:           parsed.personalProperty,
+            loss_of_use:                 parsed.lossOfUse,
+            liability_coverage:          parsed.liabilityCoverage,
+            medical_payments:            parsed.medicalPayments,
+            deductible_standard:         parsed.deductibleStandard,
+            deductible_wind:             parsed.deductibleWind,
+            deductible_hurricane:        parsed.deductibleHurricane,
+            annual_premium:              parsed.annualPremium,
+            payment_amount:              parsed.paymentAmount,
+            payment_frequency:           parsed.paymentFrequency,
+            payment_due_date:            parsed.paymentDueDate,
+            payment_method:              parsed.paymentMethod,
+            effective_date:              parsed.effectiveDate,
+            expiration_date:             parsed.expirationDate,
+            auto_renews:                 parsed.autoRenews,
+            coverage_items:              parsed.coverageItems  ?? [],
+            exclusions:                  parsed.exclusions     ?? [],
+            endorsements:                parsed.endorsements   ?? [],
+            replacement_cost_dwelling:   parsed.replacementCostDwelling,
+            replacement_cost_contents:   parsed.replacementCostContents,
+            claim_phone:                 parsed.claimPhone,
+            claim_url:                   parsed.claimUrl,
+            claim_email:                 parsed.claimEmail,
+            claim_hours:                 parsed.claimHours,
+            parsed_at:                   new Date().toISOString(),
+          }, { onConflict: "user_id,property_id" });
+          if (error) console.error("[parse-insurance] DB error:", error.message);
+        }
+      } catch (dbErr) {
+        console.error("[parse-insurance] DB save failed (non-fatal):", dbErr.message);
+      }
     }
 
     return Response.json({ success: true, data: parsed });
