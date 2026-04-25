@@ -1203,6 +1203,8 @@ export default function Dashboard() {
   const [hvacYear, setHvacYear] = useState("");
   const [year, setYear]         = useState<number | null>(null);
   const [nav, setNav]           = useState("Dashboard");
+  const [toast, setToast]       = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const toastTimerRef           = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [docs, setDocs]         = useState<Doc[]>([]);
@@ -1425,6 +1427,12 @@ export default function Dashboard() {
     setFetchingProperty(false);
   }
 
+  function showToast(msg: string, type: "success" | "error" = "success") {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ msg, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 5000);
+  }
+
   async function uploadInsurance(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setParsingInsurance(true);
@@ -1450,20 +1458,28 @@ export default function Dashboard() {
       });
       const json = await res.json();
       if (!res.ok || json.error) {
-        const msg = json.error ?? `Server error (${res.status})`;
-        console.error("[uploadInsurance]", msg);
-        setInsuranceError(msg.includes("extract text") ? "Couldn't read this PDF — try a text-based (not scanned) version." : `Upload failed: ${msg}`);
+        const raw = json.error ?? `Server error (${res.status})`;
+        console.error("[uploadInsurance]", raw);
+        const friendly = raw.includes("extract text") || raw.includes("text from")
+          ? "Couldn't read this PDF — try a text-based (not scanned) version."
+          : `Upload failed: ${raw}`;
+        setInsuranceError(friendly);
+        showToast(friendly, "error");
       } else if (json.data) {
         setInsurance(json.data);
         setInsuranceError(null);
-        addEvent(`Insurance uploaded: ${json.data.provider ?? file.name}${json.data.policyType ? ` — ${json.data.policyType}` : ""}`);
+        const label = `Insurance saved: ${json.data.provider ?? file.name}${json.data.policyType ? ` · ${json.data.policyType}` : ""}`;
+        addEvent(label);
+        showToast(`✓ ${label}`, "success");
       } else {
         setInsuranceError("No data returned — please try again.");
+        showToast("No data returned — please try again.", "error");
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Network error";
       console.error("[uploadInsurance] caught:", msg);
       setInsuranceError(`Upload failed: ${msg}`);
+      showToast(`Upload failed: ${msg}`, "error");
     }
     setParsingInsurance(false);
     if (insuranceRef.current) insuranceRef.current.value = "";
@@ -1494,20 +1510,28 @@ export default function Dashboard() {
       });
       const json = await res.json();
       if (!res.ok || json.error) {
-        const msg = json.error ?? `Server error (${res.status})`;
-        console.error("[uploadWarranty]", msg);
-        setWarrantyError(msg.includes("extract text") ? "Couldn't read this PDF — try a text-based (not scanned) version." : `Upload failed: ${msg}`);
+        const raw = json.error ?? `Server error (${res.status})`;
+        console.error("[uploadWarranty]", raw);
+        const msg = raw.includes("extract text") || raw.includes("text from")
+          ? "Couldn't read this PDF — try a text-based (not scanned) version."
+          : `Upload failed: ${raw}`;
+        setWarrantyError(msg);
+        showToast(msg, "error");
       } else if (json.data) {
         setWarranty(json.data);
         setWarrantyError(null);
-        addEvent(`Warranty uploaded: ${json.data.provider ?? file.name}${json.data.planName ? ` — ${json.data.planName}` : ""}`);
+        const label = `Warranty saved: ${json.data.provider ?? file.name}${json.data.planName ? ` · ${json.data.planName}` : ""}`;
+        addEvent(label);
+        showToast(`✓ ${label}`, "success");
       } else {
         setWarrantyError("No data returned — please try again.");
+        showToast("No data returned — please try again.", "error");
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Network error";
       console.error("[uploadWarranty] caught:", msg);
       setWarrantyError(`Upload failed: ${msg}`);
+      showToast(`Upload failed: ${msg}`, "error");
     }
     setParsingWarranty(false);
     if (warrantyRef.current) warrantyRef.current.value = "";
@@ -2036,50 +2060,84 @@ export default function Dashboard() {
     await persistFindingStatuses(newStatuses);
   }
 
-  // ── Text-to-speech — OpenAI HD (onyx) with browser fallback ──────────
-  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  // ── Text-to-speech — streaming OpenAI TTS (echo) with interruption ───
+  const currentAudioRef  = useRef<HTMLAudioElement | null>(null);
+  const speakAbortRef    = useRef<AbortController | null>(null);
 
-  async function speakText(text: string) {
-    if (!voiceOutput || typeof window === "undefined") return;
-    // Stop any currently playing audio
+  /** Stop any speech immediately — call before starting new speech or on mic tap */
+  function stopSpeaking() {
+    speakAbortRef.current?.abort();
+    speakAbortRef.current = null;
     if (currentAudioRef.current) {
       currentAudioRef.current.pause();
+      currentAudioRef.current.src = "";
       currentAudioRef.current = null;
     }
     window.speechSynthesis?.cancel();
+  }
 
-    const clean = text.replace(/\*+/g, "").replace(/#+/g, "").replace(/\n+/g, " ").trim();
+  async function speakText(text: string) {
+    if (!voiceOutput || typeof window === "undefined") return;
+    stopSpeaking();
+
+    const clean = text
+      .replace(/\*+/g, "").replace(/#+/g, "")
+      .replace(/\n+/g, " ").replace(/\s+/g, " ").trim();
     if (!clean) return;
 
-    try {
-      // Primary: OpenAI TTS (onyx voice — deep, composed, Jarvis-like)
-      const res = await fetch("/api/speak", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: clean }),
-      });
-      if (!res.ok) throw new Error("TTS API error");
-      const blob = await res.blob();
-      const url  = URL.createObjectURL(blob);
+    // Split into natural sentences so the first chunk plays while the rest fetch
+    const sentences = clean.match(/[^.!?]+[.!?]+["']?/g)?.map(s => s.trim()).filter(Boolean) ?? [clean];
+
+    const abort = new AbortController();
+    speakAbortRef.current = abort;
+
+    // Pre-fetch all sentences in parallel; play in order as each resolves
+    const blobUrls: (string | null)[] = new Array(sentences.length).fill(null);
+    let playIdx = 0;
+    let playing = false;
+
+    function playNext() {
+      if (playing || abort.signal.aborted) return;
+      while (playIdx < sentences.length && blobUrls[playIdx] === null) return; // wait for blob
+      if (playIdx >= sentences.length) return;
+
+      const url = blobUrls[playIdx]!;
+      playing = true;
       const audio = new Audio(url);
       currentAudioRef.current = audio;
-      audio.onended = () => { URL.revokeObjectURL(url); currentAudioRef.current = null; };
-      audio.play();
-    } catch {
-      // Fallback: browser speechSynthesis
-      if (!window.speechSynthesis) return;
-      const utterance = new SpeechSynthesisUtterance(clean);
-      utterance.rate  = 0.88;
-      utterance.pitch = 0.90;
-      const voices = window.speechSynthesis.getVoices();
-      const preferred =
-        voices.find(v => v.name === "Daniel") ||
-        voices.find(v => v.name === "Google UK English Male") ||
-        voices.find(v => v.lang === "en-GB") ||
-        voices.find(v => v.lang === "en-US");
-      if (preferred) utterance.voice = preferred;
-      window.speechSynthesis.speak(utterance);
+      audio.onended = () => {
+        URL.revokeObjectURL(url);
+        blobUrls[playIdx] = null;
+        playIdx++;
+        playing = false;
+        if (!abort.signal.aborted) playNext();
+      };
+      audio.onerror = () => { playing = false; playIdx++; playNext(); };
+      audio.play().catch(() => { playing = false; playIdx++; playNext(); });
     }
+
+    // Fetch each sentence, trigger playback as soon as the blob is ready
+    const fetchSentence = async (sentence: string, idx: number) => {
+      if (abort.signal.aborted) return;
+      try {
+        const res = await fetch("/api/speak", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: sentence }),
+          signal: abort.signal,
+        });
+        if (!res.ok || abort.signal.aborted) return;
+        const blob = await res.blob();
+        if (abort.signal.aborted) return;
+        blobUrls[idx] = URL.createObjectURL(blob);
+        // Only call playNext if this is the chunk we're waiting on
+        if (idx === playIdx) playNext();
+      } catch { /* aborted or network error — skip */ }
+    };
+
+    // Fetch first sentence immediately, rest in parallel
+    await fetchSentence(sentences[0], 0);
+    sentences.slice(1).forEach((s, i) => fetchSentence(s, i + 1));
   }
 
   // ── Speech-to-text ────────────────────────────────────────────────────
@@ -2088,6 +2146,8 @@ export default function Dashboard() {
     const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SR) { setSpeechSupported(false); return; }
     if (isListening) { stopListening(); return; }
+    // Interrupt any ongoing speech when user starts talking
+    stopSpeaking();
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const recognition: any = new SR();
@@ -2272,6 +2332,25 @@ export default function Dashboard() {
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: C.bg, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+
+      {/* ── Toast notification ────────────────────────────────────────── */}
+      {toast && (
+        <div style={{
+          position: "fixed", top: 20, left: "50%", transform: "translateX(-50%)",
+          zIndex: 9999, maxWidth: 480, width: "calc(100% - 40px)",
+          background: toast.type === "error" ? "#fef2f2" : "#f0fdf4",
+          border: `1.5px solid ${toast.type === "error" ? "#fca5a5" : "#86efac"}`,
+          borderRadius: 12, padding: "12px 16px",
+          display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+          boxShadow: "0 4px 24px rgba(0,0,0,0.12)",
+          animation: "fadeInDown 0.2s ease",
+        }}>
+          <span style={{ fontSize: 13, fontWeight: 600, color: toast.type === "error" ? "#dc2626" : "#16a34a", lineHeight: 1.4 }}>
+            {toast.msg}
+          </span>
+          <button onClick={() => setToast(null)} style={{ background: "none", border: "none", cursor: "pointer", padding: 0, lineHeight: 1, color: toast.type === "error" ? "#dc2626" : "#16a34a", flexShrink: 0 }}>✕</button>
+        </div>
+      )}
 
       {/* ── Modals ────────────────────────────────────────────────────── */}
       {showReviewModal && reviewFindings.length > 0 && (

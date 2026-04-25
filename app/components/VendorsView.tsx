@@ -85,14 +85,17 @@ function loadGoogleMaps(): Promise<void> {
   if (_mapsPromise) return _mapsPromise;
   _mapsPromise = new Promise((resolve, reject) => {
     if (typeof window === "undefined") { reject(new Error("SSR")); return; }
-    if ((window as unknown as Record<string, unknown>).google) { resolve(); return; }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if ((window as any).google?.maps?.places) { resolve(); return; }
     const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_JS_KEY;
-    if (!key) { reject(new Error("No API key")); return; }
+    if (!key) { reject(new Error("No Maps API key configured")); return; }
     const s = document.createElement("script");
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
+    // loading=async required for newer Maps JS API behaviour
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&loading=async&v=weekly`;
     s.async = true;
-    s.onload = () => resolve();
-    s.onerror = () => reject(new Error("Failed to load Maps"));
+    s.defer = true;
+    s.onload  = () => resolve();
+    s.onerror = () => { _mapsPromise = null; reject(new Error("Maps script failed to load — check API key restrictions")); };
     document.head.appendChild(s);
   });
   return _mapsPromise;
@@ -113,133 +116,135 @@ interface VendorResult {
 function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; location: string }) {
   const mapRef   = useRef<HTMLDivElement>(null);
   const [vendors,  setVendors]  = useState<VendorResult[]>([]);
-  const [loading,  setLoading]  = useState(true);
+  const [loading,  setLoading]  = useState(false);
   const [error,    setError]    = useState<string | null>(null);
 
   useEffect(() => {
-    if (!searchTerm || !location) return;
+    if (!searchTerm || !location) { setLoading(false); return; }
     let cancelled = false;
     setLoading(true);
     setError(null);
     setVendors([]);
 
+    // Safety timeout — never spin forever
+    const timeout = setTimeout(() => {
+      if (!cancelled) { cancelled = true; setError("Search timed out — please try again."); setLoading(false); }
+    }, 12000);
+
+    function finish() { clearTimeout(timeout); }
+
     loadGoogleMaps()
       .then(() => {
-        if (cancelled) return;
+        if (cancelled) { finish(); return; }
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const g = (window as unknown as { google: any }).google;
-        if (!mapRef.current) { setLoading(false); return; }
+        const g = (window as any).google;
+        if (!g?.maps?.places) { setError("Maps library not available — reload the page."); setLoading(false); finish(); return; }
+        if (!mapRef.current) { setLoading(false); finish(); return; }
 
-        // ── Step 1: initialise the map at a neutral US center ──────────────
-        // We do NOT rely on the Geocoding API (separate billing/enablement).
-        // Instead we embed the location in the Places textSearch query and
-        // use the first result's coordinates to re-center the map.
-        const defaultCenter = { lat: 33.17, lng: -117.25 }; // San Diego metro fallback
-        const mapStyles = [
-          { featureType: "poi",     elementType: "labels", stylers: [{ visibility: "off" }] },
-          { featureType: "transit", stylers: [{ visibility: "off" }] },
-        ];
+        const defaultCenter = { lat: 33.17, lng: -117.25 };
         const map = new g.maps.Map(mapRef.current, {
           center: defaultCenter, zoom: 12,
           mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
           zoomControlOptions: { position: g.maps.ControlPosition.RIGHT_BOTTOM },
-          styles: mapStyles,
+          styles: [
+            { featureType: "poi",     elementType: "labels", stylers: [{ visibility: "off" }] },
+            { featureType: "transit", stylers: [{ visibility: "off" }] },
+          ],
         });
 
-        // ── Step 2: textSearch — location embedded in query, no geocoder ──
-        // Also try geocoding in parallel to get a better map center, but
-        // don't block the search on it.
         const service = new g.maps.places.PlacesService(map);
 
-        // Attempt to re-center via Geocoding API (silent fallback if denied)
+        // Silent geocode to re-center map on user's actual location
         try {
-          const geocoder = new g.maps.Geocoder();
-          geocoder.geocode({ address: `${location}, USA` }, (geoRes: any, geoSt: any) => {
-            if (!cancelled && geoSt === "OK" && geoRes?.[0]) {
+          new g.maps.Geocoder().geocode({ address: `${location}, USA` }, (geoRes: any, geoSt: any) => {
+            if (!cancelled && geoSt === "OK" && geoRes?.[0])
               map.setCenter(geoRes[0].geometry.location);
-              map.setZoom(13);
-            }
           });
-        } catch { /* geocoding not available — map stays at default center */ }
+        } catch { /* non-blocking */ }
 
-        // Embed location in the search query so Places API finds local results
-        // even if geocoding failed. Append "CA" if location looks like a zip.
-        const locSuffix = /^\d{5}$/.test(location.trim())
-          ? `${location}, CA`
-          : location;
+        // Location suffix — append ", CA" when plain zip code
+        const locSuffix = /^\d{5}$/.test(location.trim()) ? `${location}, CA` : location;
         const searchQuery = `${searchTerm} contractor near ${locSuffix}`;
 
-        service.textSearch(
-          { query: searchQuery, radius: 24000 },
-          (places: any, pStatus: any) => {
-            if (cancelled) return;
-            if (pStatus !== g.maps.places.PlacesServiceStatus.OK || !places?.length) {
-              setError("No contractors found in your area."); setLoading(false); return;
-            }
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        service.textSearch({ query: searchQuery }, (places: any, pStatus: any) => {
+          if (cancelled) { finish(); return; }
 
-            const top3: any[] = places.slice(0, 3);
-            const bounds = new g.maps.LatLngBounds();
-
-            // Re-center map on first result if geocoding hadn't done it yet
-            if (top3[0]?.geometry?.location) {
-              map.setCenter(top3[0].geometry.location);
-              map.setZoom(12);
-            }
-
-            top3.forEach((place: any, i: number) => {
-              if (!place.geometry?.location) return;
-              bounds.extend(place.geometry.location);
-              const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
-                <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 24 16 24s16-12 16-24C32 7.163 24.837 0 16 0z" fill="#0f1f3d"/>
-                <circle cx="16" cy="16" r="10" fill="#ffffff"/>
-                <text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="13" font-weight="bold" fill="#0f1f3d">${i + 1}</text>
-              </svg>`;
-              new g.maps.Marker({
-                position: place.geometry.location, map,
-                icon: { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, scaledSize: new g.maps.Size(32, 40) },
-                title: place.name,
-              });
-            });
-            if (top3.length > 1) map.fitBounds(bounds);
-
-            // Fetch phone/website for each result
-            let done = 0;
-            const results2: VendorResult[] = top3.map((p: any) => ({
-              name: p.name ?? "Unknown",
-              rating: p.rating,
-              userRatingsTotal: p.user_ratings_total,
-              vicinity: p.formatted_address ?? p.vicinity,
-              placeId: p.place_id,
-            }));
-
-            top3.forEach((place: any, i: number) => {
-              if (!place.place_id) {
-                done++;
-                if (done === top3.length) { setVendors([...results2]); setLoading(false); }
-                return;
-              }
-              service.getDetails(
-                { placeId: place.place_id, fields: ["formatted_phone_number", "website", "url"] },
-                (det: any, dStatus: any) => {
-                  if (cancelled) return;
-                  if (dStatus === g.maps.places.PlacesServiceStatus.OK && det) {
-                    results2[i].phone   = det.formatted_phone_number ?? undefined;
-                    results2[i].website = det.website ?? undefined;
-                    results2[i].mapsUrl = det.url ?? undefined;
-                  }
-                  done++;
-                  if (done === top3.length) { setVendors([...results2]); setLoading(false); }
-                }
-              );
-            });
+          // Map all non-OK statuses to a readable message
+          const statusMap: Record<string, string> = {
+            ZERO_RESULTS:    "No contractors found nearby — try a different trade or location.",
+            REQUEST_DENIED:  "Maps access denied — check the API key configuration.",
+            INVALID_REQUEST: "Search request was invalid — please try again.",
+            OVER_QUERY_LIMIT:"Search quota reached — try again in a moment.",
+            UNKNOWN_ERROR:   "Maps returned an error — please try again.",
+          };
+          const OK = g.maps.places.PlacesServiceStatus?.OK ?? "OK";
+          if (pStatus !== OK || !places?.length) {
+            setError(statusMap[pStatus] ?? `No results (${pStatus}).`);
+            setLoading(false); finish(); return;
           }
-        );
+
+          const top3: any[] = places.slice(0, 3);
+          const bounds = new g.maps.LatLngBounds();
+
+          if (top3[0]?.geometry?.location) {
+            map.setCenter(top3[0].geometry.location);
+            map.setZoom(12);
+          }
+
+          top3.forEach((place: any, i: number) => {
+            if (!place.geometry?.location) return;
+            bounds.extend(place.geometry.location);
+            const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+              <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 24 16 24s16-12 16-24C32 7.163 24.837 0 16 0z" fill="#0f1f3d"/>
+              <circle cx="16" cy="16" r="10" fill="#ffffff"/>
+              <text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="13" font-weight="bold" fill="#0f1f3d">${i + 1}</text>
+            </svg>`;
+            new g.maps.Marker({
+              position: place.geometry.location, map,
+              icon: { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, scaledSize: new g.maps.Size(32, 40) },
+              title: place.name,
+            });
+          });
+          if (top3.length > 1) map.fitBounds(bounds);
+
+          // Build base results immediately so cards show even if getDetails hangs
+          const results2: VendorResult[] = top3.map((p: any) => ({
+            name: p.name ?? "Unknown", rating: p.rating,
+            userRatingsTotal: p.user_ratings_total,
+            vicinity: p.formatted_address ?? p.vicinity,
+            placeId: p.place_id,
+            mapsUrl: `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name ?? "")}&query_place_id=${p.place_id ?? ""}`,
+          }));
+          // Show cards right away — don't wait for getDetails
+          setVendors([...results2]);
+          setLoading(false);
+          finish();
+
+          // Enrich with phone/website in background
+          top3.forEach((place: any, i: number) => {
+            if (!place.place_id) return;
+            service.getDetails(
+              { placeId: place.place_id, fields: ["formatted_phone_number", "website", "url"] },
+              (det: any, dStatus: any) => {
+                if (cancelled) return;
+                const DETOK = g.maps.places.PlacesServiceStatus?.OK ?? "OK";
+                if (dStatus === DETOK && det) {
+                  results2[i].phone   = det.formatted_phone_number ?? undefined;
+                  results2[i].website = det.website ?? undefined;
+                  results2[i].mapsUrl = det.url ?? results2[i].mapsUrl;
+                  setVendors([...results2]);
+                }
+              }
+            );
+          });
+        });
       })
-      .catch((err) => {
-        if (!cancelled) { setError(err.message || "Failed to load map."); setLoading(false); }
+      .catch((err: Error) => {
+        if (!cancelled) { setError(err.message || "Failed to load map."); setLoading(false); finish(); }
       });
 
-    return () => { cancelled = true; };
+    return () => { cancelled = true; clearTimeout(timeout); };
   }, [searchTerm, location]);
 
   return (

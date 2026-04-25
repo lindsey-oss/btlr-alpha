@@ -1,5 +1,5 @@
-// BTLR TTS — OpenAI HD voice (onyx) for Butler speech output
-// Returns audio/mpeg stream
+// BTLR TTS — OpenAI streaming TTS (echo voice — warm, conversational)
+// Streams audio/mpeg directly so client starts playing immediately
 
 import OpenAI from "openai";
 
@@ -11,20 +11,20 @@ export async function POST(req) {
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
     const response = await openai.audio.speech.create({
-      model: "tts-1-hd",   // HD quality
-      voice: "onyx",        // Deep, authoritative, composed — closest to Jarvis
+      model: "tts-1-hd",
+      voice: "echo",       // Warm, natural, conversational male voice
       input: text.slice(0, 4096),
-      speed: 0.92,          // Slightly measured — composed, not rushed
+      speed: 0.97,         // Near-natural pace — not rushed, not plodding
     });
 
-    const buffer = Buffer.from(await response.arrayBuffer());
-
-    return new Response(buffer, {
+    // Stream body directly to client — first bytes play before full generation completes
+    return new Response(response.body, {
       status: 200,
       headers: {
         "Content-Type": "audio/mpeg",
-        "Content-Length": String(buffer.length),
+        "Transfer-Encoding": "chunked",
         "Cache-Control": "no-store",
+        "X-Accel-Buffering": "no",
       },
     });
   } catch (err) {
