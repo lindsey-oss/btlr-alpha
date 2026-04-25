@@ -10,7 +10,7 @@ import {
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
   ExternalLink, ArrowRight, BarChart3, Clock, TrendingUp,
-  Mic, MicOff, Volume2, VolumeX, Check, Plus,
+  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank,
 } from "lucide-react";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
@@ -184,22 +184,33 @@ function computeHealthScore(
 
   for (const [key, items] of byKey.entries()) {
     const findings = items.map(it => it.f);
-    // A category is "resolved" only when ALL its individual findings are resolved
-    const isResolved = items.every(it => {
+    const category = findings[0].category;
+
+    const criticalItems = items.filter(it => it.f.severity === "critical");
+    const ncItems       = items.filter(it => it.f.severity !== "critical");
+    const criticals     = criticalItems.map(it => it.f);
+    const ncs           = ncItems.map(it => it.f);
+
+    // Resolve each severity group independently:
+    //   critical deduction clears when ALL critical findings in that category are done
+    //   non-critical deduction clears when ALL non-critical findings are done
+    // This way marking all the critical issues resolved removes the -8 even if
+    // minor warnings remain, and vice versa.
+    const criticalsResolved = criticalItems.length > 0 && criticalItems.every(it => {
       const s = statuses[findingKey(it.f.category, it.idx)] ?? "open";
       return s === "completed" || s === "dismissed";
     });
-    const category = findings[0].category;
-
-    const criticals = findings.filter(f => f.severity === "critical");
-    const ncs       = findings.filter(f => f.severity !== "critical");
+    const ncsResolved = ncItems.length > 0 && ncItems.every(it => {
+      const s = statuses[findingKey(it.f.category, it.idx)] ?? "open";
+      return s === "completed" || s === "dismissed";
+    });
 
     // One deduction for the whole system if it has any critical findings
     if (criticals.length > 0) {
       const desc = criticals.length === 1
         ? (criticals[0].description.length > 72 ? criticals[0].description.slice(0, 72) + "…" : criticals[0].description)
         : `${criticals.length} critical issues — ${category}`;
-      add({ id: `crit_${key}`, category, reason: desc, points: -8, source: "finding", severity: "critical" }, isResolved);
+      add({ id: `crit_${key}`, category, reason: desc, points: -8, source: "finding", severity: "critical" }, criticalsResolved);
     }
 
     // One deduction for the whole system for non-critical findings
@@ -210,7 +221,7 @@ function computeHealthScore(
       const desc = ncs.length === 1
         ? (ncs[0].description.length > 72 ? ncs[0].description.slice(0, 72) + "…" : ncs[0].description)
         : `${ncs.length} issue${ncs.length > 1 ? "s" : ""} in ${category}`;
-      add({ id: `nc_${key}`, category, reason: desc, points: pts, source: "finding", severity: sev }, isResolved);
+      add({ id: `nc_${key}`, category, reason: desc, points: pts, source: "finding", severity: sev }, ncsResolved);
     }
   }
 
@@ -1314,6 +1325,9 @@ export default function Dashboard() {
 
   // Repair lifecycle
   const [findingStatuses, setFindingStatuses] = useState<Record<string, FindingStatus>>({});
+  const [markCompleteTarget, setMarkCompleteTarget] = useState<CostItem | null>(null);
+  const [markCompleteUploading, setMarkCompleteUploading] = useState(false);
+  const [repairFundExpanded, setRepairFundExpanded] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewFindings, setReviewFindings]   = useState<Finding[]>([]);
   const [savingStatuses, setSavingStatuses]   = useState(false);
@@ -1687,6 +1701,79 @@ export default function Dashboard() {
     setParsingInsurance(false);
     if (insuranceRef.current) insuranceRef.current.value = "";
     setInsuranceFileKey(k => k + 1); // reset all insurance file inputs so re-selecting same file works
+  }
+
+  // ── Add a second (or third) insurance policy ────────────────────────────
+  // Parses the new PDF via the same /api/parse-insurance endpoint, then
+  // appends a compact policy object to the additional_policies JSONB array
+  // in the DB. The primary policy is never touched.
+  async function addSecondaryPolicy(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setParsingInsurance(true);
+    setInsuranceError(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData.session?.user?.id;
+      if (!uid) throw new Error("Not signed in");
+      const propId = activePropertyIdRef.current;
+
+      // Upload file to storage so the API can read it
+      const ts = Date.now();
+      const storagePath = `${uid}/insurance-add-${ts}-${file.name}`;
+      const { error: upErr } = await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
+      if (upErr) throw new Error(upErr.message);
+      const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
+      if (!signed?.signedUrl) throw new Error("Could not get download URL");
+
+      const params = new URLSearchParams();
+      if (uid)    params.set("userId",     uid);
+      if (propId) params.set("propertyId", String(propId));
+      const authHeader = { "Authorization": `Bearer ${sessionData.session?.access_token ?? ""}` };
+      const res = await fetch(`/api/parse-insurance?${params}`, {
+        method: "POST", headers: { "Content-Type": "application/json", ...authHeader },
+        body: JSON.stringify({ signedUrl: signed.signedUrl, filename: file.name }),
+      });
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let json: any = {};
+      try { json = await res.json(); } catch { throw new Error("Server error parsing policy"); }
+
+      const parsed = json.data ?? json;
+      if (!parsed || json.error) throw new Error(json.error ?? "Could not parse policy");
+
+      // Build a compact secondary policy object with just the display fields
+      const newPolicy = {
+        provider:       parsed.provider       ?? null,
+        policyType:     parsed.policy_type    ?? null,
+        policyNumber:   parsed.policy_number  ?? null,
+        annualPremium:  parsed.annual_premium ?? null,
+        expirationDate: parsed.expiration_date ?? null,
+        claimPhone:     parsed.claim_phone    ?? null,
+        claimUrl:       parsed.claim_url      ?? null,
+      };
+
+      // Append to additional_policies in DB
+      if (propId) {
+        const { data: existing } = await supabase.from("home_insurance")
+          .select("additional_policies").eq("property_id", propId).maybeSingle();
+        const currentList = Array.isArray(existing?.additional_policies) ? existing.additional_policies : [];
+        await supabase.from("home_insurance")
+          .update({ additional_policies: [...currentList, newPolicy] })
+          .eq("property_id", propId);
+      }
+
+      // Update local state immediately
+      setInsurance(prev => ({
+        ...prev,
+        additionalPolicies: [...(prev?.additionalPolicies ?? []), newPolicy],
+      }));
+      showToast(`✓ Added ${newPolicy.provider ?? "policy"} — both policies now active`, "success");
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      setInsuranceError(`Could not add policy: ${msg}`);
+      showToast(`Could not add policy: ${msg}`, "error");
+    }
+    setParsingInsurance(false);
+    setInsuranceFileKey(k => k + 1);
   }
 
   async function uploadWarranty(e: React.ChangeEvent<HTMLInputElement>) {
@@ -2068,6 +2155,7 @@ export default function Dashboard() {
           coverageItems: ins.coverage_items ?? [], exclusions: ins.exclusions ?? [], endorsements: ins.endorsements ?? [],
           replacementCostDwelling: ins.replacement_cost_dwelling, replacementCostContents: ins.replacement_cost_contents,
           claimPhone: ins.claim_phone, claimUrl: ins.claim_url, claimEmail: ins.claim_email, claimHours: ins.claim_hours,
+          additionalPolicies: Array.isArray(ins.additional_policies) ? ins.additional_policies : [],
         });
       } else if (data.insurance_premium) {
         setInsurance({ premium: data.insurance_premium, expirationDate: data.insurance_renewal ?? undefined });
@@ -2446,6 +2534,64 @@ export default function Dashboard() {
         .update({ finding_statuses: statuses, updated_at: new Date().toISOString() })
         .eq("id", propId);
     } catch (err) { console.error("persistFindingStatuses error:", err); }
+  }
+
+  // ── Mark all findings in a cost item's category as completed ─────────────
+  // Optionally uploads a receipt/invoice file first (stored in repair_docs bucket).
+  async function markCategoryComplete(costItem: CostItem, receiptFile?: File) {
+    setMarkCompleteUploading(true);
+    try {
+      const allFindings: Finding[] = [
+        ...(inspectionResult?.findings ?? []),
+        ...photoFindings,
+      ];
+
+      // Mark every finding that maps to this cost item's category as "completed"
+      const categoryKey = toCategoryKey(costItem.label);
+      const updated = { ...findingStatuses };
+      allFindings.forEach((f, idx) => {
+        if (toCategoryKey(f.category) === categoryKey) {
+          updated[findingKey(f.category, idx)] = "completed";
+        }
+      });
+      setFindingStatuses(updated);
+      await persistFindingStatuses(updated);
+
+      // Optionally upload the receipt to storage
+      if (receiptFile) {
+        const { data: { session } } = await supabase.auth.getSession();
+        const uid = session?.user?.id;
+        const propId = activePropertyIdRef.current;
+        if (uid) {
+          const ts = Date.now();
+          const storagePath = `${uid}/repair-receipt-${ts}-${receiptFile.name}`;
+          await supabase.storage.from("documents").upload(storagePath, receiptFile, { upsert: true });
+
+          // Parse the receipt via the repair-doc API if available, otherwise just store it
+          if (propId) {
+            try {
+              const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
+              if (signed?.signedUrl) {
+                await fetch(`/api/parse-repair-doc?propertyId=${propId}&userId=${uid}`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token ?? ""}` },
+                  body: JSON.stringify({ signedUrl: signed.signedUrl, filename: receiptFile.name }),
+                });
+              }
+            } catch { /* receipt stored even if parse fails */ }
+          }
+        }
+        showToast(`✓ ${costItem.label} marked complete — receipt saved`, "success");
+      } else {
+        showToast(`✓ ${costItem.label} marked complete`, "success");
+      }
+
+      addEvent(`Repair completed: ${costItem.label}${receiptFile ? ` (receipt uploaded)` : ""}`);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Could not save — try again", "error");
+    }
+    setMarkCompleteUploading(false);
+    setMarkCompleteTarget(null);
   }
 
   // ── Save finding status review (from InspectionReviewModal) ─────────────
@@ -3156,6 +3302,10 @@ export default function Dashboard() {
                           <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label, c.finding?.description ?? c.label); }}
                             style={{ padding: "6px 12px", borderRadius: 8, background: C.accent, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                             <Users size={12}/> Find Vendors
+                          </button>
+                          <button onClick={e => { e.stopPropagation(); setMarkCompleteTarget(c); }}
+                            style={{ padding: "6px 12px", borderRadius: 8, background: C.green, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                            <CheckCircle2 size={12}/> Mark Complete
                           </button>
                           <ChevronRight size={16} color={C.text3}/>
                         </div>
@@ -4237,11 +4387,18 @@ export default function Dashboard() {
                     <span style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", letterSpacing: "0.08em", textTransform: "uppercase" }}>Home Insurance</span>
                   </div>
                   {insurance && (
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #0891b230", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                      {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
-                      {parsingInsurance ? "…" : "Replace"}
-                      <input key={insuranceFileKey} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
-                    </label>
+                    <div style={{ display: "flex", gap: 5 }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #0891b230", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                        {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}
+                        {parsingInsurance ? "…" : "Add Policy"}
+                        <input key={`add-${insuranceFileKey}`} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={addSecondaryPolicy} disabled={parsingInsurance}/>
+                      </label>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #0891b230", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                        {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
+                        {parsingInsurance ? "…" : "Replace"}
+                        <input key={`rep-${insuranceFileKey}`} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                      </label>
+                    </div>
                   )}
                 </div>
                 {insurance ? (
@@ -4273,9 +4430,14 @@ export default function Dashboard() {
                     )}
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => {
-                        if (insurance.claimUrl) window.open(insurance.claimUrl);
-                        else if (insurance.claimPhone) window.location.href = `tel:${insurance.claimPhone.replace(/\D/g, "")}`;
-                        else showToast("No claim contact on file — upload your policy");
+                        const url = insurance.claimUrl?.startsWith("http") ? insurance.claimUrl : null;
+                        const phone = insurance.claimPhone;
+                        const email = insurance.claimEmail;
+                        if (url) { window.open(url, "_blank"); return; }
+                        if (phone) { window.location.href = `tel:${phone.replace(/\D/g, "")}`; return; }
+                        if (email) { window.location.href = `mailto:${email}`; return; }
+                        // No contact info — prompt user to upload policy
+                        showToast("Upload your declarations page to extract the claims contact", "info");
                       }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: C.navy, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         File Claim
                       </button>
@@ -4296,6 +4458,56 @@ export default function Dashboard() {
                   </>
                 )}
                 </div>{/* /padding div */}
+
+                {/* Additional / stacked policies (e.g. CA FAIR Plan + DIC) */}
+                {(insurance?.additionalPolicies ?? []).map((ap, i) => (
+                  <div key={i} style={{ borderTop: `1px solid #bae6fd`, padding: "14px 22px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+                      <div>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                          {ap.provider ?? "Additional Policy"}
+                          {ap.policyType ? ` · ${ap.policyType}` : ""}
+                        </span>
+                        {ap.policyNumber && (
+                          <span style={{ fontSize: 11, color: C.text3, marginLeft: 8, fontFamily: "monospace" }}>#{ap.policyNumber}</span>
+                        )}
+                      </div>
+                      <button onClick={async () => {
+                        if (!confirm("Remove this policy?")) return;
+                        const propId = activePropertyIdRef.current;
+                        if (!propId) return;
+                        const updated = (insurance?.additionalPolicies ?? []).filter((_, j) => j !== i);
+                        await supabase.from("home_insurance").update({ additional_policies: updated }).eq("property_id", propId);
+                        setInsurance(prev => prev ? { ...prev, additionalPolicies: updated } : prev);
+                        showToast("Policy removed", "success");
+                      }} style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, padding: 2 }}>
+                        <X size={13}/>
+                      </button>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: ap.claimPhone || ap.claimUrl ? 10 : 0 }}>
+                      {ap.annualPremium && (
+                        <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}>
+                          <div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Premium</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>${ap.annualPremium.toLocaleString()}<span style={{ fontSize: 10, color: C.text3 }}>/yr</span></div>
+                        </div>
+                      )}
+                      {ap.expirationDate && (
+                        <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}>
+                          <div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Renews</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{ap.expirationDate}</div>
+                        </div>
+                      )}
+                    </div>
+                    {(ap.claimPhone || ap.claimUrl) && (
+                      <button onClick={() => {
+                        if (ap.claimUrl) window.open(ap.claimUrl);
+                        else if (ap.claimPhone) window.location.href = `tel:${ap.claimPhone.replace(/\D/g, "")}`;
+                      }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: C.navy, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                        File Claim
+                      </button>
+                    )}
+                  </div>
+                ))}
 
                 {/* Insurance detail panel */}
                 {insurance && showInsuranceDetail && (() => {
@@ -4464,9 +4676,12 @@ export default function Dashboard() {
                     )}
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => {
-                        if (warranty.claimUrl) window.open(warranty.claimUrl);
-                        else if (warranty.claimPhone) window.location.href = `tel:${warranty.claimPhone.replace(/\D/g, "")}`;
-                        else showToast("No claim contact on file — upload your warranty");
+                        // Only open URLs that look like real external links — not relative paths that 401
+                        const url = warranty.claimUrl?.startsWith("http") ? warranty.claimUrl : null;
+                        const phone = warranty.claimPhone;
+                        if (url) { window.open(url, "_blank"); return; }
+                        if (phone) { window.location.href = `tel:${phone.replace(/\D/g, "")}`; return; }
+                        showToast("Upload your warranty document to extract the claims contact", "info");
                       }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: C.navy, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         File Claim
                       </button>
@@ -4588,7 +4803,21 @@ export default function Dashboard() {
                 ))}
               </div>
 
-              <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+              {/* ── Repair Fund — collapsible ────────────────────────── */}
+              <button onClick={() => setRepairFundExpanded(p => !p)}
+                style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "14px 20px", background: "none", border: "none", borderTop: `1px solid ${C.border}`, cursor: "pointer", textAlign: "left" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <PiggyBank size={15} color={C.text3}/>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Repair Fund</span>
+                  <span style={{ fontSize: 12, color: C.text3 }}>— Track Your Repair Savings</span>
+                </div>
+                <div style={{ transform: repairFundExpanded ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s", flexShrink: 0 }}>
+                  <ChevronDown size={15} color={C.text3}/>
+                </div>
+              </button>
+
+              {repairFundExpanded && (
+              <div style={{ padding: "0 20px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
 
                 {/* ── Connected Repair Fund Balance ─────────────────── */}
                 {(() => {
@@ -4816,27 +5045,8 @@ export default function Dashboard() {
                   </p>
                 </div>
               </div>
+              )} {/* end repairFundExpanded */}
             </div>
-
-            {/* Inspection Upload — full width */}
-            <div style={card()}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 9, background: `${C.accent}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <FileText size={15} color={C.accent}/>
-                  </div>
-                  <div>
-                    <span style={{ fontWeight: 700, fontSize: 15, color: C.text, display: "block" }}>Inspection Report</span>
-                    <span style={{ fontSize: 12, color: C.text3 }}>AI-powered analysis · any inspection type</span>
-                  </div>
-                </div>
-                {inspectDone && (
-                  <button onClick={() => inspRef.current?.click()} disabled={inspecting}
-                    style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "transparent", border: `1px solid ${C.accent}30`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-                    <Upload size={11}/> Upload New
-                  </button>
-                )}
-              </div>
               <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 12, cursor: inspecting ? "default" : "pointer", transition: "all 0.2s",
                 border: `2px dashed ${inspecting ? C.accent : inspectDone ? C.green : inspectErr ? C.red : C.border}`,
                 background: inspecting ? "#eff6ff" : inspectDone ? C.greenBg : inspectErr ? C.redBg : "#fafbfc" }}>
@@ -5174,6 +5384,52 @@ export default function Dashboard() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Mark Complete Modal ──────────────────────────────────────────── */}
+      {markCompleteTarget && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.45)" }} onClick={() => !markCompleteUploading && setMarkCompleteTarget(null)}/>
+          <div style={{ position: "relative", width: "100%", maxWidth: 420, background: C.surface, borderRadius: 20, padding: "28px 28px 24px", boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 14, marginBottom: 20 }}>
+              <div style={{ width: 44, height: 44, borderRadius: 12, background: C.greenBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                <CheckCircle2 size={22} color={C.green}/>
+              </div>
+              <div>
+                <p style={{ fontSize: 17, fontWeight: 800, color: C.text, margin: 0 }}>Mark as Complete</p>
+                <p style={{ fontSize: 13, color: C.text3, margin: "3px 0 0" }}>{markCompleteTarget.label} · {markCompleteTarget.horizon}</p>
+              </div>
+            </div>
+            <p style={{ fontSize: 14, color: C.text2, margin: "0 0 20px", lineHeight: 1.5 }}>
+              Would you like to upload a repair receipt or invoice? This will be saved to your records and helps verify the repair for your Home Health Score.
+            </p>
+            {/* Upload receipt button */}
+            <label style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, width: "100%", padding: "12px", borderRadius: 12, border: `1.5px dashed ${C.border}`, background: C.bg, cursor: markCompleteUploading ? "wait" : "pointer", marginBottom: 10, opacity: markCompleteUploading ? 0.6 : 1 }}>
+              {markCompleteUploading ? <Loader2 size={16} className="animate-spin" color={C.accent}/> : <Upload size={16} color={C.accent}/>}
+              <span style={{ fontSize: 14, fontWeight: 600, color: C.accent }}>
+                {markCompleteUploading ? "Saving…" : "Upload Receipt or Invoice"}
+              </span>
+              <input type="file" accept=".pdf,.jpg,.jpeg,.png,.txt" style={{ display: "none" }}
+                disabled={markCompleteUploading}
+                onChange={async e => {
+                  const f = e.target.files?.[0];
+                  if (f) await markCategoryComplete(markCompleteTarget, f);
+                }}/>
+            </label>
+            {/* Skip — just mark done */}
+            <button
+              disabled={markCompleteUploading}
+              onClick={() => markCategoryComplete(markCompleteTarget)}
+              style={{ width: "100%", padding: "12px", borderRadius: 12, background: C.green, border: "none", color: "white", fontSize: 14, fontWeight: 700, cursor: markCompleteUploading ? "wait" : "pointer", opacity: markCompleteUploading ? 0.6 : 1 }}>
+              Skip — Mark Complete Without Receipt
+            </button>
+            <button onClick={() => setMarkCompleteTarget(null)} disabled={markCompleteUploading}
+              style={{ width: "100%", marginTop: 8, padding: "10px", borderRadius: 12, background: "transparent", border: `1px solid ${C.border}`, color: C.text3, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+              Cancel
+            </button>
           </div>
         </div>
       )}
