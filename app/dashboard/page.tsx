@@ -10,7 +10,7 @@ import {
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
   ExternalLink, ArrowRight, BarChart3, Clock, TrendingUp,
-  Mic, MicOff, Volume2, VolumeX,
+  Mic, MicOff, Volume2, VolumeX, Check, Plus,
 } from "lucide-react";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
@@ -675,7 +675,7 @@ function HealthScoreModal({
   const roofAge = roofYear ? year - Number(roofYear) : null;
   const hvacAge = hvacYear ? year - Number(hvacYear) : null;
 
-  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+  const [breakdownOpen, setBreakdownOpen] = useState(false);
 
   function sourceBadge(d: ScoreDeduction) {
     if (d.source === "system_age")    return { label: "System Age",  color: C.amber, bg: C.amberBg };
@@ -759,67 +759,76 @@ function HealthScoreModal({
         )}
 
         {/* ── Score Breakdown ──────────────────────────────────────────── */}
-        <div style={{ padding: "20px 28px", borderBottom: `1px solid ${C.border}` }}>
-          <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 14px" }}>Score Breakdown</p>
+        <div style={{ borderBottom: `1px solid ${C.border}` }}>
+          {/* Clickable header */}
+          <button
+            onClick={() => setBreakdownOpen(o => !o)}
+            style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 28px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+            <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>Score Breakdown</p>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor }}>{score} / 100</span>
+              <ChevronRight size={15} color={C.text3} style={{ transform: breakdownOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}/>
+            </div>
+          </button>
 
-          {/* Starting score row */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 10, borderBottom: `1px solid ${C.border}`, marginBottom: 10 }}>
-            <span style={{ fontSize: 13, color: C.text2 }}>Starting score</span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: C.green }}>100</span>
-          </div>
+          {/* Collapsible content */}
+          {breakdownOpen && (
+            <div style={{ padding: "0 28px 20px" }}>
+              {/* Starting score row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingBottom: 10, borderBottom: `1px solid ${C.border}`, marginBottom: 10 }}>
+                <span style={{ fontSize: 13, color: C.text2 }}>Starting score</span>
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.green }}>100</span>
+              </div>
 
-          {/* Active deduction rows — accordion */}
-          {deductions.length === 0 ? (
-            <p style={{ fontSize: 13, color: C.green, display: "flex", alignItems: "center", gap: 5, marginBottom: 10 }}>
-              <CheckCircle2 size={14}/> No active deductions — great shape!
-            </p>
-          ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
-              {deductions.map((d, i) => {
-                const badge    = sourceBadge(d);
-                const open     = expandedIdx === i;
-                const rowColor = d.severity === "critical" ? C.red : C.amber;
-                const rowBg    = d.severity === "critical" ? C.redBg : C.bg;
-                const rowBdr   = d.severity === "critical" ? "#fecaca" : C.border;
-                return (
-                  <div key={i} style={{ borderRadius: 10, border: `1px solid ${open ? rowColor + "55" : rowBdr}`, overflow: "hidden", background: open ? rowBg : C.surface }}>
-                    {/* Clickable header row */}
-                    <button
-                      onClick={() => setExpandedIdx(open ? null : i)}
-                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
-                      <div style={{ width: 26, height: 26, borderRadius: 7, background: C.surface, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        {systemIcon(d.category)}
+              {/* Deduction rows — color-coded cards */}
+              {deductions.length === 0 ? (
+                <p style={{ fontSize: 13, color: C.green, display: "flex", alignItems: "center", gap: 5, marginBottom: 10 }}>
+                  <CheckCircle2 size={14}/> No active deductions — great shape!
+                </p>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+                  {deductions.map((d, i) => {
+                    const badge = sourceBadge(d);
+                    return (
+                      <div key={i} style={{
+                        background: d.severity === "critical" ? C.redBg : C.bg,
+                        border: `1px solid ${d.severity === "critical" ? "#fecaca" : C.border}`,
+                        borderRadius: 10, padding: "10px 14px",
+                        display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12,
+                      }}>
+                        <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flex: 1, minWidth: 0 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: 7, background: C.surface, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+                            {systemIcon(d.category)}
+                          </div>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.category}</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, color: badge.color, background: badge.bg }}>
+                                {badge.label}
+                              </span>
+                            </div>
+                            <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.5 }}>{d.reason}</p>
+                            <button
+                              onClick={() => { onClose(); onFindVendors(d.category, d.category, d.reason); }}
+                              style={{ marginTop: 6, fontSize: 11, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 3 }}>
+                              <Users size={10}/> Find Vendors →
+                            </button>
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 14, fontWeight: 800, color: C.red, flexShrink: 0 }}>{d.points}</span>
                       </div>
-                      <span style={{ fontSize: 13, fontWeight: 700, color: C.text, flex: 1 }}>{d.category}</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, color: badge.color, background: badge.bg, flexShrink: 0 }}>
-                        {badge.label}
-                      </span>
-                      <span style={{ fontSize: 13, fontWeight: 800, color: C.red, flexShrink: 0, minWidth: 28, textAlign: "right" }}>{d.points}</span>
-                      <ChevronRight size={14} color={C.text3} style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.18s" }}/>
-                    </button>
+                    );
+                  })}
+                </div>
+              )}
 
-                    {/* Expanded detail */}
-                    {open && (
-                      <div style={{ padding: "0 14px 12px 50px", display: "flex", flexDirection: "column", gap: 8 }}>
-                        <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.6 }}>{d.reason}</p>
-                        <button
-                          onClick={() => { onClose(); onFindVendors(d.category, d.category, d.reason); }}
-                          style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 3 }}>
-                          <Users size={10}/> Find Vendors →
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+              {/* Final score row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
+                <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Final score</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: scoreColor }}>{score} / 100</span>
+              </div>
             </div>
           )}
-
-          {/* Final score row */}
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
-            <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Final score</span>
-            <span style={{ fontSize: 16, fontWeight: 800, color: scoreColor }}>{score} / 100</span>
-          </div>
         </div>
 
         {/* ── Resolved / Restored ──────────────────────────────────────── */}
@@ -1368,6 +1377,7 @@ export default function Dashboard() {
   const [parsingInsurance, setParsingInsurance] = useState(false);
   const [insuranceError, setInsuranceError] = useState<string | null>(null);
   const [showInsuranceDetail, setShowInsuranceDetail] = useState(false);
+  const [insuranceDocCount, setInsuranceDocCount] = useState(0); // how many docs have been uploaded
   const insuranceRef = useRef<HTMLInputElement>(null);
 
   // Home Warranty
@@ -1392,6 +1402,16 @@ export default function Dashboard() {
 
   const inspRef = useRef<HTMLInputElement>(null);
   const docRef  = useRef<HTMLInputElement>(null);
+
+  // ── Multi-property support ────────────────────────────────────────────
+  const [activePropertyId, setActivePropertyId] = useState<number | null>(null);
+  const [allProperties, setAllProperties] = useState<Array<{ id: number; address: string; nickname?: string | null; home_type?: string | null; year_built?: number | null }>>([]);
+  const [showPropDropdown, setShowPropDropdown] = useState(false);
+  const [showAddPropDrawer, setShowAddPropDrawer] = useState(false);
+  const [addingProp, setAddingProp] = useState(false);
+  const [newPropForm, setNewPropForm] = useState({ address: "", nickname: "", home_type: "single_family", year_built: "" });
+  const [newPropError, setNewPropError] = useState<string | null>(null);
+  const activePropertyIdRef = useRef<number | null>(null);
 
   // ── Butler settings persistence ───────────────────────────────────────
   useEffect(() => {
@@ -1463,12 +1483,15 @@ export default function Dashboard() {
     // loadProperty() uses RLS (auth.uid() = user_id) — if we run it before
     // the token is refreshed the query returns null and all data is lost.
     // Chain them so loadProperty only fires after the session is confirmed.
-    checkAuth().then(authed => {
+    checkAuth().then(async authed => {
       if (authed) {
-        loadProperty();
+        const propId = await loadAllProperties();
+        if (propId) {
+          loadProperty(propId);
+          loadDocs();
+          loadRepairDocs();
+        }
         loadPlaidData();
-        loadDocs();
-        loadRepairDocs();
       }
     });
   }, []);
@@ -1485,6 +1508,22 @@ export default function Dashboard() {
     }
     if (criticalKeys.size > 0) setExpandedGroups(criticalKeys);
   }, [inspectionResult]);
+
+  // Keep activePropertyIdRef in sync with activePropertyId state
+  useEffect(() => {
+    activePropertyIdRef.current = activePropertyId;
+  }, [activePropertyId]);
+
+  // Close property dropdown on outside click
+  useEffect(() => {
+    if (!showPropDropdown) return;
+    const close = (e: MouseEvent) => {
+      const target = e.target as Element;
+      if (!target.closest("[data-prop-selector]")) setShowPropDropdown(false);
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [showPropDropdown]);
 
   function openCostModal(item: CostItem) {
     setSelectedCost(item);
@@ -1526,46 +1565,112 @@ export default function Dashboard() {
   }
 
   async function uploadInsurance(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0]; if (!file) return;
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
     setParsingInsurance(true);
     setInsuranceError(null);
+
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const uid = sessionData.session?.user?.id;
       const { data: prop } = await supabase.from("properties").select("id").eq("user_id", uid ?? "").maybeSingle();
       const propId = prop?.id;
-
-      if (uid) {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const storagePath = `${uid}/insurance-${Date.now()}-${safeName}`;
-        await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
-      }
-
       const params = new URLSearchParams();
       if (uid)    params.set("userId",     uid);
       if (propId) params.set("propertyId", String(propId));
 
-      const res = await fetch(`/api/parse-insurance?${params}`, {
-        method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
-      });
-      const json = await res.json();
-      if (!res.ok || json.error) {
-        const raw = json.error ?? `Server error (${res.status})`;
-        console.error("[uploadInsurance]", raw);
-        const friendly = raw.includes("extract text") || raw.includes("text from")
-          ? "Couldn't read this PDF — try a text-based (not scanned) version."
-          : `Upload failed: ${raw}`;
-        setInsuranceError(friendly);
-        showToast(friendly, "error");
-      } else if (json.data) {
-        setInsurance(json.data);
+      // Parse each file and collect results
+      const results: NonNullable<typeof insurance>[] = [];
+      for (const file of files) {
+        // Upload to storage
+        if (uid) {
+          const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+          const storagePath = `${uid}/insurance-${Date.now()}-${safeName}`;
+          await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
+        }
+        // Parse
+        const res  = await fetch(`/api/parse-insurance?${params}`, {
+          method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
+        });
+        const json = await res.json();
+        if (res.ok && json.data) {
+          results.push(json.data);
+        } else {
+          const raw = json.error ?? `Server error (${res.status})`;
+          console.warn("[uploadInsurance] skipped file:", file.name, raw);
+        }
+      }
+
+      if (results.length === 0) {
+        setInsuranceError("Couldn't read any of the uploaded files — try text-based PDFs.");
+        showToast("Couldn't read uploaded files.", "error");
+      } else {
+        // Merge all parsed results: scalar = first non-null, arrays = union deduplicated
+        const merged = results.reduce((acc, cur) => {
+          const scalar = <K extends keyof typeof acc>(key: K) => acc[key] ?? cur[key];
+          const arr    = (key: "coverageItems" | "exclusions" | "endorsements") => {
+            const combined = [...(acc[key] ?? []), ...(cur[key] ?? [])];
+            return Array.from(new Set(combined));
+          };
+          return {
+            provider:               scalar("provider"),
+            policyNumber:           scalar("policyNumber"),
+            policyType:             scalar("policyType"),
+            agentName:              scalar("agentName"),
+            agentPhone:             scalar("agentPhone"),
+            agentEmail:             scalar("agentEmail"),
+            dwellingCoverage:       scalar("dwellingCoverage"),
+            otherStructures:        scalar("otherStructures"),
+            personalProperty:       scalar("personalProperty"),
+            lossOfUse:              scalar("lossOfUse"),
+            liabilityCoverage:      scalar("liabilityCoverage"),
+            medicalPayments:        scalar("medicalPayments"),
+            deductibleStandard:     scalar("deductibleStandard"),
+            deductibleWind:         scalar("deductibleWind"),
+            deductibleHurricane:    scalar("deductibleHurricane"),
+            annualPremium:          scalar("annualPremium"),
+            paymentAmount:          scalar("paymentAmount"),
+            paymentFrequency:       scalar("paymentFrequency"),
+            paymentDueDate:         scalar("paymentDueDate"),
+            paymentMethod:          scalar("paymentMethod"),
+            effectiveDate:          scalar("effectiveDate"),
+            expirationDate:         scalar("expirationDate"),
+            autoRenews:             scalar("autoRenews"),
+            replacementCostDwelling:scalar("replacementCostDwelling"),
+            replacementCostContents:scalar("replacementCostContents"),
+            claimPhone:             scalar("claimPhone"),
+            claimUrl:               scalar("claimUrl"),
+            claimEmail:             scalar("claimEmail"),
+            claimHours:             scalar("claimHours"),
+            coverageItems:          arr("coverageItems"),
+            exclusions:             arr("exclusions"),
+            endorsements:           arr("endorsements"),
+          };
+        });
+
+        // If adding to existing, also merge with current insurance state
+        setInsurance(prev => {
+          if (!prev) return merged;
+          const base = [prev, merged];
+          return base.reduce((acc, cur) => {
+            const scalar = <K extends keyof typeof acc>(key: K) => acc[key] ?? cur[key];
+            const arr    = (key: "coverageItems" | "exclusions" | "endorsements") =>
+              Array.from(new Set([...(acc[key] ?? []), ...(cur[key] ?? [])]));
+            return { ...acc, ...cur,
+              provider: scalar("provider"), policyNumber: scalar("policyNumber"),
+              dwellingCoverage: scalar("dwellingCoverage"), personalProperty: scalar("personalProperty"),
+              liabilityCoverage: scalar("liabilityCoverage"), deductibleStandard: scalar("deductibleStandard"),
+              claimPhone: scalar("claimPhone"), claimUrl: scalar("claimUrl"), claimEmail: scalar("claimEmail"),
+              coverageItems: arr("coverageItems"), exclusions: arr("exclusions"), endorsements: arr("endorsements"),
+            };
+          });
+        });
+
+        setInsuranceDocCount(prev => prev + files.length);
         setInsuranceError(null);
-        const label = `Insurance saved: ${json.data.provider ?? file.name}${json.data.policyType ? ` · ${json.data.policyType}` : ""}`;
+        const label = `Insurance updated: ${results.length} document${results.length > 1 ? "s" : ""} parsed`;
         addEvent(label);
         showToast(`✓ ${label}`, "success");
-      } else {
-        setInsuranceError("No data returned — please try again.");
-        showToast("No data returned — please try again.", "error");
       }
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Network error";
@@ -1573,6 +1678,7 @@ export default function Dashboard() {
       setInsuranceError(`Upload failed: ${msg}`);
       showToast(`Upload failed: ${msg}`, "error");
     }
+
     setParsingInsurance(false);
     if (insuranceRef.current) insuranceRef.current.value = "";
   }
@@ -1689,7 +1795,12 @@ export default function Dashboard() {
     return true;
   }
 
-  async function logout() { await supabase.auth.signOut(); router.push("/login"); }
+  async function logout() {
+    // Clear all per-session localStorage keys so the next user starts clean
+    ["btlr_active_property_id", "btlr_repair_fund", "btlr_repair_savings", "btlr_butler"].forEach(k => localStorage.removeItem(k));
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
 
   async function submitFeedback() {
     if (!feedbackWhat.trim()) return;
@@ -1715,14 +1826,87 @@ export default function Dashboard() {
     setFeedbackSending(false);
   }
 
+  // ── Clear all property-specific state ──────────────────────────────────
+  function clearPropertyState() {
+    setAddress("My Home");
+    setRoofYear(""); setHvacYear("");
+    setInspectionResult(null); setInspectDone(false);
+    setInsurance(null); setWarranty(null); setMortgage(null);
+    setFindingStatuses({}); setRepairDocs([]); setPhotoFindings([]);
+    setHomeHealthReport(null); setHomeValue(null); setPropertyTax(null);
+    setTimeline([]); setInsuranceDocCount(0);
+    setParseDebug(null); setMortgageForm({ lender: "loanDepot", balance: "", payment: "", due_day: "1", rate: "" });
+  }
+
+  // ── Load all properties for the user ───────────────────────────────────
+  async function loadAllProperties(): Promise<number | null> {
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) return null;
+      const { data, error } = await supabase
+        .from("properties")
+        .select("id, address, nickname, home_type, year_built")
+        .eq("user_id", u.id)          // explicit filter — belt-and-suspenders on top of RLS
+        .order("created_at", { ascending: true });
+      if (error || !data?.length) return null;
+      setAllProperties(data);
+      // Restore last active from localStorage, or default to first
+      const stored = localStorage.getItem("btlr_active_property_id");
+      const storedId = stored ? parseInt(stored) : null;
+      const match = storedId ? data.find(p => p.id === storedId) : null;
+      const active = match ? match.id : data[0].id;
+      setActivePropertyId(active);
+      activePropertyIdRef.current = active;
+      return active;
+    } catch { return null; }
+  }
+
+  // ── Switch to a different property ────────────────────────────────────
+  async function switchProperty(id: number) {
+    clearPropertyState();
+    setActivePropertyId(id);
+    activePropertyIdRef.current = id;
+    localStorage.setItem("btlr_active_property_id", String(id));
+    setShowPropDropdown(false);
+    await loadProperty(id);
+    await loadDocs();
+    await loadRepairDocs();
+  }
+
+  // ── Save a new property ───────────────────────────────────────────────
+  async function saveNewProperty() {
+    if (!newPropForm.address.trim()) { setNewPropError("Address is required."); return; }
+    setAddingProp(true); setNewPropError(null);
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) throw new Error("Not signed in");
+      const { data, error } = await supabase.from("properties").insert({
+        user_id:    u.id,
+        address:    newPropForm.address.trim(),
+        nickname:   newPropForm.nickname.trim() || null,
+        home_type:  newPropForm.home_type || null,
+        year_built: newPropForm.year_built ? parseInt(newPropForm.year_built) : null,
+      }).select("id, address, nickname, home_type, year_built").single();
+      if (error) throw new Error(error.message);
+      setAllProperties(prev => [...prev, data]);
+      setShowAddPropDrawer(false);
+      setNewPropForm({ address: "", nickname: "", home_type: "single_family", year_built: "" });
+      await switchProperty(data.id);
+      showToast(`✓ Property added: ${data.address}`, "success");
+    } catch (err: unknown) {
+      setNewPropError(err instanceof Error ? err.message : "Failed to save property.");
+    }
+    setAddingProp(false);
+  }
+
   async function getAuthHeader(): Promise<Record<string, string>> {
     const { data: { session } } = await supabase.auth.getSession();
     return session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {};
   }
 
-  async function loadProperty() {
+  async function loadProperty(propId: number) {
     try {
-      const { data, error } = await supabase.from("properties").select("*").limit(1).maybeSingle();
+      const { data, error } = await supabase.from("properties").select("*").eq("id", propId).maybeSingle();
       if (error) { console.error("[loadProperty] DB read error:", error.message, error.code); return; }
       if (!data) { console.log("[loadProperty] No property row found for this user"); return; }
       console.log(`[loadProperty] Loaded property — ${(data.inspection_findings ?? []).length} findings, statuses: ${JSON.stringify(data.finding_statuses ?? {})}`)
@@ -1779,7 +1963,7 @@ export default function Dashboard() {
       if (data.home_value)          setHomeValue(data.home_value);
       if (data.property_tax_annual) setPropertyTax(data.property_tax_annual);
       // Load home warranty from home_warranties table
-      const { data: war } = await supabase.from("home_warranties").select("*").limit(1).maybeSingle();
+      const { data: war } = await supabase.from("home_warranties").select("*").eq("property_id", propId).maybeSingle();
       if (war) {
         setWarranty({
           provider:         war.provider,
@@ -1805,7 +1989,7 @@ export default function Dashboard() {
       }
 
       // Load full insurance from home_insurance table (falls back to legacy properties columns)
-      const { data: ins } = await supabase.from("home_insurance").select("*").limit(1).maybeSingle();
+      const { data: ins } = await supabase.from("home_insurance").select("*").eq("property_id", propId).maybeSingle();
       if (ins) {
         setInsurance({
           provider: ins.provider, policyNumber: ins.policy_number, policyType: ins.policy_type,
@@ -2182,12 +2366,11 @@ export default function Dashboard() {
   // ── Persist finding statuses to DB ──────────────────────────────────────
   async function persistFindingStatuses(statuses: Record<string, FindingStatus>) {
     try {
-      const { data: existing } = await supabase.from("properties").select("id").limit(1).maybeSingle();
-      if (existing?.id) {
-        await supabase.from("properties")
-          .update({ finding_statuses: statuses, updated_at: new Date().toISOString() })
-          .eq("id", existing.id);
-      }
+      const propId = activePropertyIdRef.current;
+      if (!propId) return;
+      await supabase.from("properties")
+        .update({ finding_statuses: statuses, updated_at: new Date().toISOString() })
+        .eq("id", propId);
     } catch (err) { console.error("persistFindingStatuses error:", err); }
   }
 
@@ -2695,6 +2878,41 @@ export default function Dashboard() {
           <p style={{ color: "rgba(255,255,255,0.3)", fontSize: 11, marginTop: 3, marginLeft: 42 }}>Home OS</p>
         </div>
 
+        {/* ── Property Selector ── */}
+        <div style={{ padding: "0 10px 10px", position: "relative" }} data-prop-selector>
+          <button
+            onClick={() => setShowPropDropdown(o => !o)}
+            style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", textAlign: "left" }}>
+            <MapPin size={13} color="rgba(255,255,255,0.5)"/>
+            <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || toTitleCase(p.address).split(",")[0]) : "My Property"; })()}
+            </span>
+            <ChevronDown size={13} color="rgba(255,255,255,0.4)" style={{ flexShrink: 0, transform: showPropDropdown ? "rotate(180deg)" : "none", transition: "transform 0.18s" }}/>
+          </button>
+          {showPropDropdown && (
+            <div style={{ position: "absolute", left: 10, right: 10, top: "calc(100% + 4px)", zIndex: 200, background: "#1e3a5f", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
+              {allProperties.map(p => (
+                <button key={p.id} onClick={() => switchProperty(p.id)}
+                  style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: p.id === activePropertyId ? "rgba(255,255,255,0.1)" : "transparent", border: "none", cursor: "pointer", textAlign: "left", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <HomeIcon size={12} color={p.id === activePropertyId ? "white" : "rgba(255,255,255,0.4)"}/>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 12, fontWeight: 600, color: p.id === activePropertyId ? "white" : "rgba(255,255,255,0.7)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {p.nickname || toTitleCase(p.address).split(",")[0]}
+                    </p>
+                    {p.nickname && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toTitleCase(p.address)}</p>}
+                  </div>
+                  {p.id === activePropertyId && <Check size={12} color="white" style={{ flexShrink: 0 }}/>}
+                </button>
+              ))}
+              <button onClick={() => { setShowPropDropdown(false); setShowAddPropDrawer(true); }}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
+                <Plus size={12} color={C.accentLt}/>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.accentLt }}>+ Add Property</span>
+              </button>
+            </div>
+          )}
+        </div>
+
         <nav style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
           {navItems.map(({ label, icon, badge }) => (
             <button key={label} onClick={() => {
@@ -2738,6 +2956,39 @@ export default function Dashboard() {
       {/* ── Main ─────────────────────────────────────────────────────── */}
       <main style={{ flex: 1, overflowY: "auto" }}>
         <div style={{ maxWidth: 940, margin: "0 auto", padding: isMobile ? "16px 16px 100px" : "36px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+
+          {/* Mobile Property Selector */}
+          {isMobile && (
+            <div style={{ position: "relative" }} data-prop-selector>
+              <button onClick={() => setShowPropDropdown(o => !o)}
+                style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 20, background: C.surface, border: `1px solid ${C.border}`, cursor: "pointer", maxWidth: "100%" }}>
+                <MapPin size={12} color={C.accent}/>
+                <span style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
+                  {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || toTitleCase(p.address).split(",")[0]) : "My Property"; })()}
+                </span>
+                <ChevronDown size={12} color={C.text3} style={{ transform: showPropDropdown ? "rotate(180deg)" : "none", transition: "transform 0.18s" }}/>
+              </button>
+              {showPropDropdown && (
+                <div style={{ position: "absolute", left: 0, top: "calc(100% + 6px)", zIndex: 300, minWidth: 240, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.15)" }}>
+                  {allProperties.map(p => (
+                    <button key={p.id} onClick={() => switchProperty(p.id)}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: p.id === activePropertyId ? C.accentLt + "15" : "transparent", border: "none", borderBottom: `1px solid ${C.border}`, cursor: "pointer", textAlign: "left" }}>
+                      <HomeIcon size={12} color={p.id === activePropertyId ? C.accent : C.text3}/>
+                      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {p.nickname || toTitleCase(p.address).split(",")[0]}
+                      </span>
+                      {p.id === activePropertyId && <Check size={12} color={C.accent}/>}
+                    </button>
+                  ))}
+                  <button onClick={() => { setShowPropDropdown(false); setShowAddPropDrawer(true); }}
+                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
+                    <Plus size={12} color={C.accent}/>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.accent }}>+ Add Property</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Header */}
           <div>
@@ -3034,19 +3285,26 @@ export default function Dashboard() {
                             {!insurance ? (
                               <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingInsurance ? "#0891b2" : "#bae6fd"}`, background: "#f0f9ff" }}>
                                 {parsingInsurance
-                                  ? <><Loader2 size={20} color="#0891b2" className="animate-spin"/><span style={{ fontSize: 14, color: "#0891b2" }}>Parsing insurance policy…</span></>
-                                  : <><Shield size={20} color="#0891b2"/><span style={{ fontSize: 14, color: C.text }}>Upload homeowners insurance policy or dec page</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
+                                  ? <><Loader2 size={20} color="#0891b2" className="animate-spin"/><span style={{ fontSize: 14, color: "#0891b2" }}>Parsing insurance documents…</span></>
+                                  : <><Shield size={20} color="#0891b2"/><span style={{ fontSize: 14, color: C.text }}>Upload homeowners insurance policy or dec page</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text — select multiple files at once</span></>
                                 }
-                                <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                                <input type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                               </label>
                             ) : (
                               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                                    {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
-                                    {parsingInsurance ? "Parsing…" : "Replace"}
-                                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
-                                  </label>
+                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                                  {insuranceDocCount > 0 && (
+                                    <span style={{ fontSize: 11, color: C.text3 }}>
+                                      {insuranceDocCount} document{insuranceDocCount !== 1 ? "s" : ""} uploaded
+                                    </span>
+                                  )}
+                                  <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
+                                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                                      {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
+                                      {parsingInsurance ? "Parsing…" : "Add / Replace"}
+                                      <input type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                                    </label>
+                                  </div>
                                 </div>
                                 <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 12, padding: "14px 16px" }}>
                                   <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
@@ -4696,6 +4954,95 @@ export default function Dashboard() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Add Property Drawer ────────────────────────────────────────── */}
+      {showAddPropDrawer && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 500, display: "flex" }}>
+          {/* Backdrop */}
+          <div style={{ flex: 1, background: "rgba(0,0,0,0.4)" }} onClick={() => setShowAddPropDrawer(false)}/>
+          {/* Drawer */}
+          <div style={{ width: Math.min(440, window.innerWidth), background: C.surface, height: "100%", overflowY: "auto", display: "flex", flexDirection: "column", boxShadow: "-8px 0 32px rgba(0,0,0,0.2)" }}>
+            {/* Header */}
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "20px 24px", borderBottom: `1px solid ${C.border}` }}>
+              <div>
+                <p style={{ fontSize: 18, fontWeight: 800, color: C.text, margin: 0 }}>Add Property</p>
+                <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>Track another home, rental, or property</p>
+              </div>
+              <button onClick={() => setShowAddPropDrawer(false)} style={{ width: 32, height: 32, borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <X size={15} color={C.text3}/>
+              </button>
+            </div>
+
+            {/* Form */}
+            <div style={{ padding: "24px", display: "flex", flexDirection: "column", gap: 18, flex: 1 }}>
+              {/* Address */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: C.text2, display: "block", marginBottom: 6 }}>Address *</label>
+                <input
+                  type="text" placeholder="123 Oak Street, Austin TX 78701"
+                  value={newPropForm.address}
+                  onChange={e => setNewPropForm(p => ({ ...p, address: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, color: C.text, background: C.bg, boxSizing: "border-box" }}
+                />
+              </div>
+
+              {/* Nickname */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: C.text2, display: "block", marginBottom: 6 }}>Nickname <span style={{ fontWeight: 400, color: C.text3 }}>(optional)</span></label>
+                <input
+                  type="text" placeholder="Primary Home, Lake House, Rental..."
+                  value={newPropForm.nickname}
+                  onChange={e => setNewPropForm(p => ({ ...p, nickname: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, color: C.text, background: C.bg, boxSizing: "border-box" }}
+                />
+              </div>
+
+              {/* Home Type */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: C.text2, display: "block", marginBottom: 6 }}>Home Type</label>
+                <select
+                  value={newPropForm.home_type}
+                  onChange={e => setNewPropForm(p => ({ ...p, home_type: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, color: C.text, background: C.bg, boxSizing: "border-box" }}>
+                  <option value="single_family">Single Family</option>
+                  <option value="condo">Condo / Co-op</option>
+                  <option value="townhouse">Townhouse</option>
+                  <option value="multi_family">Multi-Family</option>
+                  <option value="mobile">Mobile / Manufactured</option>
+                  <option value="other">Other</option>
+                </select>
+              </div>
+
+              {/* Year Built */}
+              <div>
+                <label style={{ fontSize: 12, fontWeight: 700, color: C.text2, display: "block", marginBottom: 6 }}>Year Built <span style={{ fontWeight: 400, color: C.text3 }}>(optional)</span></label>
+                <input
+                  type="number" placeholder="e.g. 1998"
+                  value={newPropForm.year_built}
+                  onChange={e => setNewPropForm(p => ({ ...p, year_built: e.target.value }))}
+                  style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, color: C.text, background: C.bg, boxSizing: "border-box" }}
+                />
+              </div>
+
+              {newPropError && (
+                <p style={{ fontSize: 13, color: C.red, background: C.redBg, border: `1px solid #fca5a5`, borderRadius: 8, padding: "10px 14px", margin: 0 }}>{newPropError}</p>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div style={{ padding: "16px 24px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 10 }}>
+              <button onClick={() => setShowAddPropDrawer(false)}
+                style={{ flex: 1, padding: "11px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", fontSize: 14, fontWeight: 600, color: C.text2, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button onClick={saveNewProperty} disabled={addingProp}
+                style={{ flex: 2, padding: "11px", borderRadius: 10, border: "none", background: C.accent, color: "white", fontSize: 14, fontWeight: 700, cursor: addingProp ? "not-allowed" : "pointer", opacity: addingProp ? 0.7 : 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                {addingProp ? <><Loader2 size={15} className="animate-spin"/>Saving…</> : "Save Property"}
+              </button>
+            </div>
           </div>
         </div>
       )}
