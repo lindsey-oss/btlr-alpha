@@ -2145,8 +2145,10 @@ export default function Dashboard() {
           inspection_date:       result.inspection_date      ?? null,
           inspector_company:     result.company_name         ?? null,
           finding_statuses:      freshStatuses,
-          ...(result.roof_year ? { roof_year: result.roof_year } : {}),
-          ...(result.hvac_year ? { hvac_year: result.hvac_year } : {}),
+          ...(result.roof_year        ? { roof_year: result.roof_year }               : {}),
+          ...(result.hvac_year        ? { hvac_year: result.hvac_year }               : {}),
+          // Persist address from inspection report so vendor search stays correct on reload
+          ...(result.property_address ? { address: result.property_address }          : {}),
           updated_at:            new Date().toISOString(),
         };
         const { data: existingProp, error: propLookupErr } = await supabase
@@ -3651,26 +3653,84 @@ export default function Dashboard() {
               <div style={{
                 background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accentDk} 65%, ${C.accent} 100%)`,
                 borderRadius: 20, padding: isMobile ? "20px 18px" : "28px 32px", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 16 : 28,
-                boxShadow: `0 4px 20px ${C.navy}1F`,
+                boxShadow: `0 4px 20px ${C.navy}1F`, position: "relative", overflow: "hidden",
               }}>
-                <div style={{ width: 134, height: 134, borderRadius: "50%", border: "4px dashed rgba(255,255,255,0.12)",
-                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <Activity size={40} color="rgba(255,255,255,0.18)"/>
+                {/* Animated shimmer overlay while parsing */}
+                {inspecting && (
+                  <div style={{
+                    position: "absolute", inset: 0, zIndex: 1,
+                    background: "linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.04) 50%, transparent 100%)",
+                    animation: "shimmer 1.6s ease-in-out infinite",
+                  }}/>
+                )}
+                <style>{`
+                  @keyframes shimmer {
+                    0%   { transform: translateX(-100%); }
+                    100% { transform: translateX(200%); }
+                  }
+                  @keyframes spin-slow {
+                    from { transform: rotate(0deg); }
+                    to   { transform: rotate(360deg); }
+                  }
+                `}</style>
+
+                {/* Circle icon / spinner */}
+                <div style={{ width: 134, height: 134, borderRadius: "50%",
+                  border: inspecting ? "4px solid rgba(255,255,255,0.12)" : "4px dashed rgba(255,255,255,0.12)",
+                  display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                  position: "relative",
+                }}>
+                  {inspecting ? (
+                    <>
+                      {/* Spinning arc */}
+                      <div style={{
+                        position: "absolute", inset: -4, borderRadius: "50%",
+                        border: "4px solid transparent",
+                        borderTopColor: "rgba(255,255,255,0.6)",
+                        borderRightColor: "rgba(255,255,255,0.2)",
+                        animation: "spin-slow 1s linear infinite",
+                      }}/>
+                      <Loader2 size={36} color="rgba(255,255,255,0.5)" style={{ animation: "spin-slow 1.4s linear infinite" }}/>
+                    </>
+                  ) : (
+                    <Activity size={40} color="rgba(255,255,255,0.18)"/>
+                  )}
                 </div>
-                <div style={{ flex: 1 }}>
+
+                <div style={{ flex: 1, position: "relative", zIndex: 2 }}>
                   <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>Home Health Score</p>
-                  <p style={{ fontSize: 28, fontWeight: 800, color: "rgba(255,255,255,0.3)", margin: "0 0 8px" }}>Not yet calculated</p>
-                  <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", margin: "0 0 16px" }}>Upload an inspection report or enter your roof & HVAC years to get your score.</p>
-                  <div style={{ display: "flex", gap: 10 }}>
-                    <button onClick={() => inspRef.current?.click()}
-                      style={{ padding: "9px 18px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                      <Upload size={13}/> Upload Inspection
-                    </button>
-                    <button onClick={() => setNav("Settings")}
-                      style={{ padding: "9px 14px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                      Enter Years
-                    </button>
-                  </div>
+                  {inspecting ? (
+                    <>
+                      <p style={{ fontSize: 28, fontWeight: 800, color: "rgba(255,255,255,0.75)", margin: "0 0 6px" }}>Analyzing report…</p>
+                      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: "0 0 18px" }}>Reading your inspection findings, systems, and estimated costs. This takes about 30 seconds.</p>
+                      {/* Progress dots */}
+                      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                        {[0, 1, 2].map(i => (
+                          <div key={i} style={{
+                            width: 7, height: 7, borderRadius: "50%", background: "rgba(255,255,255,0.5)",
+                            animation: `pulse 1.2s ease-in-out ${i * 0.2}s infinite`,
+                          }}/>
+                        ))}
+                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", marginLeft: 6 }}>Processing with AI</span>
+                      </div>
+                      <style>{`@keyframes pulse { 0%,80%,100% { opacity:0.3; transform:scale(0.85); } 40% { opacity:1; transform:scale(1); } }`}</style>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: 28, fontWeight: 800, color: "rgba(255,255,255,0.3)", margin: "0 0 8px" }}>Not yet calculated</p>
+                      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", margin: "0 0 16px" }}>Upload an inspection report or enter your roof & HVAC years to get your score.</p>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button onClick={() => inspRef.current?.click()}
+                          style={{ padding: "9px 18px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Upload size={13}/> Upload Inspection
+                        </button>
+                        <button onClick={() => setNav("Settings")}
+                          style={{ padding: "9px 14px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                          Enter Years
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
             )}

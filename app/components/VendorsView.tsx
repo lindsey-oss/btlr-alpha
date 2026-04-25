@@ -356,8 +356,8 @@ function NearbyVendorsMap({
           });
         } catch { /* non-blocking */ }
 
-        // Location suffix — append ", CA" when plain zip code
-        const locSuffix = /^\d{5}$/.test(location.trim()) ? `${location}, CA` : location;
+        // Use location as-is — already city+state or zip; Google geocodes both correctly
+        const locSuffix = location.trim();
         const searchQuery = `${searchTerm} contractor near ${locSuffix}`;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -724,7 +724,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   const searchTerm = result?.search_terms?.[0] ?? selectedCategory ?? "";
 
   function yelpLink(term: string) {
-    return `https://www.yelp.com/search?find_desc=${encodeURIComponent(term)}&find_loc=${encodeURIComponent(zip || city)}`;
+    return `https://www.yelp.com/search?find_desc=${encodeURIComponent(term)}&find_loc=${encodeURIComponent(city || zip)}`;
   }
 
   return (
@@ -985,14 +985,14 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
               {selectedCategory} Contractors Near You
             </p>
             <p style={{ fontSize: 14, color: C.text3, display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
-              <MapPin size={12}/> Searching near {zip || city}
+              <MapPin size={12}/> Searching near {city || zip}
             </p>
           </div>
 
           {/* Embedded Google Map — top 3 nearby */}
           <NearbyVendorsMap
             searchTerm={searchTerm}
-            location={zip || city}
+            location={city || zip}
             result={result}
             address={address}
             onContact={(v) => {
