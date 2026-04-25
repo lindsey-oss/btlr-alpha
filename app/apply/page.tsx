@@ -38,18 +38,32 @@ const PROCESS = [
 export default function ApplyPage() {
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: DM, color: C.text }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;600&family=Outfit:wght@300;700;800&family=Syne:wght@600;700;800&display=swap');
+        @media(max-width:768px){
+          .apply-nav-label{display:none !important}
+          .apply-hero{grid-template-columns:1fr !important;gap:40px !important;padding:80px 24px 56px !important}
+          .apply-stats{flex-direction:column !important;gap:0 !important}
+          .apply-criteria{grid-template-columns:1fr !important}
+          .apply-process{grid-template-columns:1fr !important;gap:20px !important}
+          .apply-section-pad{padding:64px 24px !important}
+          .apply-cta{padding:64px 24px !important}
+          .apply-footer{padding:20px 24px !important;flex-direction:column !important;gap:12px !important;align-items:flex-start !important}
+          .apply-nav{padding:16px 20px !important}
+        }
+      `}</style>
 
       {/* Nav */}
-      <nav style={{ padding: "20px 48px", borderBottom: `1px solid ${C.border}`, background: "rgba(255,255,255,0.96)", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(12px)" }}>
+      <nav className="apply-nav" style={{ padding: "20px 48px", borderBottom: `1px solid ${C.border}`, background: "rgba(255,255,255,0.96)", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100, backdropFilter: "blur(12px)" }}>
         <Link href="/" style={{ fontFamily: SYNE, fontSize: 18, fontWeight: 800, letterSpacing: "0.14em", color: C.gold, textDecoration: "none" }}>BTLR</Link>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <span style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.muted }}>Trusted Network Application</span>
+          <span className="apply-nav-label" style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.muted }}>Trusted Network Application</span>
           <Link href="/dashboard" style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted, textDecoration: "none" }}>Homeowner Login</Link>
         </div>
       </nav>
 
       {/* Hero */}
-      <section style={{ padding: "100px 48px 80px", maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 80, alignItems: "center" }}>
+      <section className="apply-hero" style={{ padding: "100px 48px 80px", maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 80, alignItems: "center" }}>
         <div>
           <div style={{ display: "inline-flex", alignItems: "center", gap: 8, background: C.goldDim, border: `1px solid ${C.borderGold}`, padding: "6px 14px", marginBottom: 28 }}>
             <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.gold, display: "inline-block" }}/>
@@ -70,7 +84,7 @@ export default function ApplyPage() {
             </a>
           </div>
         </div>
-        <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        <div className="apply-stats" style={{ display: "flex", flexDirection: "column", gap: 2 }}>
           {[
             { label: "Application Steps", value: "9" },
             { label: "Review Turnaround", value: "5–7 days" },
@@ -86,7 +100,7 @@ export default function ApplyPage() {
       </section>
 
       {/* What We Look For */}
-      <section style={{ background: C.surface, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: "100px 48px" }}>
+      <section className="apply-section-pad" style={{ background: C.surface, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}`, padding: "100px 48px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto" }}>
           <div style={{ marginBottom: 60 }}>
             <div style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.gold, marginBottom: 12, display: "flex", alignItems: "center", gap: 10 }}>
@@ -97,7 +111,7 @@ export default function ApplyPage() {
               What we look for in<br/><strong style={{ fontWeight: 700 }}>every applicant.</strong>
             </h2>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 2 }}>
+          <div className="apply-criteria" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 2 }}>
             {CRITERIA.map(({ n, title, body }) => (
               <div key={n} style={{ background: "#fff", padding: "32px 28px", border: `1px solid ${C.border}`, borderTop: `2px solid ${C.gold}` }}>
                 <div style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", color: C.gold, marginBottom: 16, opacity: 0.6 }}>{n}</div>
@@ -119,14 +133,14 @@ export default function ApplyPage() {
       </section>
 
       {/* How It Works */}
-      <section id="how-it-works" style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
+      <section id="how-it-works" className="apply-section-pad" style={{ padding: "100px 48px", maxWidth: 1100, margin: "0 auto" }}>
         <div style={{ marginBottom: 60, textAlign: "center" }}>
           <div style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.gold, marginBottom: 12 }}>Process</div>
           <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(28px,3.5vw,48px)", fontWeight: 300, lineHeight: 1.15, letterSpacing: "-0.02em" }}>
             How the application<br/><strong style={{ fontWeight: 700 }}>process works.</strong>
           </h2>
         </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 40 }}>
+        <div className="apply-process" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 40 }}>
           {PROCESS.map(({ step, title, body }) => (
             <div key={step} style={{ textAlign: "center", padding: "40px 28px", border: `1px solid ${C.border}` }}>
               <div style={{ width: 44, height: 44, borderRadius: "50%", background: C.goldDim, border: `1px solid ${C.borderGold}`, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px", fontFamily: SYNE, fontSize: 14, fontWeight: 800, color: C.gold }}>{step}</div>
@@ -138,7 +152,7 @@ export default function ApplyPage() {
       </section>
 
       {/* CTA Strip */}
-      <section style={{ background: "#1B2D47", padding: "80px 48px", textAlign: "center" }}>
+      <section className="apply-cta" style={{ background: "#1B2D47", padding: "80px 48px", textAlign: "center" }}>
         <p style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: "rgba(255,255,255,.45)", marginBottom: 16 }}>Ready to apply?</p>
         <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(28px,3.5vw,48px)", fontWeight: 300, color: "#EDE9DC", lineHeight: 1.15, marginBottom: 8, letterSpacing: "-0.02em" }}>
           Built for professionals who take<br/><strong style={{ fontWeight: 700 }}>homeownership seriously.</strong>
@@ -151,7 +165,7 @@ export default function ApplyPage() {
       </section>
 
       {/* Footer */}
-      <footer style={{ padding: "28px 48px", borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
+      <footer className="apply-footer" style={{ padding: "28px 48px", borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 12 }}>
         <span style={{ fontFamily: SYNE, fontSize: 13, fontWeight: 800, color: C.gold }}>BTLR</span>
         <div style={{ display: "flex", gap: 24 }}>
           <Link href="/privacy" style={{ fontSize: 12, color: C.muted, textDecoration: "none" }}>Privacy</Link>

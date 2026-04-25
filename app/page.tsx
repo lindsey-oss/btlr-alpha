@@ -332,6 +332,7 @@ export default function LandingPage() {
         .feat-card:hover::after{width:100%}
         .nav-link-hover:hover{color:${C.text} !important}
         .vendor-join-btn:hover{background:${C.goldDim} !important;border-color:${C.gold} !important}
+        .nav-signup-btn{display:inline-block}
         .btn-primary-hover:hover{background:${C.goldDk} !important;transform:translateY(-2px);box-shadow:0 10px 36px rgba(44,95,138,.25)}
         .pain-item{display:flex;align-items:flex-start;gap:16px;padding:22px 0;border-bottom:1px solid rgba(255,255,255,.07)}
         .pain-item:first-child{border-top:1px solid rgba(255,255,255,.07)}
@@ -341,6 +342,7 @@ export default function LandingPage() {
           /* Nav */
           .nav-links-hide{display:none !important}
           .vendor-join-btn{display:none !important}
+          .nav-signup-btn{display:none !important}
           nav{padding:16px 20px !important}
           /* Hero */
           .hero-h1{font-size:clamp(32px,7vw,56px) !important}
@@ -429,11 +431,11 @@ export default function LandingPage() {
           }}>
             Join Trusted Network
           </Link>
-          <Link href="/dashboard" style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 20px", color: C.muted, textDecoration: "none" }}>
+          <Link href="/dashboard" style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 14px", color: C.muted, textDecoration: "none", border: `1px solid ${C.border}`, borderRadius: 6 }}>
             Log In
           </Link>
           <a href="#cta" style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 30px", background: C.gold, color: "#fff", textDecoration: "none", transition: "background .2s" }}
-            className="btn-primary-hover">
+            className="btn-primary-hover nav-signup-btn">
             Sign Up Free
           </a>
         </div>
