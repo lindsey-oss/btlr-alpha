@@ -79,36 +79,221 @@ const URGENCY_STYLE: Record<string, { color: string; bg: string; label: string; 
   low:       { color: C.green,  bg: C.greenBg, label: "Low Priority",icon: <CheckCircle2  size={13}/> },
 };
 
-// Platform search configs for real vendor discovery
-const PLATFORMS = [
-  {
-    key: "google",
-    name: "Google Maps",
-    description: "Verified reviews + photos",
-    color: "#4285F4",
-    bg: "#f0f5ff",
-    border: "#c7d9ff",
-    logo: "G",
-  },
-  {
-    key: "yelp",
-    name: "Yelp",
-    description: "Ratings, quotes & portfolios",
-    color: "#d32323",
-    bg: "#fff5f5",
-    border: "#ffc9c9",
-    logo: "y",
-  },
-  {
-    key: "angi",
-    name: "Angi",
-    description: "Background-checked pros",
-    color: "#f27a1a",
-    bg: "#fff8f0",
-    border: "#ffd9aa",
-    logo: "A",
-  },
-];
+// ── Google Maps singleton loader ──────────────────────────────────────────────
+let _mapsPromise: Promise<void> | null = null;
+function loadGoogleMaps(): Promise<void> {
+  if (_mapsPromise) return _mapsPromise;
+  _mapsPromise = new Promise((resolve, reject) => {
+    if (typeof window === "undefined") { reject(new Error("SSR")); return; }
+    if ((window as unknown as Record<string, unknown>).google) { resolve(); return; }
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+    if (!key) { reject(new Error("No API key")); return; }
+    const s = document.createElement("script");
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
+    s.async = true;
+    s.onload = () => resolve();
+    s.onerror = () => reject(new Error("Failed to load Maps"));
+    document.head.appendChild(s);
+  });
+  return _mapsPromise;
+}
+
+// ── NearbyVendorsMap component ────────────────────────────────────────────────
+interface VendorResult {
+  name: string;
+  rating?: number;
+  userRatingsTotal?: number;
+  vicinity?: string;
+  phone?: string;
+  website?: string;
+  mapsUrl?: string;
+  placeId?: string;
+}
+
+function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; location: string }) {
+  const mapRef   = useRef<HTMLDivElement>(null);
+  const [vendors,  setVendors]  = useState<VendorResult[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [error,    setError]    = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!searchTerm || !location) return;
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setVendors([]);
+
+    loadGoogleMaps()
+      .then(() => {
+        if (cancelled) return;
+        const g = (window as unknown as { google: typeof google }).google;
+        const geocoder = new g.maps.Geocoder();
+        geocoder.geocode({ address: location }, (results, status) => {
+          if (cancelled) return;
+          if (status !== "OK" || !results || !results[0]) {
+            setError("Couldn't locate your area."); setLoading(false); return;
+          }
+          const center = results[0].geometry.location;
+
+          if (!mapRef.current) { setLoading(false); return; }
+          const map = new g.maps.Map(mapRef.current, {
+            center, zoom: 13,
+            mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
+            zoomControlOptions: { position: g.maps.ControlPosition.RIGHT_BOTTOM },
+            styles: [
+              { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
+              { featureType: "transit", stylers: [{ visibility: "off" }] },
+            ],
+          });
+
+          const service = new g.maps.places.PlacesService(map);
+          service.textSearch(
+            { query: `${searchTerm} contractor`, location: center, radius: 24000 },
+            (places, pStatus) => {
+              if (cancelled) return;
+              if (pStatus !== g.maps.places.PlacesServiceStatus.OK || !places) {
+                setError("No results found nearby."); setLoading(false); return;
+              }
+              const top3 = places.slice(0, 3);
+              const bounds = new g.maps.LatLngBounds();
+
+              top3.forEach((place, i) => {
+                if (!place.geometry?.location) return;
+                bounds.extend(place.geometry.location);
+
+                // Numbered marker
+                const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+                  <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 24 16 24s16-12 16-24C32 7.163 24.837 0 16 0z" fill="#0f1f3d"/>
+                  <circle cx="16" cy="16" r="10" fill="#ffffff"/>
+                  <text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="13" font-weight="bold" fill="#0f1f3d">${i + 1}</text>
+                </svg>`;
+                new g.maps.Marker({
+                  position: place.geometry.location,
+                  map,
+                  icon: { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, scaledSize: new g.maps.Size(32, 40) },
+                  title: place.name,
+                });
+              });
+              map.fitBounds(bounds);
+
+              // Fetch details for each
+              let done = 0;
+              const results2: VendorResult[] = top3.map(p => ({
+                name: p.name ?? "Unknown",
+                rating: p.rating,
+                userRatingsTotal: p.user_ratings_total,
+                vicinity: p.formatted_address ?? p.vicinity,
+                placeId: p.place_id,
+              }));
+
+              top3.forEach((place, i) => {
+                if (!place.place_id) { done++; if (done === top3.length) { setVendors(results2); setLoading(false); } return; }
+                service.getDetails(
+                  { placeId: place.place_id, fields: ["formatted_phone_number", "website", "url"] },
+                  (det, dStatus) => {
+                    if (cancelled) return;
+                    if (dStatus === g.maps.places.PlacesServiceStatus.OK && det) {
+                      results2[i].phone   = det.formatted_phone_number ?? undefined;
+                      results2[i].website = det.website ?? undefined;
+                      results2[i].mapsUrl = det.url ?? undefined;
+                    }
+                    done++;
+                    if (done === top3.length) { setVendors([...results2]); setLoading(false); }
+                  }
+                );
+              });
+            }
+          );
+        });
+      })
+      .catch((err) => {
+        if (!cancelled) { setError(err.message || "Failed to load map."); setLoading(false); }
+      });
+
+    return () => { cancelled = true; };
+  }, [searchTerm, location]);
+
+  return (
+    <div>
+      {/* Map */}
+      <div style={{ position: "relative", borderRadius: 12, overflow: "hidden", marginBottom: 12 }}>
+        <div ref={mapRef} style={{ width: "100%", height: 280 }}/>
+        {loading && (
+          <div style={{
+            position: "absolute", inset: 0, display: "flex", alignItems: "center",
+            justifyContent: "center", background: "rgba(240,244,248,0.85)",
+          }}>
+            <Loader2 size={24} color={C.accent} className="animate-spin"/>
+            <span style={{ marginLeft: 10, fontSize: 13, color: C.text2 }}>Finding nearby contractors…</span>
+          </div>
+        )}
+        {error && !loading && (
+          <div style={{
+            position: "absolute", inset: 0, display: "flex", alignItems: "center",
+            justifyContent: "center", background: "rgba(240,244,248,0.92)", flexDirection: "column", gap: 6,
+          }}>
+            <AlertTriangle size={20} color={C.amber}/>
+            <span style={{ fontSize: 13, color: C.text2 }}>{error}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Vendor cards */}
+      {vendors.map((v, i) => (
+        <div key={i} style={{
+          display: "flex", alignItems: "flex-start", gap: 14, padding: "14px 16px",
+          borderRadius: 12, border: `1.5px solid ${C.border}`, background: C.surface,
+          marginBottom: 8,
+        }}>
+          {/* Number badge */}
+          <div style={{
+            width: 32, height: 32, borderRadius: "50%", flexShrink: 0,
+            background: C.navy, color: "white",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            fontWeight: 800, fontSize: 14,
+          }}>{i + 1}</div>
+
+          {/* Info */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
+              {v.mapsUrl
+                ? <a href={v.mapsUrl} target="_blank" rel="noopener noreferrer" style={{ color: C.text, textDecoration: "none" }}>{v.name}</a>
+                : v.name}
+            </p>
+            {(v.rating !== undefined) && (
+              <p style={{ fontSize: 12, color: C.text2, margin: "0 0 3px" }}>
+                ⭐ {v.rating.toFixed(1)}{v.userRatingsTotal ? ` (${v.userRatingsTotal.toLocaleString()} reviews)` : ""}
+              </p>
+            )}
+            {v.vicinity && (
+              <p style={{ fontSize: 12, color: C.text3, margin: "0 0 3px", display: "flex", alignItems: "center", gap: 4 }}>
+                <MapPin size={11}/> {v.vicinity}
+              </p>
+            )}
+            {v.phone && (
+              <a href={`tel:${v.phone}`} style={{ fontSize: 12, color: C.accent, textDecoration: "none", display: "block", marginBottom: 2 }}>
+                📞 {v.phone}
+              </a>
+            )}
+          </div>
+
+          {/* View link */}
+          {v.mapsUrl && (
+            <a href={v.mapsUrl} target="_blank" rel="noopener noreferrer"
+              style={{
+                padding: "6px 12px", borderRadius: 8,
+                background: C.navy, color: "white",
+                fontSize: 12, fontWeight: 600, textDecoration: "none",
+                display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+              }}>
+              View <ExternalLink size={11}/>
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
 
 interface Finding {
   category: string;
@@ -294,14 +479,8 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   // Use AI-generated search terms when available, otherwise fall back to category label
   const searchTerm = result?.search_terms?.[0] ?? selectedCategory ?? "";
 
-  function googleLink(term: string) {
-    return `https://www.google.com/maps/search/${encodeURIComponent(term + " near " + (zip || city))}`;
-  }
   function yelpLink(term: string) {
     return `https://www.yelp.com/search?find_desc=${encodeURIComponent(term)}&find_loc=${encodeURIComponent(zip || city)}`;
-  }
-  function angiLink(term: string) {
-    return `https://www.angi.com/companylist/us/${encodeURIComponent(zip || city)}/${encodeURIComponent(term.replace(/ /g, "-"))}.htm`;
   }
 
   return (
@@ -566,54 +745,33 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
             </p>
           </div>
 
-          {/* Platform cards */}
-          <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 18 }}>
-            {PLATFORMS.map(p => {
-              const href = p.key === "google"
-                ? googleLink(searchTerm)
-                : p.key === "yelp"
-                ? yelpLink(searchTerm)
-                : angiLink(searchTerm);
-              return (
-                <a key={p.key} href={href} target="_blank" rel="noopener noreferrer"
-                  style={{
-                    display: "flex", alignItems: "center", gap: 16, padding: "16px 18px",
-                    borderRadius: 12, border: `1.5px solid ${p.border}`,
-                    background: p.bg, textDecoration: "none",
-                    transition: "box-shadow 0.15s",
-                  }}>
-                  {/* Logo circle */}
-                  <div style={{
-                    width: 44, height: 44, borderRadius: 12, flexShrink: 0,
-                    background: p.color,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 20, color: "white", fontWeight: 900,
-                    fontFamily: "Georgia, serif",
-                  }}>
-                    {p.logo}
-                  </div>
+          {/* Embedded Google Map — top 3 nearby */}
+          <NearbyVendorsMap searchTerm={searchTerm} location={zip || city} />
 
-                  {/* Text */}
-                  <div style={{ flex: 1 }}>
-                    <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>
-                      Search {p.name}
-                    </p>
-                    <p style={{ fontSize: 13, color: C.text3, margin: "2px 0 0" }}>
-                      {p.description} · &ldquo;{searchTerm}&rdquo; near {zip || city}
-                    </p>
-                  </div>
-
-                  {/* Arrow */}
-                  <div style={{
-                    display: "flex", alignItems: "center", gap: 4,
-                    fontSize: 13, fontWeight: 700, color: p.color, flexShrink: 0,
-                  }}>
-                    Open <ExternalLink size={13}/>
-                  </div>
-                </a>
-              );
-            })}
-          </div>
+          {/* Yelp link */}
+          <a href={yelpLink(searchTerm)} target="_blank" rel="noopener noreferrer"
+            style={{
+              display: "flex", alignItems: "center", gap: 16, padding: "14px 18px",
+              borderRadius: 12, border: "1.5px solid #ffc9c9",
+              background: "#fff5f5", textDecoration: "none", marginBottom: 18,
+            }}>
+            <div style={{
+              width: 40, height: 40, borderRadius: 10, flexShrink: 0,
+              background: "#d32323",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 20, color: "white", fontWeight: 900,
+              fontFamily: "Georgia, serif",
+            }}>y</div>
+            <div style={{ flex: 1 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0 }}>Search Yelp</p>
+              <p style={{ fontSize: 13, color: C.text3, margin: "2px 0 0" }}>
+                Ratings, quotes &amp; portfolios · &ldquo;{searchTerm}&rdquo; near {zip || city}
+              </p>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 13, fontWeight: 700, color: "#d32323", flexShrink: 0 }}>
+              Open <ExternalLink size={13}/>
+            </div>
+          </a>
 
           {/* Contractor brief email CTA */}
           {result && (
