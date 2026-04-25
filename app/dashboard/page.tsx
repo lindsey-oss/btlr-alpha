@@ -75,6 +75,44 @@ function isScoredFinding(category: string): boolean {
   );
 }
 
+// Returns score impact metadata for a finding — used in the Repairs tab
+// to badge, color-code, and explain why a repair affects the Home Health Score.
+type ScoreImpact =
+  | { affects: true;  level: "high" | "medium" | "low"; color: string; bg: string; label: string; reason: string }
+  | { affects: false; color: string; bg: string; label: string };
+
+function getScoreImpact(category: string, severity?: string): ScoreImpact {
+  const scored = isScoredFinding(category);
+  if (!scored) {
+    return { affects: false, color: "#94a3b8", bg: "rgba(148,163,184,0.12)", label: "Informational" };
+  }
+  const t = (category || "").toLowerCase();
+  // Derive a plain-language reason from the category
+  let reason = "Affects your overall Home Health Score";
+  if (t.includes("roof") || t.includes("gutter"))          reason = "Roof condition directly impacts the Roof & Drainage score";
+  else if (t.includes("foundation") || t.includes("structural") || t.includes("settling") || t.includes("crawl") || t.includes("basement"))
+                                                             reason = "Structural integrity is the highest-weighted score category";
+  else if (t.includes("electr") || t.includes("panel") || t.includes("wiring") || t.includes("outlet") || t.includes("gfci") || t.includes("circuit"))
+                                                             reason = "Electrical issues affect the Electrical score";
+  else if (t.includes("plumb") || t.includes("pipe") || t.includes("water heater") || t.includes("sewer") || t.includes("toilet") || t.includes("sink"))
+                                                             reason = "Plumbing condition affects the Plumbing score";
+  else if (t.includes("hvac") || t.includes("heat") || t.includes("cool") || t.includes("furnace") || t.includes("duct"))
+                                                             reason = "HVAC condition affects the Heating & Cooling score";
+  else if (t.includes("safety") || t.includes("smoke") || t.includes("carbon") || t.includes("mold") || t.includes("radon") || t.includes("asbestos") || t.includes("lead") || t.includes("pest") || t.includes("termite"))
+                                                             reason = "Safety & environmental hazards affect the Safety score";
+  else if (t.includes("window") || t.includes("door") || t.includes("floor") || t.includes("ceiling") || t.includes("interior") || t.includes("stair"))
+                                                             reason = "Interior condition affects the Interior score";
+  else if (t.includes("appliance") || t.includes("washer") || t.includes("dryer") || t.includes("dishwasher") || t.includes("oven") || t.includes("range"))
+                                                             reason = "Appliance condition affects the Appliances score";
+  else if (t.includes("exterior") || t.includes("siding") || t.includes("fascia") || t.includes("soffit") || t.includes("grading"))
+                                                             reason = "Exterior condition affects the Roof & Drainage score";
+
+  const sev = (severity || "").toLowerCase();
+  if (sev === "critical") return { affects: true, level: "high",   color: "#ef4444", bg: "rgba(239,68,68,0.10)",   label: "High Impact",   reason };
+  if (sev === "warning")  return { affects: true, level: "medium", color: "#f97316", bg: "rgba(249,115,22,0.10)", label: "Medium Impact", reason };
+  return                         { affects: true, level: "low",    color: "#eab308", bg: "rgba(234,179,8,0.12)",   label: "Low Impact",    reason };
+}
+
 // Maps a raw finding category to a broader display group key
 function toGroupKey(category: string): string {
   const t = category.toLowerCase();
@@ -530,7 +568,7 @@ function InspectionReviewModal({
             </h2>
           </div>
           <p style={{ fontSize: 14, color: C.text3, margin: 0, lineHeight: 1.5 }}>
-            Were any of these repairs already completed during escrow or afterwards?
+            Have any of these been completed after the inspection was completed?
             Your answers update your Home Health Score to reflect current reality.
           </p>
         </div>
@@ -591,12 +629,9 @@ function InspectionReviewModal({
           })}
         </div>
 
-        {/* Footer */}
-        <div style={{ padding: "12px 24px 6px", borderTop: `1px solid ${C.border}` }}>
+        <div style={{ padding: "10px 24px 4px", borderTop: `1px solid ${C.border}` }}>
           <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.5 }}>
-            Showing findings that impact your Home Health Score.
-            To see the full breakdown of all repairs — including pool, deck, fireplace, and other systems — visit the{" "}
-            <strong style={{ color: C.accent }}>Repairs tab</strong>.
+            To see the full list of all repairs, click the <strong style={{ color: C.accent }}>Repairs tab</strong>.
           </p>
         </div>
         <div style={{
@@ -3702,6 +3737,29 @@ export default function Dashboard() {
                             };
                             return (
                               <div style={{ display: "flex", flexDirection: "column", gap: 0, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}` }}>
+                                {/* Legend */}
+                                <div style={{ padding: "10px 16px", background: "#f8fafc", borderBottom: `1px solid ${C.border}` }}>
+                                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 7px" }}>
+                                    Highlighted repairs affect your Home Health Score
+                                  </p>
+                                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                                    {[
+                                      { color: "#ef4444", bg: "rgba(239,68,68,0.10)",  label: "High Impact (Critical)" },
+                                      { color: "#f97316", bg: "rgba(249,115,22,0.10)", label: "Medium Impact" },
+                                      { color: "#eab308", bg: "rgba(234,179,8,0.12)",  label: "Low Impact" },
+                                      { color: "#94a3b8", bg: "rgba(148,163,184,0.12)", label: "Informational (no score effect)" },
+                                    ].map(({ color, bg, label }) => (
+                                      <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                        <span style={{ width: 10, height: 10, borderRadius: 3, background: bg, border: `1.5px solid ${color}`, display: "inline-block", flexShrink: 0 }}/>
+                                        <span style={{ fontSize: 11, color: C.text3 }}>{label}</span>
+                                      </div>
+                                    ))}
+                                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                                      <span style={{ fontSize: 12, fontWeight: 800, color: C.accent }}>✦</span>
+                                      <span style={{ fontSize: 11, color: C.text3 }}>Impacts score</span>
+                                    </div>
+                                  </div>
+                                </div>
                                 {/* Summary bar */}
                                 <div style={{ display: "flex", gap: 16, padding: "10px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, justifyContent: "space-between", alignItems: "center" }}>
                                   <div style={{ display: "flex", gap: 14 }}>
@@ -3744,20 +3802,53 @@ export default function Dashboard() {
                                               const status = findingStatuses[fk] ?? "open";
                                               const cfg = statusConfig[status];
                                               const isResolved = status === "completed" || status === "dismissed";
-                                              const sevColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
+                                              const impact = getScoreImpact(f.category, f.severity);
+                                              const cardBorder = isResolved ? C.border : `${impact.color}40`;
+                                              const cardBg = isResolved ? C.surface : impact.bg;
                                               return (
-                                                <div key={fi} style={{ background: C.surface, borderRadius: 10, padding: "12px 14px", border: `1px solid ${isResolved ? C.border : sevColor + "30"}`, display: "flex", flexDirection: "column", gap: 9 }}>
+                                                <div key={fi} style={{ background: cardBg, borderRadius: 10, padding: "12px 14px", border: `1px solid ${cardBorder}`, borderLeft: `3px solid ${isResolved ? C.border : impact.color}`, display: "flex", flexDirection: "column", gap: 9 }}>
+                                                  {/* Card header row */}
                                                   <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
-                                                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: sevColor, flexShrink: 0, marginTop: 5 }}/>
                                                     <div style={{ flex: 1 }}>
-                                                      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
+                                                      {/* Title + severity + score badges */}
+                                                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                                                        {impact.affects && (
+                                                          <span style={{ fontSize: 11, fontWeight: 800, color: impact.color }}>✦</span>
+                                                        )}
                                                         <span style={{ fontSize: 13, fontWeight: 700, color: isResolved ? C.text3 : C.text, textDecoration: status === "completed" ? "line-through" : "none" }}>{f.category}</span>
-                                                        {f.severity && f.severity !== "info" && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: sevColor + "18", color: sevColor, textTransform: "capitalize" }}>{f.severity}</span>}
+                                                        {/* Severity badge */}
+                                                        {f.severity && f.severity !== "info" && (
+                                                          <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: impact.color + "18", color: impact.color, textTransform: "capitalize" }}>
+                                                            {f.severity === "critical" ? "High" : "Medium"}
+                                                          </span>
+                                                        )}
+                                                        {/* Score impact badge */}
+                                                        {impact.affects && !isResolved && (
+                                                          <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: impact.bg, color: impact.color, border: `1px solid ${impact.color}40` }}>
+                                                            {impact.label} · Affects Health Score
+                                                          </span>
+                                                        )}
+                                                        {/* Completed + was scored */}
+                                                        {isResolved && status === "completed" && impact.affects && (
+                                                          <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
+                                                            ✓ Completed — Score Updated
+                                                          </span>
+                                                        )}
                                                       </div>
+                                                      {/* Description */}
                                                       <p style={{ fontSize: 12, color: isResolved ? C.text3 : C.text2, margin: 0, lineHeight: 1.55 }}>{f.description}</p>
-                                                      {f.estimated_cost != null && <p style={{ fontSize: 11, color: C.text3, margin: "4px 0 0", fontWeight: 600 }}>Est. ${f.estimated_cost.toLocaleString()}</p>}
+                                                      {/* Cost + score reason row */}
+                                                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 5, flexWrap: "wrap" }}>
+                                                        {f.estimated_cost != null && (
+                                                          <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>Est. ${f.estimated_cost.toLocaleString()}</span>
+                                                        )}
+                                                        {impact.affects && (
+                                                          <span style={{ fontSize: 11, color: impact.color, opacity: 0.85 }}>{impact.reason}</span>
+                                                        )}
+                                                      </div>
                                                     </div>
                                                   </div>
+                                                  {/* Action row */}
                                                   <div style={{ display: "flex", alignItems: "center", gap: 7, paddingTop: 2, flexWrap: "wrap" }}>
                                                     <select value={status} onChange={e => toggleFindingStatus(f.category, globalIdx, e.target.value as FindingStatus)} style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, border: `1px solid ${cfg.color}40`, background: cfg.bg, color: cfg.color, cursor: "pointer", outline: "none" }}>
                                                       <option value="open">Open</option>
