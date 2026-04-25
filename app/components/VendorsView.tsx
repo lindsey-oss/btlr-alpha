@@ -86,7 +86,7 @@ function loadGoogleMaps(): Promise<void> {
   _mapsPromise = new Promise((resolve, reject) => {
     if (typeof window === "undefined") { reject(new Error("SSR")); return; }
     if ((window as unknown as Record<string, unknown>).google) { resolve(); return; }
-    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY;
+    const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_JS_KEY;
     if (!key) { reject(new Error("No API key")); return; }
     const s = document.createElement("script");
     s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places`;
