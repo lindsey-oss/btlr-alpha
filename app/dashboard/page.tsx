@@ -259,22 +259,24 @@ interface CostItem {
 
 // ── Design tokens ─────────────────────────────────────────────────────────
 const C = {
-  bg:       "#f0f4f8",
-  surface:  "#ffffff",
-  navy:     "#0f1f3d",
-  navyMid:  "#1e3a8a",
-  accent:   "#2563eb",
-  slate:    "#334155",
-  text:     "#0f172a",
-  text2:    "#475569",
-  text3:    "#94a3b8",
-  border:   "#e2e8f0",
-  green:    "#16a34a",
-  greenBg:  "#f0fdf4",
-  amber:    "#d97706",
-  amberBg:  "#fffbeb",
-  red:      "#dc2626",
-  redBg:    "#fef2f2",
+  bg:       "#F7F2EC",   // warm linen
+  surface:  "#FFFFFF",   // card white
+  surface2: "#EDE5D4",   // warm gray for subtle sections
+  navy:     "#1B2D47",   // dark navy (sidebar, headings)
+  accent:   "#2C5F8A",   // steel blue
+  accentDk: "#1E4568",   // darker steel blue for hover/active
+  accentLt: "#5C8FB8",   // light steel blue for subtle tints
+  accentBg: "rgba(44,95,138,0.08)", // tint bg
+  text:     "#1C1914",   // warm near-black
+  text2:    "#4A453E",   // warm medium
+  text3:    "#6B6558",   // warm muted
+  border:   "rgba(28,25,20,0.08)", // warm border
+  green:    "#2D6A4F",
+  greenBg:  "#F0FAF4",
+  amber:    "#92400E",
+  amberBg:  "#FFFBEB",
+  red:      "#991B1B",
+  redBg:    "#FEF2F2",
 };
 
 function card(extra?: React.CSSProperties): React.CSSProperties {
@@ -360,12 +362,12 @@ function HousePhoto({ address, height = 200 }: { address: string; height?: numbe
     <svg viewBox="0 0 900 200" style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }} preserveAspectRatio="xMidYMid slice">
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#0f1f3d"/><stop offset="100%" stopColor="#1e3a8a"/>
+          <stop offset="0%" stopColor="#1B2D47"/><stop offset="100%" stopColor="#2C5F8A"/>
         </linearGradient>
         <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#2563eb" stopOpacity="0"/>
-          <stop offset="50%" stopColor="#2563eb" stopOpacity="0.15"/>
-          <stop offset="100%" stopColor="#2563eb" stopOpacity="0"/>
+          <stop offset="0%" stopColor="#2C5F8A" stopOpacity="0"/>
+          <stop offset="50%" stopColor="#2C5F8A" stopOpacity="0.15"/>
+          <stop offset="100%" stopColor="#2C5F8A" stopOpacity="0"/>
         </linearGradient>
       </defs>
       <rect width="900" height="200" fill="url(#sky)"/>
@@ -373,11 +375,11 @@ function HousePhoto({ address, height = 200 }: { address: string; height?: numbe
       <rect x="0" y="170" width="900" height="30" fill="rgba(255,255,255,0.05)"/>
       <rect x="280" y="90" width="340" height="80" fill="rgba(255,255,255,0.07)" stroke="rgba(255,255,255,0.12)" strokeWidth="1"/>
       <polygon points="270,92 450,30 630,92" fill="rgba(255,255,255,0.08)" stroke="rgba(255,255,255,0.12)" strokeWidth="1"/>
-      <rect x="428" y="130" width="44" height="40" rx="3" fill="rgba(37,99,235,0.35)" stroke="rgba(37,99,235,0.5)" strokeWidth="1"/>
-      <rect x="305" y="108" width="60" height="42" rx="3" fill="rgba(37,99,235,0.2)" stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
+      <rect x="428" y="130" width="44" height="40" rx="3" fill="rgba(44,95,138,0.35)" stroke="rgba(44,95,138,0.5)" strokeWidth="1"/>
+      <rect x="305" y="108" width="60" height="42" rx="3" fill="rgba(44,95,138,0.2)" stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
       <line x1="335" y1="108" x2="335" y2="150" stroke="rgba(255,255,255,0.08)" strokeWidth="1"/>
       <line x1="305" y1="129" x2="365" y2="129" stroke="rgba(255,255,255,0.08)" strokeWidth="1"/>
-      <rect x="535" y="108" width="60" height="42" rx="3" fill="rgba(37,99,235,0.2)" stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
+      <rect x="535" y="108" width="60" height="42" rx="3" fill="rgba(44,95,138,0.2)" stroke="rgba(255,255,255,0.1)" strokeWidth="1"/>
       <line x1="565" y1="108" x2="565" y2="150" stroke="rgba(255,255,255,0.08)" strokeWidth="1"/>
       <line x1="535" y1="129" x2="595" y2="129" stroke="rgba(255,255,255,0.08)" strokeWidth="1"/>
       <rect x="80" y="110" width="160" height="60" fill="rgba(255,255,255,0.04)" stroke="rgba(255,255,255,0.07)" strokeWidth="1"/>
@@ -390,7 +392,7 @@ function HousePhoto({ address, height = 200 }: { address: string; height?: numbe
 
   return (
     <div style={{ width: "100%", height, borderRadius: 14, overflow: "hidden", position: "relative",
-      background: `linear-gradient(135deg, ${C.navy} 0%, #1e3a8a 60%, #1e3a5f 100%)` }}>
+      background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accentDk} 60%, ${C.accent} 100%)` }}>
       <FallbackHouse />
       {streetViewUrl && (
         <img src={streetViewUrl} alt={address}
@@ -1332,6 +1334,7 @@ export default function Dashboard() {
   const [parsingWarranty, setParsingWarranty]     = useState(false);
   const [warrantyError, setWarrantyError]         = useState<string | null>(null);
   const [showWarrantyDetail, setShowWarrantyDetail] = useState(false);
+  const [openDocSection, setOpenDocSection] = useState<string | null>(null);
   const warrantyRef = useRef<HTMLInputElement>(null);
 
   const inspRef = useRef<HTMLInputElement>(null);
@@ -2331,7 +2334,10 @@ export default function Dashboard() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", background: C.bg, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+    <div style={{ minHeight: "100vh", display: "flex", background: C.bg, fontFamily: "'DM Sans', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+      `}</style>
 
       {/* ── Toast notification ────────────────────────────────────────── */}
       {toast && (
@@ -2386,7 +2392,7 @@ export default function Dashboard() {
       <aside style={{ width: 216, flexShrink: 0, display: isMobile ? "none" : "flex", flexDirection: "column", background: C.navy, position: "sticky", top: 0, height: "100vh" }}>
         <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: "linear-gradient(135deg, #2563eb, #1d4ed8)", display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(37,99,235,0.5)" }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, ${C.accentDk})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 8px ${C.accent}80` }}>
               <HomeIcon size={15} color="white"/>
             </div>
             <span style={{ fontWeight: 700, fontSize: 17, color: "white", letterSpacing: "-0.3px" }}>BTLR</span>
@@ -2405,7 +2411,7 @@ export default function Dashboard() {
               display: "flex", alignItems: "center", gap: 9,
               padding: "9px 12px", borderRadius: 10, fontSize: 13,
               border: "none", cursor: "pointer", textAlign: "left", width: "100%",
-              background: nav === label ? "rgba(255,255,255,0.12)" : "transparent",
+              background: nav === label ? `${C.accent}20` : "transparent",
               color: nav === label ? "white" : "rgba(255,255,255,0.5)",
               fontWeight: nav === label ? 600 : 400, transition: "all 0.15s",
               position: "relative",
@@ -2505,7 +2511,11 @@ export default function Dashboard() {
                           <p style={{ fontSize: 13, color: C.text3, margin: "3px 0 0" }}>{c.horizon}</p>
                         </div>
                         <span style={{ fontSize: 16, fontWeight: 800, color: col }}>${c.amount.toLocaleString()}</span>
-                        <div style={{ display: "flex", gap: 8 }}>
+                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                          <button onClick={e => { e.stopPropagation(); setChatMessages([{ role: "user", content: c.finding?.description ?? c.label }]); askAI(c.finding?.description ?? c.label); setNav("Dashboard"); }}
+                            style={{ padding: "6px 12px", borderRadius: 8, background: C.accentLt, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                            Shield Check Coverage
+                          </button>
                           <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label, c.finding?.description ?? c.label); }}
                             style={{ padding: "6px 12px", borderRadius: 8, background: C.accent, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                             <Users size={12}/> Find Vendors
@@ -2558,549 +2568,420 @@ export default function Dashboard() {
           )}
 
           {/* ── Documents ─────────────────────────────────────────────── */}
-          {nav === "Documents" && (
+          {nav === "Documents" && (() => {
+            const docSections = [
+              {
+                id: "warranty",
+                label: "Home Warranty",
+                icon: <Shield size={15} color="#7c3aed"/>,
+                iconBg: "#faf5ff",
+                accentColor: "#7c3aed",
+                status: warranty
+                  ? `${warranty.provider ?? "Uploaded"} · ${warranty.expirationDate ? `Expires ${warranty.expirationDate}` : "Active"}`
+                  : "No document uploaded",
+                hasDoc: !!warranty,
+              },
+              {
+                id: "insurance",
+                label: "Home Insurance",
+                icon: <Shield size={15} color="#0891b2"/>,
+                iconBg: "#f0f9ff",
+                accentColor: "#0891b2",
+                status: insurance
+                  ? `${insurance.provider ?? "Uploaded"} · ${insurance.expirationDate ? `Renews ${insurance.expirationDate}` : "Active"}`
+                  : "No document uploaded",
+                hasDoc: !!insurance,
+              },
+              {
+                id: "repairs",
+                label: "Repair Documents",
+                icon: <CheckCircle2 size={15} color={C.green}/>,
+                iconBg: C.greenBg,
+                accentColor: C.green,
+                status: repairDocs.length > 0 ? `${repairDocs.length} repair${repairDocs.length > 1 ? "s" : ""} on record` : "No receipts uploaded",
+                hasDoc: repairDocs.length > 0,
+              },
+              {
+                id: "inspection",
+                label: "Inspection Findings",
+                icon: <Eye size={15} color={C.amber}/>,
+                iconBg: C.amberBg,
+                accentColor: C.amber,
+                status: allFindings.length > 0
+                  ? `${allFindings.length} findings · ${completedFindings.length} resolved`
+                  : "No inspection uploaded",
+                hasDoc: allFindings.length > 0,
+              },
+              {
+                id: "other",
+                label: "Other Documents",
+                icon: <FileText size={15} color={C.text3}/>,
+                iconBg: C.bg,
+                accentColor: C.accent,
+                status: docs.length > 0 ? `${docs.length} file${docs.length > 1 ? "s" : ""} uploaded` : "No documents uploaded",
+                hasDoc: docs.length > 0,
+              },
+            ];
+
+            return (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-              {/* Home Warranty Upload + Detail */}
-              <div style={card()}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <Shield size={14} color="#7c3aed"/>
-                    <span style={{ fontWeight: 700, fontSize: 15, color: C.text }}>Home Warranty / Maintenance Policy</span>
-                  </div>
-                  {warranty && (
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #7c3aed", color: "#7c3aed", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                      {parsingWarranty ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
-                      {parsingWarranty ? "Parsing…" : "Replace"}
-                      <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
-                    </label>
-                  )}
-                </div>
-                <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5 }}>
-                  Upload your home warranty or maintenance policy. BTLR will extract your coverage, exclusions, service fee, and claim contact info.
-                </p>
-
-                {!warranty ? (
-                  <label style={{
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-                    padding: "22px 16px", borderRadius: 12, cursor: "pointer",
-                    border: `2px dashed ${parsingWarranty ? "#7c3aed" : "#e9d5ff"}`,
-                    background: parsingWarranty ? "#faf5ff" : "#faf5ff",
-                  }}>
-                    {parsingWarranty
-                      ? <><Loader2 size={20} color="#7c3aed" className="animate-spin"/><span style={{ fontSize: 14, color: "#7c3aed" }}>Parsing warranty document…</span></>
-                      : <><Shield size={20} color="#7c3aed"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
-                    }
-                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
-                  </label>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-                    {/* Summary row */}
-                    <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 12, padding: "14px 16px" }}>
-                      <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
-                        {warranty.provider ?? "Warranty"}{warranty.planName ? ` — ${warranty.planName}` : ""}
-                      </p>
-                      <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
-                        {[
-                          warranty.policyNumber ? `#${warranty.policyNumber}` : null,
-                          warranty.serviceFee ? `$${warranty.serviceFee} service fee` : null,
-                          warranty.expirationDate ? `Expires ${warranty.expirationDate}` : null,
-                        ].filter(Boolean).join(" · ")}
-                      </p>
-                    </div>
-
-                    {/* Claim CTA */}
-                    {(warranty.claimUrl || warranty.claimPhone || warranty.claimEmail) && (
-                      <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px" }}>
-                        <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>
-                          📋 File a Claim
-                        </p>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          {warranty.claimUrl && (
-                            <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer"
-                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
-                              <ExternalLink size={12}/> File Online
-                            </a>
-                          )}
-                          {warranty.claimPhone && (
-                            <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
-                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
-                              📞 {warranty.claimPhone}
-                            </a>
-                          )}
-                          {warranty.claimEmail && (
-                            <a href={`mailto:${warranty.claimEmail}`}
-                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
-                              ✉️ Email Claims
-                            </a>
-                          )}
-                        </div>
-                        {warranty.responseTime && (
-                          <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>⏱ Typical response: {warranty.responseTime}</p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Coverage */}
-                    {(warranty.coverageItems?.length ?? 0) > 0 && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({warranty.coverageItems!.length})</p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {warranty.coverageItems!.map((item, i) => (
-                            <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Exclusions */}
-                    {(warranty.exclusions?.length ?? 0) > 0 && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({warranty.exclusions!.length})</p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {warranty.exclusions!.map((item, i) => (
-                            <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Coverage limits */}
-                    {warranty.coverageLimits && Object.keys(warranty.coverageLimits).length > 0 && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>💰 Per-System Limits</p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {Object.entries(warranty.coverageLimits).map(([sys, limit]) => (
-                            <span key={sys} style={{ fontSize: 12, background: C.amberBg, border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "3px 9px", color: C.amber }}>{sys}: ${(limit as number).toLocaleString()}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Home Insurance Upload + Detail */}
-              <div style={card()}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                    <Shield size={14} color="#0891b2"/>
-                    <span style={{ fontWeight: 700, fontSize: 15, color: C.text }}>Home Insurance Policy</span>
-                  </div>
-                  {insurance && (
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                      {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
-                      {parsingInsurance ? "Parsing…" : "Replace"}
-                      <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
-                    </label>
-                  )}
-                </div>
-                <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5 }}>
-                  Upload your homeowners insurance declarations page. BTLR will extract coverage amounts, deductibles, exclusions, and claim contact info.
-                </p>
-
-                {!insurance ? (
-                  <label style={{
-                    display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-                    padding: "22px 16px", borderRadius: 12, cursor: "pointer",
-                    border: `2px dashed ${parsingInsurance ? "#0891b2" : "#bae6fd"}`,
-                    background: "#f0f9ff",
-                  }}>
-                    {parsingInsurance
-                      ? <><Loader2 size={20} color="#0891b2" className="animate-spin"/><span style={{ fontSize: 14, color: "#0891b2" }}>Parsing insurance policy…</span></>
-                      : <><Shield size={20} color="#0891b2"/><span style={{ fontSize: 14, color: C.text }}>Upload homeowners insurance policy or dec page</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
-                    }
-                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
-                  </label>
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-
-                    {/* Summary row */}
-                    <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 12, padding: "14px 16px" }}>
-                      <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
-                        {insurance.provider ?? "Insurance"}{insurance.policyType ? ` — ${insurance.policyType}` : ""}
-                      </p>
-                      <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
-                        {[
-                          insurance.policyNumber ? `#${insurance.policyNumber}` : null,
-                          (insurance.annualPremium ?? insurance.premium) ? `$${(insurance.annualPremium ?? insurance.premium)?.toLocaleString()}/yr` : null,
-                          insurance.deductibleStandard ? `$${insurance.deductibleStandard.toLocaleString()} deductible` : null,
-                          insurance.expirationDate ? `Renews ${insurance.expirationDate}` : null,
-                        ].filter(Boolean).join(" · ")}
-                      </p>
-                    </div>
-
-                    {/* Coverage amounts */}
-                    {(insurance.dwellingCoverage || insurance.personalProperty || insurance.liabilityCoverage) && (
-                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                        {insurance.dwellingCoverage  && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Dwelling</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.dwellingCoverage.toLocaleString()}</div></div>}
-                        {insurance.personalProperty  && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Personal Property</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.personalProperty.toLocaleString()}</div></div>}
-                        {insurance.liabilityCoverage && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Liability</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.liabilityCoverage.toLocaleString()}</div></div>}
-                        {insurance.deductibleStandard && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Deductible</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.deductibleStandard.toLocaleString()}</div></div>}
-                      </div>
-                    )}
-
-                    {/* Claim CTA */}
-                    {(insurance.claimUrl || insurance.claimPhone || insurance.claimEmail) && (
-                      <div style={{ background: "#e0f2fe", border: "1px solid #bae6fd", borderRadius: 10, padding: "12px 16px" }}>
-                        <p style={{ fontSize: 12, fontWeight: 700, color: "#0891b2", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>
-                          📋 File a Claim
-                        </p>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                          {insurance.claimUrl && (
-                            <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer"
-                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
-                              <ExternalLink size={12}/> File Online
-                            </a>
-                          )}
-                          {insurance.claimPhone && (
-                            <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`}
-                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
-                              📞 {insurance.claimPhone}
-                            </a>
-                          )}
-                          {insurance.claimEmail && (
-                            <a href={`mailto:${insurance.claimEmail}`}
-                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
-                              ✉️ Email Claims
-                            </a>
-                          )}
-                        </div>
-                        {insurance.claimHours && (
-                          <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>⏱ {insurance.claimHours}</p>
-                        )}
-                      </div>
-                    )}
-
-                    {/* Covered */}
-                    {(insurance.coverageItems?.length ?? 0) > 0 && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({insurance.coverageItems!.length})</p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {insurance.coverageItems!.map((item, i) => (
-                            <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Endorsements */}
-                    {(insurance.endorsements?.length ?? 0) > 0 && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>➕ Endorsements ({insurance.endorsements!.length})</p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {insurance.endorsements!.map((item, i) => (
-                            <span key={i} style={{ fontSize: 12, background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 6, padding: "3px 9px", color: "#0369a1" }}>{item}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Exclusions */}
-                    {(insurance.exclusions?.length ?? 0) > 0 && (
-                      <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({insurance.exclusions!.length})</p>
-                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                          {insurance.exclusions!.map((item, i) => (
-                            <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Repair Document Upload */}
-              <div style={card()}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 6 }}>
-                  <CheckCircle2 size={14} color={C.green}/>
-                  <span style={{ fontWeight: 700, fontSize: 15, color: C.text }}>Upload Repair Document</span>
-                </div>
-                <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5 }}>
-                  Upload invoices, receipts, or contractor reports for completed work. BTLR will parse what was repaired and update your Home Health Score automatically.
-                </p>
-                <label style={{
-                  display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-                  padding: "22px 16px", borderRadius: 12, cursor: "pointer",
-                  border: `2px dashed ${uploadingRepair ? C.green : "#bbf7d0"}`,
-                  background: uploadingRepair ? C.greenBg : "#f0fdf4",
-                }}>
-                  {uploadingRepair
-                    ? <><Loader2 size={20} color={C.green} className="animate-spin"/><span style={{ fontSize: 14, color: C.green }}>Parsing repair document…</span></>
-                    : <><CheckCircle2 size={20} color={C.green}/><span style={{ fontSize: 14, color: C.text }}>Upload invoice, receipt, or contractor report</span><span style={{ fontSize: 12, color: C.text3 }}>PDF, image, or document</span></>
-                  }
-                  <input ref={repairRef} type="file" style={{ display: "none" }} onChange={uploadRepairDoc} disabled={uploadingRepair} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"/>
-                </label>
-
-                {/* Completed repairs from this session */}
-                {repairDocs.length > 0 && (
-                  <div style={{ marginTop: 16 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Repair History</p>
-                    {repairDocs.map((r, i) => (
-                      <div key={i} style={{ background: C.greenBg, border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                          <CheckCircle2 size={13} color={C.green}/>
-                          <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>
-                            {r.category ?? "Repair"}{r.vendor ? ` — ${r.vendor}` : ""}
-                          </span>
-                          {r.cost ? <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: C.green }}>${r.cost.toLocaleString()}</span> : null}
-                        </div>
-                        {r.summary && <p style={{ fontSize: 12, color: C.text2, margin: "0 0 4px 21px", lineHeight: 1.5 }}>{r.summary}</p>}
-                        {r.autoResolved && r.autoResolved.length > 0 && (
-                          <p style={{ fontSize: 11, color: C.green, margin: "0 0 0 21px",
-                            display: "flex", alignItems: "center", gap: 3 }}>
-                            <CheckCircle2 size={10}/> Auto-resolved {r.autoResolved.length} inspection finding{r.autoResolved.length > 1 ? "s" : ""}
-                          </p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* ── Inspection Findings — Grouped Accordion ─────────── */}
-              {allFindings.length > 0 && (() => {
-                // Build groups preserving each finding's global index in allFindings
-                const groupMap = new Map<string, { label: string; items: { f: Finding; globalIdx: number }[] }>();
-                for (let gi = 0; gi < allFindings.length; gi++) {
-                  const f = allFindings[gi];
-                  const gk = toGroupKey(f.category);
-                  const meta = GROUP_META[gk] ?? GROUP_META.general;
-                  if (!groupMap.has(gk)) groupMap.set(gk, { label: meta.label, items: [] });
-                  groupMap.get(gk)!.items.push({ f, globalIdx: gi });
-                }
-                const groups = [...groupMap.entries()].map(([gk, v]) => ({ gk, ...v }));
-
-                const statusConfig: Record<FindingStatus, { label: string; color: string; bg: string }> = {
-                  open:      { label: "Open",      color: C.red,    bg: C.redBg   },
-                  completed: { label: "Completed", color: C.green,  bg: C.greenBg },
-                  monitored: { label: "Monitoring",color: C.accent, bg: "#eff6ff" },
-                  not_sure:  { label: "Not Sure",  color: C.amber,  bg: C.amberBg },
-                  dismissed: { label: "Dismissed", color: C.text3,  bg: C.bg      },
-                };
-
-                return (
-                  <div style={card({ padding: 0, overflow: "hidden" })}>
-                    {/* Header */}
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "16px 22px", borderBottom: `1px solid ${C.border}` }}>
-                      <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>
-                        Inspection Findings
-                        <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 600, color: C.text3 }}>
-                          {allFindings.length} total · {groups.length} {groups.length === 1 ? "system" : "systems"}
-                        </span>
-                      </p>
+              {/* Accordion card */}
+              <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
+                {docSections.map((sec, si) => {
+                  const isOpen = openDocSection === sec.id;
+                  return (
+                    <div key={sec.id} style={{ borderBottom: si < docSections.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                      {/* Row header */}
                       <button
-                        onClick={() => { setReviewFindings(inspectionResult?.findings ?? []); setShowReviewModal(true); }}
-                        style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>
-                        Review All →
+                        onClick={() => setOpenDocSection(isOpen ? null : sec.id)}
+                        style={{
+                          width: "100%", display: "flex", alignItems: "center", gap: 12,
+                          padding: "14px 18px", background: isOpen ? C.bg : "transparent",
+                          border: "none", cursor: "pointer", textAlign: "left",
+                          transition: "background 0.15s",
+                        }}
+                        onMouseEnter={e => { if (!isOpen) (e.currentTarget as HTMLButtonElement).style.background = C.bg; }}
+                        onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
+                      >
+                        <div style={{ width: 34, height: 34, borderRadius: 9, background: sec.iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: `1px solid ${sec.accentColor}20` }}>
+                          {sec.icon}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{sec.label}</div>
+                          <div style={{ fontSize: 12, color: sec.hasDoc ? C.text3 : C.text3, marginTop: 1 }}>{sec.status}</div>
+                        </div>
+                        {sec.hasDoc && (
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: C.greenBg, color: C.green, marginRight: 6 }}>✓</span>
+                        )}
+                        <div style={{ transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}>
+                          <ChevronDown size={15} color={C.text3}/>
+                        </div>
                       </button>
-                    </div>
 
-                    {/* Summary row */}
-                    <div style={{ display: "flex", gap: 16, padding: "10px 22px", background: C.bg, borderBottom: `1px solid ${C.border}` }}>
-                      <span style={{ fontSize: 12, color: C.red, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.red, display: "inline-block" }}/>
-                        {allFindings.filter(f => f.severity === "critical").length} critical
-                      </span>
-                      <span style={{ fontSize: 12, color: C.amber, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: C.amber, display: "inline-block" }}/>
-                        {allFindings.filter(f => f.severity === "warning").length} warnings
-                      </span>
-                      <span style={{ fontSize: 12, color: C.green, fontWeight: 600, display: "flex", alignItems: "center", gap: 4 }}>
-                        <CheckCircle2 size={12} color={C.green}/>
-                        {completedFindings.length} resolved
-                      </span>
-                    </div>
+                      {/* Expanded content */}
+                      {isOpen && (
+                        <div style={{ padding: "16px 18px 20px", background: "#fafbfc", borderTop: `1px solid ${C.border}` }}>
 
-                    {/* Accordion groups */}
-                    {groups.map(({ gk, label, items }, gi) => {
-                      const isOpen = expandedGroups.has(gk);
-                      const meta = GROUP_META[gk] ?? GROUP_META.general;
-                      const hasCritical = items.some(({ f }) => f.severity === "critical");
-                      const hasWarning  = items.some(({ f }) => f.severity === "warning");
-                      const allResolved = items.every(({ f, globalIdx }) => {
-                        const s = findingStatuses[findingKey(f.category, globalIdx)] ?? "open";
-                        return s === "completed" || s === "dismissed";
-                      });
-                      const worstColor = hasCritical ? C.red : hasWarning ? C.amber : allResolved ? C.green : C.text3;
-                      const worstLabel = hasCritical ? "Critical" : hasWarning ? "Warning" : allResolved ? "Resolved" : "Good";
-                      const worstBg    = hasCritical ? C.redBg   : hasWarning ? C.amberBg : allResolved ? C.greenBg : C.bg;
-
-                      return (
-                        <div key={gk} style={{ borderBottom: gi < groups.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                          {/* Category row — clickable */}
-                          <button
-                            onClick={() => setExpandedGroups(prev => {
-                              const next = new Set(prev);
-                              if (next.has(gk)) next.delete(gk); else next.add(gk);
-                              return next;
-                            })}
-                            style={{
-                              width: "100%", display: "flex", alignItems: "center", gap: 14,
-                              padding: "14px 22px", background: "transparent", border: "none",
-                              cursor: "pointer", textAlign: "left",
-                              transition: "background 0.15s",
-                            }}
-                            onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = C.bg; }}
-                            onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                          >
-                            {/* Icon */}
-                            <div style={{
-                              width: 36, height: 36, borderRadius: 10, flexShrink: 0,
-                              background: worstBg, display: "flex", alignItems: "center", justifyContent: "center",
-                              border: `1px solid ${worstColor}25`,
-                            }}>
-                              {meta.iconFn(worstColor)}
-                            </div>
-
-                            {/* Label + count */}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{label}</span>
-                                <span style={{
-                                  fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
-                                  background: worstBg, color: worstColor,
-                                }}>
-                                  {worstLabel}
-                                </span>
+                          {/* ── Warranty content ── */}
+                          {sec.id === "warranty" && (<>
+                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>
+                              Upload your home warranty or maintenance policy. BTLR will extract your coverage, exclusions, service fee, and claim contact info.
+                            </p>
+                            {!warranty ? (
+                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingWarranty ? "#7c3aed" : "#e9d5ff"}`, background: parsingWarranty ? "#faf5ff" : "#faf5ff" }}>
+                                {parsingWarranty
+                                  ? <><Loader2 size={20} color="#7c3aed" className="animate-spin"/><span style={{ fontSize: 14, color: "#7c3aed" }}>Parsing warranty document…</span></>
+                                  : <><Shield size={20} color="#7c3aed"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
+                                }
+                                <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
+                              </label>
+                            ) : (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #7c3aed", color: "#7c3aed", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                                    {parsingWarranty ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
+                                    {parsingWarranty ? "Parsing…" : "Replace"}
+                                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
+                                  </label>
+                                </div>
+                                <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 12, padding: "14px 16px" }}>
+                                  <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
+                                    {warranty.provider ?? "Warranty"}{warranty.planName ? ` — ${warranty.planName}` : ""}
+                                  </p>
+                                  <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
+                                    {[warranty.policyNumber ? `#${warranty.policyNumber}` : null, warranty.serviceFee ? `$${warranty.serviceFee} service fee` : null, warranty.expirationDate ? `Expires ${warranty.expirationDate}` : null].filter(Boolean).join(" · ")}
+                                  </p>
+                                </div>
+                                {(warranty.claimUrl || warranty.claimPhone || warranty.claimEmail) && (
+                                  <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px" }}>
+                                    <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>📋 File a Claim</p>
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                      {warranty.claimUrl && <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
+                                      {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>📞 {warranty.claimPhone}</a>}
+                                      {warranty.claimEmail && <a href={`mailto:${warranty.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>✉️ Email Claims</a>}
+                                    </div>
+                                    {warranty.responseTime && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>⏱ Typical response: {warranty.responseTime}</p>}
+                                  </div>
+                                )}
+                                {(warranty.coverageItems?.length ?? 0) > 0 && (
+                                  <div>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({warranty.coverageItems!.length})</p>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                                      {warranty.coverageItems!.map((item, i) => <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>)}
+                                    </div>
+                                  </div>
+                                )}
+                                {(warranty.exclusions?.length ?? 0) > 0 && (
+                                  <div>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({warranty.exclusions!.length})</p>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                                      {warranty.exclusions!.map((item, i) => <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>)}
+                                    </div>
+                                  </div>
+                                )}
+                                {warranty.coverageLimits && Object.keys(warranty.coverageLimits).length > 0 && (
+                                  <div>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>💰 Per-System Limits</p>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                                      {Object.entries(warranty.coverageLimits).map(([sys, limit]) => <span key={sys} style={{ fontSize: 12, background: C.amberBg, border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "3px 9px", color: C.amber }}>{sys}: ${(limit as number).toLocaleString()}</span>)}
+                                    </div>
+                                  </div>
+                                )}
                               </div>
-                              <span style={{ fontSize: 12, color: C.text3 }}>
-                                {items.length} {items.length === 1 ? "finding" : "findings"}
-                                {allResolved ? " — all resolved" : hasCritical ? " — needs attention" : ""}
-                              </span>
-                            </div>
+                            )}
+                          </>)}
 
-                            {/* Expand chevron */}
-                            <div style={{ transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}>
-                              <ChevronDown size={16} color={C.text3}/>
-                            </div>
-                          </button>
+                          {/* ── Insurance content ── */}
+                          {sec.id === "insurance" && (<>
+                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>
+                              Upload your homeowners insurance declarations page. BTLR will extract coverage amounts, deductibles, exclusions, and claim contact info.
+                            </p>
+                            {!insurance ? (
+                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingInsurance ? "#0891b2" : "#bae6fd"}`, background: "#f0f9ff" }}>
+                                {parsingInsurance
+                                  ? <><Loader2 size={20} color="#0891b2" className="animate-spin"/><span style={{ fontSize: 14, color: "#0891b2" }}>Parsing insurance policy…</span></>
+                                  : <><Shield size={20} color="#0891b2"/><span style={{ fontSize: 14, color: C.text }}>Upload homeowners insurance policy or dec page</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
+                                }
+                                <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                              </label>
+                            ) : (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                                <div style={{ display: "flex", justifyContent: "flex-end" }}>
+                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                                    {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
+                                    {parsingInsurance ? "Parsing…" : "Replace"}
+                                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                                  </label>
+                                </div>
+                                <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 12, padding: "14px 16px" }}>
+                                  <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
+                                    {insurance.provider ?? "Insurance"}{insurance.policyType ? ` — ${insurance.policyType}` : ""}
+                                  </p>
+                                  <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
+                                    {[insurance.policyNumber ? `#${insurance.policyNumber}` : null, (insurance.annualPremium ?? insurance.premium) ? `$${(insurance.annualPremium ?? insurance.premium)?.toLocaleString()}/yr` : null, insurance.deductibleStandard ? `$${insurance.deductibleStandard.toLocaleString()} deductible` : null, insurance.expirationDate ? `Renews ${insurance.expirationDate}` : null].filter(Boolean).join(" · ")}
+                                  </p>
+                                </div>
+                                {(insurance.dwellingCoverage || insurance.personalProperty || insurance.liabilityCoverage) && (
+                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                                    {insurance.dwellingCoverage   && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Dwelling</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.dwellingCoverage.toLocaleString()}</div></div>}
+                                    {insurance.personalProperty   && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Personal Property</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.personalProperty.toLocaleString()}</div></div>}
+                                    {insurance.liabilityCoverage  && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Liability</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.liabilityCoverage.toLocaleString()}</div></div>}
+                                    {insurance.deductibleStandard && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Deductible</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.deductibleStandard.toLocaleString()}</div></div>}
+                                  </div>
+                                )}
+                                {(insurance.claimUrl || insurance.claimPhone || insurance.claimEmail) && (
+                                  <div style={{ background: "#e0f2fe", border: "1px solid #bae6fd", borderRadius: 10, padding: "12px 16px" }}>
+                                    <p style={{ fontSize: 12, fontWeight: 700, color: "#0891b2", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>📋 File a Claim</p>
+                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                      {insurance.claimUrl   && <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
+                                      {insurance.claimPhone && <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>📞 {insurance.claimPhone}</a>}
+                                      {insurance.claimEmail && <a href={`mailto:${insurance.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>✉️ Email Claims</a>}
+                                    </div>
+                                    {insurance.claimHours && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>⏱ {insurance.claimHours}</p>}
+                                  </div>
+                                )}
+                                {(insurance.coverageItems?.length ?? 0) > 0 && (
+                                  <div>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({insurance.coverageItems!.length})</p>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                                      {insurance.coverageItems!.map((item, i) => <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>)}
+                                    </div>
+                                  </div>
+                                )}
+                                {(insurance.endorsements?.length ?? 0) > 0 && (
+                                  <div>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>➕ Endorsements ({insurance.endorsements!.length})</p>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                                      {insurance.endorsements!.map((item, i) => <span key={i} style={{ fontSize: 12, background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 6, padding: "3px 9px", color: "#0369a1" }}>{item}</span>)}
+                                    </div>
+                                  </div>
+                                )}
+                                {(insurance.exclusions?.length ?? 0) > 0 && (
+                                  <div>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({insurance.exclusions!.length})</p>
+                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                                      {insurance.exclusions!.map((item, i) => <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>)}
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+                          </>)}
 
-                          {/* Expanded findings */}
-                          {isOpen && (
-                            <div style={{ padding: "0 22px 16px", background: "#fafbfc" }}>
-                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                {items.map(({ f, globalIdx }, fi) => {
-                                  const fk = findingKey(f.category, globalIdx);
-                                  const status = findingStatuses[fk] ?? "open";
-                                  const cfg = statusConfig[status];
-                                  const isResolved = status === "completed" || status === "dismissed";
-                                  const sevColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
+                          {/* ── Repair Documents content ── */}
+                          {sec.id === "repairs" && (<>
+                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>
+                              Upload invoices, receipts, or contractor reports for completed work. BTLR will parse what was repaired and update your Home Health Score automatically.
+                            </p>
+                            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${uploadingRepair ? C.green : "#bbf7d0"}`, background: uploadingRepair ? C.greenBg : "#f0fdf4" }}>
+                              {uploadingRepair
+                                ? <><Loader2 size={20} color={C.green} className="animate-spin"/><span style={{ fontSize: 14, color: C.green }}>Parsing repair document…</span></>
+                                : <><CheckCircle2 size={20} color={C.green}/><span style={{ fontSize: 14, color: C.text }}>Upload invoice, receipt, or contractor report</span><span style={{ fontSize: 12, color: C.text3 }}>PDF, image, or document</span></>
+                              }
+                              <input ref={repairRef} type="file" style={{ display: "none" }} onChange={uploadRepairDoc} disabled={uploadingRepair} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"/>
+                            </label>
+                            {repairDocs.length > 0 && (
+                              <div style={{ marginTop: 16 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Repair History</p>
+                                {repairDocs.map((r, i) => (
+                                  <div key={i} style={{ background: C.greenBg, border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                                      <CheckCircle2 size={13} color={C.green}/>
+                                      <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{r.category ?? "Repair"}{r.vendor ? ` — ${r.vendor}` : ""}</span>
+                                      {r.cost ? <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: C.green }}>${r.cost.toLocaleString()}</span> : null}
+                                    </div>
+                                    {r.summary && <p style={{ fontSize: 12, color: C.text2, margin: "0 0 4px 21px", lineHeight: 1.5 }}>{r.summary}</p>}
+                                    {r.autoResolved && r.autoResolved.length > 0 && (
+                                      <p style={{ fontSize: 11, color: C.green, margin: "0 0 0 21px", display: "flex", alignItems: "center", gap: 3 }}>
+                                        <CheckCircle2 size={10}/> Auto-resolved {r.autoResolved.length} inspection finding{r.autoResolved.length > 1 ? "s" : ""}
+                                      </p>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </>)}
 
+                          {/* ── Inspection Findings content ── */}
+                          {sec.id === "inspection" && (() => {
+                            if (allFindings.length === 0) {
+                              return <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>No inspection report uploaded yet. Upload one in the Home Health section to see findings here.</p>;
+                            }
+                            const groupMap = new Map<string, { label: string; items: { f: Finding; globalIdx: number }[] }>();
+                            for (let gi = 0; gi < allFindings.length; gi++) {
+                              const f = allFindings[gi];
+                              const gk = toGroupKey(f.category);
+                              const meta = GROUP_META[gk] ?? GROUP_META.general;
+                              if (!groupMap.has(gk)) groupMap.set(gk, { label: meta.label, items: [] });
+                              groupMap.get(gk)!.items.push({ f, globalIdx: gi });
+                            }
+                            const groups = [...groupMap.entries()].map(([gk, v]) => ({ gk, ...v }));
+                            const statusConfig: Record<FindingStatus, { label: string; color: string; bg: string }> = {
+                              open:      { label: "Open",       color: C.red,    bg: C.redBg   },
+                              completed: { label: "Completed",  color: C.green,  bg: C.greenBg },
+                              monitored: { label: "Monitoring", color: C.accent, bg: "#eff6ff" },
+                              not_sure:  { label: "Not Sure",   color: C.amber,  bg: C.amberBg },
+                              dismissed: { label: "Dismissed",  color: C.text3,  bg: C.bg      },
+                            };
+                            return (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 0, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}` }}>
+                                {/* Summary bar */}
+                                <div style={{ display: "flex", gap: 16, padding: "10px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, justifyContent: "space-between", alignItems: "center" }}>
+                                  <div style={{ display: "flex", gap: 14 }}>
+                                    <span style={{ fontSize: 12, color: C.red, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "critical").length} critical</span>
+                                    <span style={{ fontSize: 12, color: C.amber, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "warning").length} warnings</span>
+                                    <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>{completedFindings.length} resolved</span>
+                                  </div>
+                                  <button onClick={() => { setReviewFindings(inspectionResult?.findings ?? []); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
+                                </div>
+                                {groups.map(({ gk, label, items }, gi) => {
+                                  const isGrpOpen = expandedGroups.has(gk);
+                                  const meta = GROUP_META[gk] ?? GROUP_META.general;
+                                  const hasCritical = items.some(({ f }) => f.severity === "critical");
+                                  const hasWarning  = items.some(({ f }) => f.severity === "warning");
+                                  const allResolved = items.every(({ f, globalIdx }) => { const s = findingStatuses[findingKey(f.category, globalIdx)] ?? "open"; return s === "completed" || s === "dismissed"; });
+                                  const worstColor = hasCritical ? C.red : hasWarning ? C.amber : allResolved ? C.green : C.text3;
+                                  const worstLabel = hasCritical ? "Critical" : hasWarning ? "Warning" : allResolved ? "Resolved" : "Good";
+                                  const worstBg    = hasCritical ? C.redBg   : hasWarning ? C.amberBg : allResolved ? C.greenBg : C.bg;
                                   return (
-                                    <div key={fi} style={{
-                                      background: C.surface, borderRadius: 12, padding: "14px 16px",
-                                      border: `1px solid ${isResolved ? C.border : sevColor + "30"}`,
-                                      display: "flex", flexDirection: "column", gap: 10,
-                                    }}>
-                                      {/* Finding header row */}
-                                      <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                                        <span style={{ width: 8, height: 8, borderRadius: "50%", background: sevColor, flexShrink: 0, marginTop: 5 }}/>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                                            <span style={{
-                                              fontSize: 13, fontWeight: 700, color: isResolved ? C.text3 : C.text,
-                                              textDecoration: status === "completed" ? "line-through" : "none",
-                                            }}>
-                                              {f.category}
-                                            </span>
-                                            {f.severity && f.severity !== "info" && (
-                                              <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: sevColor + "18", color: sevColor, textTransform: "capitalize" }}>
-                                                {f.severity}
-                                              </span>
-                                            )}
+                                    <div key={gk} style={{ borderBottom: gi < groups.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                                      <button onClick={() => setExpandedGroups(prev => { const next = new Set(prev); if (next.has(gk)) next.delete(gk); else next.add(gk); return next; })}
+                                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}
+                                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = C.bg; }}
+                                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
+                                        <div style={{ width: 32, height: 32, borderRadius: 8, background: worstBg, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${worstColor}25`, flexShrink: 0 }}>{meta.iconFn(worstColor)}</div>
+                                        <div style={{ flex: 1 }}>
+                                          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                                            <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{label}</span>
+                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: worstBg, color: worstColor }}>{worstLabel}</span>
                                           </div>
-                                          <p style={{ fontSize: 13, color: isResolved ? C.text3 : C.text2, margin: 0, lineHeight: 1.55 }}>
-                                            {f.description}
-                                          </p>
-                                          {f.estimated_cost != null && (
-                                            <p style={{ fontSize: 12, color: C.text3, margin: "5px 0 0", fontWeight: 600 }}>
-                                              Est. ${f.estimated_cost.toLocaleString()}
-                                            </p>
-                                          )}
+                                          <span style={{ fontSize: 11, color: C.text3 }}>{items.length} finding{items.length !== 1 ? "s" : ""}{allResolved ? " — all resolved" : hasCritical ? " — needs attention" : ""}</span>
                                         </div>
-                                      </div>
-
-                                      {/* Action row */}
-                                      <div style={{ display: "flex", alignItems: "center", gap: 8, paddingTop: 2 }}>
-                                        <select
-                                          value={status}
-                                          onChange={e => toggleFindingStatus(f.category, globalIdx, e.target.value as FindingStatus)}
-                                          style={{
-                                            fontSize: 11, fontWeight: 600, padding: "4px 10px", borderRadius: 20,
-                                            border: `1px solid ${cfg.color}40`,
-                                            background: cfg.bg, color: cfg.color,
-                                            cursor: "pointer", outline: "none",
-                                          }}>
-                                          <option value="open">Open</option>
-                                          <option value="completed">Completed</option>
-                                          <option value="monitored">Monitoring</option>
-                                          <option value="not_sure">Not Sure</option>
-                                          <option value="dismissed">Dismissed</option>
-                                        </select>
-                                        {!isResolved && (
-                                          <button
-                                            onClick={() => handleFindVendors(f.category, f.category, f.description)}
-                                            style={{
-                                              marginLeft: "auto", fontSize: 11, fontWeight: 600, color: C.accent,
-                                              background: "#eff6ff", border: `1px solid ${C.accent}30`,
-                                              borderRadius: 20, padding: "4px 12px",
-                                              cursor: "pointer", display: "flex", alignItems: "center", gap: 4,
-                                            }}>
-                                            <Users size={10}/> Find Vendors
-                                          </button>
-                                        )}
-                                      </div>
+                                        <div style={{ transition: "transform 0.2s", transform: isGrpOpen ? "rotate(180deg)" : "rotate(0deg)" }}><ChevronDown size={14} color={C.text3}/></div>
+                                      </button>
+                                      {isGrpOpen && (
+                                        <div style={{ padding: "0 16px 14px", background: "#fafbfc" }}>
+                                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                            {items.map(({ f, globalIdx }, fi) => {
+                                              const fk = findingKey(f.category, globalIdx);
+                                              const status = findingStatuses[fk] ?? "open";
+                                              const cfg = statusConfig[status];
+                                              const isResolved = status === "completed" || status === "dismissed";
+                                              const sevColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
+                                              return (
+                                                <div key={fi} style={{ background: C.surface, borderRadius: 10, padding: "12px 14px", border: `1px solid ${isResolved ? C.border : sevColor + "30"}`, display: "flex", flexDirection: "column", gap: 9 }}>
+                                                  <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+                                                    <span style={{ width: 7, height: 7, borderRadius: "50%", background: sevColor, flexShrink: 0, marginTop: 5 }}/>
+                                                    <div style={{ flex: 1 }}>
+                                                      <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
+                                                        <span style={{ fontSize: 13, fontWeight: 700, color: isResolved ? C.text3 : C.text, textDecoration: status === "completed" ? "line-through" : "none" }}>{f.category}</span>
+                                                        {f.severity && f.severity !== "info" && <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: sevColor + "18", color: sevColor, textTransform: "capitalize" }}>{f.severity}</span>}
+                                                      </div>
+                                                      <p style={{ fontSize: 12, color: isResolved ? C.text3 : C.text2, margin: 0, lineHeight: 1.55 }}>{f.description}</p>
+                                                      {f.estimated_cost != null && <p style={{ fontSize: 11, color: C.text3, margin: "4px 0 0", fontWeight: 600 }}>Est. ${f.estimated_cost.toLocaleString()}</p>}
+                                                    </div>
+                                                  </div>
+                                                  <div style={{ display: "flex", alignItems: "center", gap: 7, paddingTop: 2, flexWrap: "wrap" }}>
+                                                    <select value={status} onChange={e => toggleFindingStatus(f.category, globalIdx, e.target.value as FindingStatus)} style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, border: `1px solid ${cfg.color}40`, background: cfg.bg, color: cfg.color, cursor: "pointer", outline: "none" }}>
+                                                      <option value="open">Open</option>
+                                                      <option value="completed">Completed</option>
+                                                      <option value="monitored">Monitoring</option>
+                                                      <option value="not_sure">Not Sure</option>
+                                                      <option value="dismissed">Dismissed</option>
+                                                    </select>
+                                                    {!isResolved && (<>
+                                                      <button onClick={() => handleFindVendors(f.category, f.category, f.description)} style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: "white", background: C.navy, border: "none", borderRadius: 20, padding: "3px 11px", cursor: "pointer" }}>🔧 Fix This</button>
+                                                      <button onClick={() => handleFindVendors(f.category, f.category, f.description)} style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: "white", border: `1px solid ${C.accent}`, borderRadius: 20, padding: "3px 11px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}><Users size={9}/> Vendor</button>
+                                                      <button onClick={() => toggleFindingStatus(f.category, globalIdx, "completed")} style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.greenBg, border: `1px solid ${C.green}`, borderRadius: 20, padding: "3px 11px", cursor: "pointer" }}>✓ Done</button>
+                                                    </>)}
+                                                  </div>
+                                                </div>
+                                              );
+                                            })}
+                                          </div>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })}
                               </div>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
+                            );
+                          })()}
 
-              {/* Generic document upload */}
-              <div style={card()}>
-                <div style={{ display: "flex", alignItems: "center", gap: 7, marginBottom: 10 }}>
-                  <Upload size={14} color={C.accent}/><span style={{ fontWeight: 600, fontSize: 15, color: C.text }}>Upload Other Document</span>
-                </div>
-                <p style={{ fontSize: 13, color: C.text3, marginBottom: 14 }}>Warranties, permits, HOA docs, and other property files.</p>
-                <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${docLoading ? C.accent : C.border}`, background: docLoading ? "#eff6ff" : "#fafbfc" }}>
-                  {docLoading ? <><Loader2 size={20} color={C.accent} className="animate-spin"/><span style={{ fontSize: 14, color: C.accent }}>Uploading…</span></> : <><CloudUpload size={20} color={C.text3}/><span style={{ fontSize: 14, color: C.text }}>Click to upload file</span></>}
-                  <input ref={docRef} type="file" style={{ display: "none" }} onChange={uploadDoc} disabled={docLoading}/>
-                </label>
-              </div>
-              {docs.length > 0 && (
-                <div style={card()}>
-                  <p style={{ fontSize: 13, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 12px" }}>Uploaded Files</p>
-                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                    {docs.map((doc, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 10, padding: "10px 14px" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                          <FileText size={14} color={C.text3}/>
-                          <span style={{ fontSize: 14, color: C.text }}>{doc.name}</span>
+                          {/* ── Other Documents content ── */}
+                          {sec.id === "other" && (<>
+                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>Warranties, permits, HOA docs, and other property files.</p>
+                            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${docLoading ? C.accent : C.border}`, background: docLoading ? "#eff6ff" : "#fafbfc" }}>
+                              {docLoading ? <><Loader2 size={20} color={C.accent} className="animate-spin"/><span style={{ fontSize: 14, color: C.accent }}>Uploading…</span></> : <><CloudUpload size={20} color={C.text3}/><span style={{ fontSize: 14, color: C.text }}>Click to upload file</span></>}
+                              <input ref={docRef} type="file" style={{ display: "none" }} onChange={uploadDoc} disabled={docLoading}/>
+                            </label>
+                            {docs.length > 0 && (
+                              <div style={{ marginTop: 14 }}>
+                                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 10px" }}>Uploaded Files</p>
+                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                  {docs.map((doc, i) => (
+                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 9, padding: "9px 13px" }}>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                        <FileText size={13} color={C.text3}/><span style={{ fontSize: 13, color: C.text }}>{doc.name}</span>
+                                      </div>
+                                      {doc.url ? <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.accent, textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}>View <ExternalLink size={10}/></a> : <span style={{ fontSize: 12, color: C.text3 }}>Unavailable</span>}
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </>)}
+
                         </div>
-                        {doc.url ? (
-                          <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 13, color: C.accent, textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}>
-                            View <ExternalLink size={11}/>
-                          </a>
-                        ) : (
-                          <span style={{ fontSize: 13, color: C.text3 }}>Unavailable</span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* ── Settings ──────────────────────────────────────────────── */}
           {nav === "Settings" && (
@@ -3182,10 +3063,10 @@ export default function Dashboard() {
               <div
                 onClick={() => setShowHealthModal(true)}
                 style={{
-                  background: `linear-gradient(135deg, ${C.navy} 0%, #1e3a8a 65%, #1e3a5f 100%)`,
+                  background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accentDk} 65%, ${C.accent} 100%)`,
                   borderRadius: 20, padding: isMobile ? "20px 18px" : "28px 32px", cursor: "pointer",
                   transition: "all 0.15s", position: "relative", overflow: "hidden",
-                  boxShadow: "0 4px 20px rgba(15,31,61,0.12)",
+                  boxShadow: `0 4px 20px ${C.navy}1F`,
                 }}
                 onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 10px 36px rgba(15,31,61,0.22)"; }}
                 onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 4px 20px rgba(15,31,61,0.12)"; }}
@@ -3244,9 +3125,9 @@ export default function Dashboard() {
             ) : (
               /* Empty state hero */
               <div style={{
-                background: `linear-gradient(135deg, ${C.navy} 0%, #1e3a8a 65%, #1e3a5f 100%)`,
+                background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accentDk} 65%, ${C.accent} 100%)`,
                 borderRadius: 20, padding: isMobile ? "20px 18px" : "28px 32px", display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 16 : 28,
-                boxShadow: "0 4px 20px rgba(15,31,61,0.12)",
+                boxShadow: `0 4px 20px ${C.navy}1F`,
               }}>
                 <div style={{ width: 134, height: 134, borderRadius: "50%", border: "4px dashed rgba(255,255,255,0.12)",
                   display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
@@ -3276,7 +3157,7 @@ export default function Dashboard() {
               {/* ── Header ── */}
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "15px 18px 13px" }}>
                 {/* BTLR avatar */}
-                <div style={{ width: 38, height: 38, borderRadius: 11, background: `linear-gradient(135deg, ${C.accent} 0%, #1d4ed8 100%)`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 10px rgba(37,99,235,0.28)", flexShrink: 0, position: "relative" }}>
+                <div style={{ width: 38, height: 38, borderRadius: 11, background: `linear-gradient(135deg, ${C.accent} 0%, ${C.accentDk} 100%)`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 3px 10px ${C.accent}45`, flexShrink: 0, position: "relative" }}>
                   <Sparkles size={17} color="white"/>
                   {/* Online dot */}
                   <div style={{ position: "absolute", bottom: 1, right: 1, width: 9, height: 9, borderRadius: "50%", background: "#22c55e", border: "2px solid white" }}/>
@@ -3381,7 +3262,7 @@ export default function Dashboard() {
                           borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "4px 16px 16px 16px",
                           padding: "11px 15px", fontSize: 14, lineHeight: 1.68, whiteSpace: "pre-wrap",
                           background: msg.role === "user"
-                            ? `linear-gradient(135deg, ${C.accent}, #1d4ed8)`
+                            ? `linear-gradient(135deg, ${C.accent}, ${C.accentDk})`
                             : "white",
                           color: msg.role === "user" ? "white" : C.text,
                           border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
@@ -3396,11 +3277,14 @@ export default function Dashboard() {
                         {msg.role === "assistant" && msg.actions && msg.actions.length > 0 && (
                           <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8, maxWidth: "92%" }}>
                             {msg.actions.map((action, ai) => {
-                              const isBlue   = action.type === "find_vendor" || action.type === "open_url";
-                              const isPurple = action.type === "tel";
-                              const bg = isBlue ? C.accent : isPurple ? "#7c3aed" : "white";
-                              const fg = (isBlue || isPurple) ? "white" : C.accent;
-                              const bdr = (isBlue || isPurple) ? "none" : `1.5px solid ${C.accent}`;
+                              let bg = "white", fg = C.accent, bdr = `1.5px solid ${C.accent}`;
+                              if (action.type === "find_vendor") {
+                                bg = C.navy; fg = "white"; bdr = "none";
+                              } else if (action.type === "open_url" || action.type === "tel" || action.type === "email") {
+                                bg = C.accent; fg = "white"; bdr = "none";
+                              } else if (action.type === "nav_documents") {
+                                bg = "white"; fg = C.accent; bdr = `1.5px solid ${C.accent}`;
+                              }
                               return (
                                 <button key={ai} onClick={() => executeButlerAction(action)}
                                   style={{ display: "inline-flex", alignItems: "center", gap: 5,
@@ -3503,9 +3387,9 @@ export default function Dashboard() {
 
                   <button onClick={() => askAI()} disabled={aiLoading || !q.trim()}
                     style={{ width: 42, height: 42, borderRadius: 11, border: "none", cursor: "pointer",
-                      background: aiLoading || !q.trim() ? "#d1d5db" : `linear-gradient(135deg, ${C.accent}, #1d4ed8)`,
+                      background: aiLoading || !q.trim() ? "#d1d5db" : `linear-gradient(135deg, ${C.accent}, ${C.accentDk})`,
                       color: "white", display: "flex", alignItems: "center", justifyContent: "center",
-                      boxShadow: !q.trim() ? "none" : "0 2px 8px rgba(37,99,235,0.28)", transition: "all 0.2s", flexShrink: 0 }}>
+                      boxShadow: !q.trim() ? "none" : `0 2px 8px ${C.accent}45`, transition: "all 0.2s", flexShrink: 0 }}>
                     {aiLoading ? <Loader2 size={15} className="animate-spin"/> : <Send size={15}/>}
                   </button>
                 </div>
@@ -3648,14 +3532,22 @@ export default function Dashboard() {
                           {insurance.provider ?? "Active"}
                           {insurance.policyType ? ` · ${insurance.policyType}` : ""}
                         </p>
-                        <p style={{ fontSize: 12, color: C.text3, margin: "0 0 4px" }}>
+                        <p style={{ fontSize: 12, color: C.text3, margin: "0 0 8px" }}>
                           {(insurance.annualPremium ?? insurance.premium) ? `$${(insurance.annualPremium ?? insurance.premium)?.toLocaleString()}/yr` : ""}
                           {insurance.expirationDate ? `${(insurance.annualPremium ?? insurance.premium) ? " · " : ""}Renews ${insurance.expirationDate}` : ""}
                         </p>
-                        <button onClick={() => setShowInsuranceDetail(d => !d)}
-                          style={{ fontSize: 12, fontWeight: 600, color: "#0891b2", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                          {showInsuranceDetail ? "Hide details ↑" : "View coverage ↓"}
-                        </button>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+                          <button onClick={() => {
+                            if (insurance.claimUrl) window.open(insurance.claimUrl);
+                            else if (insurance.claimPhone) window.location.href = `tel:${insurance.claimPhone.replace(/\D/g, "")}`;
+                            else showToast("No claim contact on file — upload your policy");
+                          }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: C.navy, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            File Claim
+                          </button>
+                          <button onClick={() => setShowInsuranceDetail(d => !d)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: "transparent", border: `1.5px solid ${C.accent}`, color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                            View Details
+                          </button>
+                        </div>
                       </>
                     ) : (
                       <>
@@ -3821,15 +3713,22 @@ export default function Dashboard() {
                         {warranty.provider ?? "Active"}
                         {warranty.planName ? ` · ${warranty.planName}` : ""}
                       </p>
-                      <p style={{ fontSize: 12, color: C.text3, margin: "0 0 6px" }}>
+                      <p style={{ fontSize: 12, color: C.text3, margin: "0 0 8px" }}>
                         {warranty.serviceFee ? `$${warranty.serviceFee} service fee` : ""}
                         {warranty.expirationDate ? `${warranty.serviceFee ? " · " : ""}Expires ${warranty.expirationDate}` : ""}
                       </p>
-                      <button
-                        onClick={() => setShowWarrantyDetail(d => !d)}
-                        style={{ fontSize: 12, fontWeight: 600, color: "#7c3aed", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
-                        {showWarrantyDetail ? "Hide details ↑" : "View coverage ↓"}
-                      </button>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        <button onClick={() => {
+                          if (warranty.claimUrl) window.open(warranty.claimUrl);
+                          else if (warranty.claimPhone) window.location.href = `tel:${warranty.claimPhone.replace(/\D/g, "")}`;
+                          else showToast("No claim contact on file — upload your warranty");
+                        }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: C.navy, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          File Claim
+                        </button>
+                        <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: "transparent", border: `1.5px solid ${C.accent}`, color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                          View Details
+                        </button>
+                      </div>
                     </>
                   ) : (
                     <>
@@ -4173,7 +4072,7 @@ export default function Dashboard() {
                   {timeline.slice(0, 8).map((t, i) => (
                     <div key={i} style={{ display: "flex", gap: 14, paddingBottom: i < Math.min(timeline.length, 8) - 1 ? 14 : 0 }}>
                       <div style={{ display: "flex", flexDirection: "column", alignItems: "center", flexShrink: 0 }}>
-                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.navyMid, marginTop: 4 }}/>
+                        <div style={{ width: 8, height: 8, borderRadius: "50%", background: C.accent, marginTop: 4 }}/>
                         {i < Math.min(timeline.length, 8) - 1 && <div style={{ width: 1, flex: 1, background: C.border, marginTop: 4 }}/>}
                       </div>
                       <div style={{ paddingBottom: i < Math.min(timeline.length, 8) - 1 ? 4 : 0 }}>
