@@ -3966,35 +3966,57 @@ export default function Dashboard() {
                 const daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
                 const isUrgent = daysUntilDue <= 7 && !!mortgage?.payment;
                 return (
-                  <div style={card({ background: isUrgent ? C.amberBg : C.surface, border: isUrgent ? `1px solid ${C.amber}40` : `1px solid ${C.border}` })}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                  <div style={{ ...card({ padding: 0, overflow: "hidden" }), background: isUrgent ? C.amberBg : C.surface, border: `1px solid ${isUrgent ? C.amber + "50" : C.border}` }}>
+                    {/* Accent bar */}
+                    <div style={{ height: 4, background: isUrgent ? C.amber : C.accent, borderRadius: "16px 16px 0 0" }}/>
+                    <div style={{ padding: "20px 22px 22px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 34, height: 34, borderRadius: 10, background: `${C.accent}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <DollarSign size={16} color={C.accent}/>
+                        <div style={{ width: 32, height: 32, borderRadius: 9, background: isUrgent ? `${C.amber}22` : `${C.accent}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <DollarSign size={15} color={isUrgent ? C.amber : C.accent}/>
                         </div>
                         <div>
-                          <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.07em", textTransform: "uppercase", margin: 0 }}>Mortgage</p>
+                          <p style={{ fontSize: 11, fontWeight: 700, color: isUrgent ? C.amber : C.accent, letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>Mortgage</p>
                           {mortgage?.lender && <p style={{ fontSize: 11, color: C.text3, margin: 0 }}>{mortgage.lender}</p>}
                         </div>
                       </div>
-                      <button onClick={() => setShowMortgageForm(f => !f)} style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: "transparent", border: `1px solid ${C.accent}30`, borderRadius: 6, padding: "3px 8px", cursor: "pointer" }}>
+                      <button onClick={() => setShowMortgageForm(f => !f)} style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: "transparent", border: `1px solid ${C.accent}30`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
                         {showMortgageForm ? "Cancel" : mortgage ? "Edit" : "Add"}
                       </button>
                     </div>
                     {mortgage && !showMortgageForm ? (
                       <>
-                        <p style={{ fontSize: 22, fontWeight: 800, color: C.text, letterSpacing: "-0.5px", margin: "0 0 4px" }}>${mortgage.balance?.toLocaleString() ?? "—"}</p>
-                        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                          {mortgage.payment && <span style={{ fontSize: 12, color: C.text2 }}>${mortgage.payment.toLocaleString()}/mo</span>}
-                          {mortgage.rate && <span style={{ fontSize: 12, color: C.text2 }}>{(mortgage.rate * 100).toFixed(3)}%</span>}
+                        <p style={{ fontSize: 30, fontWeight: 800, color: C.text, letterSpacing: "-0.8px", margin: "0 0 10px", lineHeight: 1 }}>${mortgage.balance?.toLocaleString() ?? "—"}</p>
+                        <div style={{ display: "flex", gap: 18, marginBottom: 14 }}>
+                          {mortgage.payment && (
+                            <div>
+                              <div style={{ fontSize: 10, color: C.text3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Monthly</div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: C.text2 }}>${mortgage.payment.toLocaleString()}</div>
+                            </div>
+                          )}
+                          {mortgage.rate && (
+                            <div>
+                              <div style={{ fontSize: 10, color: C.text3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Rate</div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: C.text2 }}>{(mortgage.rate * 100).toFixed(3)}%</div>
+                            </div>
+                          )}
+                          {mortgage.due_day && (
+                            <div>
+                              <div style={{ fontSize: 10, color: C.text3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Due</div>
+                              <div style={{ fontSize: 15, fontWeight: 700, color: C.text2 }}>Day {dueDay}</div>
+                            </div>
+                          )}
                         </div>
                         {isUrgent ? (
-                          <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 8, background: C.amberBg, border: `1px solid ${C.amber}40`, display: "flex", alignItems: "center", gap: 6 }}>
-                            <AlertTriangle size={12} color={C.amber}/>
+                          <div style={{ padding: "8px 12px", borderRadius: 10, background: `${C.amber}22`, border: `1px solid ${C.amber}50`, display: "flex", alignItems: "center", gap: 7 }}>
+                            <AlertTriangle size={13} color={C.amber}/>
                             <span style={{ fontSize: 12, fontWeight: 700, color: C.amber }}>Due in {daysUntilDue} day{daysUntilDue !== 1 ? "s" : ""} — ${mortgage.payment?.toLocaleString()}</span>
                           </div>
                         ) : mortgage.due_day ? (
-                          <p style={{ fontSize: 12, color: C.text3, marginTop: 4 }}>Due the {dueDay}{[,"st","nd","rd"][dueDay] ?? "th"} · {daysUntilDue} days away</p>
+                          <div style={{ padding: "7px 12px", borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 7 }}>
+                            <Clock size={12} color={C.text3}/>
+                            <span style={{ fontSize: 12, color: C.text3 }}>Next due in {daysUntilDue} days</span>
+                          </div>
                         ) : null}
                       </>
                     ) : showMortgageForm ? (
@@ -4039,61 +4061,83 @@ export default function Dashboard() {
                         </div>
                       </div>
                     )}
+                    </div>{/* /padding div */}
                   </div>
                 );
               })()}
 
               {/* Insurance */}
-              <div style={card()}>
-                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: insurance ? 8 : 0 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: "#0891b218", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <Shield size={18} color="#0891b2"/>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.07em", textTransform: "uppercase", margin: 0 }}>Home Insurance</p>
-                    {insurance ? (
-                      <>
-                        <p style={{ fontSize: 16, fontWeight: 700, color: C.text, margin: "3px 0 1px" }}>
-                          {insurance.provider ?? "Active"}
-                          {insurance.policyType ? ` · ${insurance.policyType}` : ""}
-                        </p>
-                        <p style={{ fontSize: 12, color: C.text3, margin: "0 0 8px" }}>
-                          {(insurance.annualPremium ?? insurance.premium) ? `$${(insurance.annualPremium ?? insurance.premium)?.toLocaleString()}/yr` : ""}
-                          {insurance.expirationDate ? `${(insurance.annualPremium ?? insurance.premium) ? " · " : ""}Renews ${insurance.expirationDate}` : ""}
-                        </p>
-                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-                          <button onClick={() => {
-                            if (insurance.claimUrl) window.open(insurance.claimUrl);
-                            else if (insurance.claimPhone) window.location.href = `tel:${insurance.claimPhone.replace(/\D/g, "")}`;
-                            else showToast("No claim contact on file — upload your policy");
-                          }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: C.navy, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                            File Claim
-                          </button>
-                          <button onClick={() => setShowInsuranceDetail(d => !d)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: "transparent", border: `1.5px solid ${C.accent}`, color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                            View Details
-                          </button>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "3px 0 6px" }}>—</p>
-                        <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 6, border: "1px solid #0891b2", background: "transparent", color: "#0891b2", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                          {parsingInsurance ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
-                          {parsingInsurance ? "Parsing…" : "Upload Policy"}
-                          <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
-                        </label>
-                        {insuranceError && <p style={{ fontSize: 11, color: C.red, margin: "6px 0 0", lineHeight: 1.4 }}>⚠ {insuranceError}</p>}
-                      </>
-                    )}
+              <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
+                <div style={{ height: 4, background: "#0891b2", borderRadius: "16px 16px 0 0" }}/>
+                <div style={{ padding: "20px 22px 22px" }}>
+                {/* Header row */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 9, background: "#0891b218", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Shield size={15} color="#0891b2"/>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", letterSpacing: "0.08em", textTransform: "uppercase" }}>Home Insurance</span>
                   </div>
                   {insurance && (
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #0891b220", background: "transparent", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #0891b230", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                       {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
-                      {parsingInsurance ? "Parsing…" : "Replace"}
-                      <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                      {parsingInsurance ? "…" : "Replace"}
+                      <input type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                     </label>
                   )}
                 </div>
+                {insurance ? (
+                  <>
+                    <p style={{ fontSize: 17, fontWeight: 700, color: C.text, margin: "0 0 2px", lineHeight: 1.3 }}>
+                      {insurance.provider ?? "Active Policy"}
+                      {insurance.policyType ? ` · ${insurance.policyType}` : ""}
+                    </p>
+                    {insurance.policyNumber && (
+                      <p style={{ fontSize: 12, color: C.text3, margin: "0 0 14px", fontFamily: "monospace", letterSpacing: "0.02em" }}>
+                        #{insurance.policyNumber}
+                      </p>
+                    )}
+                    {((insurance.annualPremium ?? insurance.premium) || insurance.expirationDate) && (
+                      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                        {(insurance.annualPremium ?? insurance.premium) && (
+                          <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "8px 14px" }}>
+                            <div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Premium</div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>${(insurance.annualPremium ?? insurance.premium)!.toLocaleString()}<span style={{ fontSize: 11, fontWeight: 500, color: C.text3 }}>/yr</span></div>
+                          </div>
+                        )}
+                        {insurance.expirationDate && (
+                          <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "8px 14px" }}>
+                            <div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Renews</div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{insurance.expirationDate}</div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => {
+                        if (insurance.claimUrl) window.open(insurance.claimUrl);
+                        else if (insurance.claimPhone) window.location.href = `tel:${insurance.claimPhone.replace(/\D/g, "")}`;
+                        else showToast("No claim contact on file — upload your policy");
+                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: C.navy, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        File Claim
+                      </button>
+                      <button onClick={() => setShowInsuranceDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: `1.5px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        {showInsuranceDetail ? "Hide Details" : "View Details"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "0 0 14px" }}>—</p>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0891b2", background: "transparent", color: "#0891b2", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      {parsingInsurance ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
+                      {parsingInsurance ? "Parsing…" : "Upload Policy"}
+                      <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                    </label>
+                    {insuranceError && <p style={{ fontSize: 11, color: C.red, margin: "8px 0 0", lineHeight: 1.4 }}>⚠ {insuranceError}</p>}
+                  </>
+                )}
+                </div>{/* /padding div */}
 
                 {/* Insurance detail panel */}
                 {insurance && showInsuranceDetail && (() => {
@@ -4226,47 +4270,65 @@ export default function Dashboard() {
               </div>
 
               {/* Home Warranty */}
-              <div style={card({ display: "flex", gap: 14, alignItems: "center" })}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#7c3aed18", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <Shield size={18} color="#7c3aed"/>
+              <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
+                <div style={{ height: 4, background: "#7c3aed", borderRadius: "16px 16px 0 0" }}/>
+                <div style={{ padding: "20px 22px 22px" }}>
+                {/* Header row */}
+                <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 9, background: "#7c3aed18", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Shield size={15} color="#7c3aed"/>
+                  </div>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", letterSpacing: "0.08em", textTransform: "uppercase", marginLeft: 8 }}>Home Warranty</span>
                 </div>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.07em", textTransform: "uppercase", margin: 0 }}>Home Warranty</p>
-                  {warranty ? (
-                    <>
-                      <p style={{ fontSize: 16, fontWeight: 700, color: C.text, margin: "3px 0 1px" }}>
-                        {warranty.provider ?? "Active"}
-                        {warranty.planName ? ` · ${warranty.planName}` : ""}
-                      </p>
-                      <p style={{ fontSize: 12, color: C.text3, margin: "0 0 8px" }}>
-                        {warranty.serviceFee ? `$${warranty.serviceFee} service fee` : ""}
-                        {warranty.expirationDate ? `${warranty.serviceFee ? " · " : ""}Expires ${warranty.expirationDate}` : ""}
-                      </p>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        <button onClick={() => {
-                          if (warranty.claimUrl) window.open(warranty.claimUrl);
-                          else if (warranty.claimPhone) window.location.href = `tel:${warranty.claimPhone.replace(/\D/g, "")}`;
-                          else showToast("No claim contact on file — upload your warranty");
-                        }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: C.navy, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                          File Claim
-                        </button>
-                        <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 8, background: "transparent", border: `1.5px solid ${C.accent}`, color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                          View Details
-                        </button>
+                {warranty ? (
+                  <>
+                    <p style={{ fontSize: 17, fontWeight: 700, color: C.text, margin: "0 0 2px", lineHeight: 1.3 }}>
+                      {warranty.provider ?? "Active Warranty"}
+                    </p>
+                    {warranty.planName && (
+                      <p style={{ fontSize: 13, color: C.text3, margin: "0 0 14px" }}>{warranty.planName}</p>
+                    )}
+                    {(warranty.serviceFee || warranty.expirationDate) && (
+                      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                        {warranty.serviceFee && (
+                          <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
+                            <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Service Fee</div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>${warranty.serviceFee}<span style={{ fontSize: 11, fontWeight: 500, color: C.text3 }}>/claim</span></div>
+                          </div>
+                        )}
+                        {warranty.expirationDate && (
+                          <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
+                            <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Expires</div>
+                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{warranty.expirationDate}</div>
+                          </div>
+                        )}
                       </div>
-                    </>
-                  ) : (
-                    <>
-                      <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "3px 0 6px" }}>—</p>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 6, border: "1px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                        {parsingWarranty ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
-                        {parsingWarranty ? "Parsing…" : "Upload Warranty"}
-                        <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
-                      </label>
-                      {warrantyError && <p style={{ fontSize: 11, color: C.red, margin: "6px 0 0", lineHeight: 1.4 }}>⚠ {warrantyError}</p>}
-                    </>
-                  )}
-                </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button onClick={() => {
+                        if (warranty.claimUrl) window.open(warranty.claimUrl);
+                        else if (warranty.claimPhone) window.location.href = `tel:${warranty.claimPhone.replace(/\D/g, "")}`;
+                        else showToast("No claim contact on file — upload your warranty");
+                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: C.navy, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        File Claim
+                      </button>
+                      <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        {showWarrantyDetail ? "Hide Details" : "View Details"}
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "0 0 14px" }}>—</p>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      {parsingWarranty ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
+                      {parsingWarranty ? "Parsing…" : "Upload Warranty"}
+                      <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
+                    </label>
+                    {warrantyError && <p style={{ fontSize: 11, color: C.red, margin: "8px 0 0", lineHeight: 1.4 }}>⚠ {warrantyError}</p>}
+                  </>
+                )}
+                </div>{/* /padding div */}
               </div>
 
               {/* Warranty detail panel */}
