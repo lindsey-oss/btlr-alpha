@@ -1313,6 +1313,7 @@ export default function Dashboard() {
     premium?: number;
   } | null>(null);
   const [parsingInsurance, setParsingInsurance] = useState(false);
+  const [insuranceError, setInsuranceError] = useState<string | null>(null);
   const [showInsuranceDetail, setShowInsuranceDetail] = useState(false);
   const insuranceRef = useRef<HTMLInputElement>(null);
 
@@ -1327,6 +1328,7 @@ export default function Dashboard() {
     waitingPeriod?: string; responseTime?: string; maxAnnualBenefit?: number;
   } | null>(null);
   const [parsingWarranty, setParsingWarranty]     = useState(false);
+  const [warrantyError, setWarrantyError]         = useState<string | null>(null);
   const [showWarrantyDetail, setShowWarrantyDetail] = useState(false);
   const warrantyRef = useRef<HTMLInputElement>(null);
 
@@ -1426,10 +1428,11 @@ export default function Dashboard() {
   async function uploadInsurance(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setParsingInsurance(true);
+    setInsuranceError(null);
     try {
       const { data: sessionData } = await supabase.auth.getSession();
       const uid = sessionData.session?.user?.id;
-      const { data: prop } = await supabase.from("properties").select("id").eq("user_id", uid).maybeSingle();
+      const { data: prop } = await supabase.from("properties").select("id").eq("user_id", uid ?? "").maybeSingle();
       const propId = prop?.id;
 
       if (uid) {
@@ -1446,11 +1449,22 @@ export default function Dashboard() {
         method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
       });
       const json = await res.json();
-      if (json.data) {
+      if (!res.ok || json.error) {
+        const msg = json.error ?? `Server error (${res.status})`;
+        console.error("[uploadInsurance]", msg);
+        setInsuranceError(msg.includes("extract text") ? "Couldn't read this PDF — try a text-based (not scanned) version." : `Upload failed: ${msg}`);
+      } else if (json.data) {
         setInsurance(json.data);
+        setInsuranceError(null);
         addEvent(`Insurance uploaded: ${json.data.provider ?? file.name}${json.data.policyType ? ` — ${json.data.policyType}` : ""}`);
+      } else {
+        setInsuranceError("No data returned — please try again.");
       }
-    } catch { /* silent */ }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Network error";
+      console.error("[uploadInsurance] caught:", msg);
+      setInsuranceError(`Upload failed: ${msg}`);
+    }
     setParsingInsurance(false);
     if (insuranceRef.current) insuranceRef.current.value = "";
   }
@@ -1458,11 +1472,11 @@ export default function Dashboard() {
   async function uploadWarranty(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setParsingWarranty(true);
+    setWarrantyError(null);
     try {
-      // Upload to storage first
       const { data: sessionData } = await supabase.auth.getSession();
       const uid = sessionData.session?.user?.id;
-      const { data: prop } = await supabase.from("properties").select("id").eq("user_id", uid).maybeSingle();
+      const { data: prop } = await supabase.from("properties").select("id").eq("user_id", uid ?? "").maybeSingle();
       const propId = prop?.id;
 
       if (uid) {
@@ -1475,15 +1489,26 @@ export default function Dashboard() {
       if (uid)    params.set("userId",     uid);
       if (propId) params.set("propertyId", String(propId));
 
-      const res  = await fetch(`/api/parse-warranty?${params}`, {
+      const res = await fetch(`/api/parse-warranty?${params}`, {
         method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
       });
       const json = await res.json();
-      if (json.data) {
+      if (!res.ok || json.error) {
+        const msg = json.error ?? `Server error (${res.status})`;
+        console.error("[uploadWarranty]", msg);
+        setWarrantyError(msg.includes("extract text") ? "Couldn't read this PDF — try a text-based (not scanned) version." : `Upload failed: ${msg}`);
+      } else if (json.data) {
         setWarranty(json.data);
+        setWarrantyError(null);
         addEvent(`Warranty uploaded: ${json.data.provider ?? file.name}${json.data.planName ? ` — ${json.data.planName}` : ""}`);
+      } else {
+        setWarrantyError("No data returned — please try again.");
       }
-    } catch { /* silent */ }
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "Network error";
+      console.error("[uploadWarranty] caught:", msg);
+      setWarrantyError(`Upload failed: ${msg}`);
+    }
     setParsingWarranty(false);
     if (warrantyRef.current) warrantyRef.current.value = "";
   }
@@ -2011,44 +2036,50 @@ export default function Dashboard() {
     await persistFindingStatuses(newStatuses);
   }
 
-  // ── Text-to-speech ────────────────────────────────────────────────────
-  function speakText(text: string) {
-    if (!voiceOutput || typeof window === "undefined" || !window.speechSynthesis) return;
-    window.speechSynthesis.cancel();
-    const clean = text.replace(/\*+/g, "").replace(/#+/g, "").replace(/\n+/g, " ").trim();
-    const utterance = new SpeechSynthesisUtterance(clean);
-    // Composed, measured — slightly slower than default, authoritative
-    utterance.rate   = 0.88;
-    utterance.pitch  = 0.92;  // slightly lower pitch — calm, deep, male
-    utterance.volume = 1.0;
+  // ── Text-to-speech — OpenAI HD (onyx) with browser fallback ──────────
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
 
-    const loadVoice = () => {
-      const voices = window.speechSynthesis.getVoices();
-      // Priority order: British male voices first, then en-GB, then en-US male fallback
-      const preferred =
-        // macOS / iOS — Daniel is the canonical British male voice
-        voices.find(v => v.name === "Daniel") ||
-        // macOS alternative
-        voices.find(v => v.name === "Arthur") ||
-        // Google Chrome — Google UK English Male
-        voices.find(v => v.name === "Google UK English Male") ||
-        // Windows — any en-GB male
-        voices.find(v => v.lang === "en-GB" && /male/i.test(v.name)) ||
-        // Any en-GB voice
-        voices.find(v => v.lang === "en-GB") ||
-        // Fallback: en-US male (Aaron, Tom, Fred, Alex)
-        voices.find(v => v.lang.startsWith("en") && (v.name === "Aaron" || v.name === "Tom" || v.name === "Fred")) ||
-        voices.find(v => v.lang === "en-US") ||
-        voices[0];
-      if (preferred) utterance.voice = preferred;
-    };
-
-    if (window.speechSynthesis.getVoices().length) {
-      loadVoice();
-    } else {
-      window.speechSynthesis.onvoiceschanged = loadVoice;
+  async function speakText(text: string) {
+    if (!voiceOutput || typeof window === "undefined") return;
+    // Stop any currently playing audio
+    if (currentAudioRef.current) {
+      currentAudioRef.current.pause();
+      currentAudioRef.current = null;
     }
-    window.speechSynthesis.speak(utterance);
+    window.speechSynthesis?.cancel();
+
+    const clean = text.replace(/\*+/g, "").replace(/#+/g, "").replace(/\n+/g, " ").trim();
+    if (!clean) return;
+
+    try {
+      // Primary: OpenAI TTS (onyx voice — deep, composed, Jarvis-like)
+      const res = await fetch("/api/speak", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: clean }),
+      });
+      if (!res.ok) throw new Error("TTS API error");
+      const blob = await res.blob();
+      const url  = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+      currentAudioRef.current = audio;
+      audio.onended = () => { URL.revokeObjectURL(url); currentAudioRef.current = null; };
+      audio.play();
+    } catch {
+      // Fallback: browser speechSynthesis
+      if (!window.speechSynthesis) return;
+      const utterance = new SpeechSynthesisUtterance(clean);
+      utterance.rate  = 0.88;
+      utterance.pitch = 0.90;
+      const voices = window.speechSynthesis.getVoices();
+      const preferred =
+        voices.find(v => v.name === "Daniel") ||
+        voices.find(v => v.name === "Google UK English Male") ||
+        voices.find(v => v.lang === "en-GB") ||
+        voices.find(v => v.lang === "en-US");
+      if (preferred) utterance.voice = preferred;
+      window.speechSynthesis.speak(utterance);
+    }
   }
 
   // ── Speech-to-text ────────────────────────────────────────────────────
@@ -3555,6 +3586,7 @@ export default function Dashboard() {
                           {parsingInsurance ? "Parsing…" : "Upload Policy"}
                           <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                         </label>
+                        {insuranceError && <p style={{ fontSize: 11, color: C.red, margin: "6px 0 0", lineHeight: 1.4 }}>⚠ {insuranceError}</p>}
                       </>
                     )}
                   </div>
@@ -3728,6 +3760,7 @@ export default function Dashboard() {
                         {parsingWarranty ? "Parsing…" : "Upload Warranty"}
                         <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
                       </label>
+                      {warrantyError && <p style={{ fontSize: 11, color: C.red, margin: "6px 0 0", lineHeight: 1.4 }}>⚠ {warrantyError}</p>}
                     </>
                   )}
                 </div>
