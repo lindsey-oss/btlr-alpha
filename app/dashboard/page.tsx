@@ -10,6 +10,7 @@ import {
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
   ExternalLink, ArrowRight, BarChart3, Clock,
+  Mic, MicOff, Volume2, VolumeX,
 } from "lucide-react";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
@@ -974,14 +975,30 @@ function healthStatusInfo(score: number) {
   return                  { label: "Critical",        tagColor: "#ef4444", tagBg: "rgba(239,68,68,0.18)",  desc: "Immediate action needed. See the full breakdown to prioritize repairs." };
 }
 
+// ── Warranty coverage check ───────────────────────────────────────────────
+function isLikelyCovered(category: string, coverageItems: string[]): boolean {
+  const cat = category.toLowerCase();
+  return coverageItems.some(item => {
+    const it = item.toLowerCase();
+    return it.includes(cat) || cat.includes(it.split(" ")[0]) ||
+      (cat.includes("hvac") && (it.includes("heat") || it.includes("air") || it.includes("hvac") || it.includes("cool"))) ||
+      (cat.includes("plumb") && it.includes("plumb")) ||
+      (cat.includes("electric") && it.includes("electric")) ||
+      (cat.includes("roof") && it.includes("roof")) ||
+      (cat.includes("appliance") && it.includes("appliance"));
+  });
+}
+
 // ── Cost Detail Modal ─────────────────────────────────────────────────────
 function CostDetailModal({
-  item, findings, onClose, onFindVendors,
+  item, findings, onClose, onFindVendors, warranty, insurance,
 }: {
   item: CostItem;
   findings: Finding[];
   onClose: () => void;
   onFindVendors: (trade: string, context?: string, issue?: string) => void;
+  warranty?: { coverageItems?: string[]; claimUrl?: string; claimPhone?: string; provider?: string; serviceFee?: number } | null;
+  insurance?: { coverageItems?: string[]; exclusions?: string[]; claimUrl?: string; claimPhone?: string; claimEmail?: string; provider?: string; deductibleStandard?: number } | null;
 }) {
   const col = item.severity === "critical" ? C.red : item.severity === "warning" ? C.amber : C.text3;
   const bg  = item.severity === "critical" ? C.redBg : item.severity === "warning" ? C.amberBg : C.bg;
@@ -1106,6 +1123,56 @@ function CostDetailModal({
             </div>
           </div>
 
+          {/* Warranty claim hint */}
+          {warranty && (warranty.coverageItems?.length ?? 0) > 0 &&
+            isLikelyCovered(item.tradeCategory ?? item.label, warranty.coverageItems!) && (
+            <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 10, padding: "10px 14px", marginBottom: 4 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
+                <Shield size={12}/> This may be covered by your {warranty.provider ?? "home warranty"}
+                {warranty.serviceFee ? ` — $${warranty.serviceFee} service fee` : ""}
+              </p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {warranty.claimUrl && (
+                  <a href={`${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                    <ExternalLink size={11}/> File a Claim
+                  </a>
+                )}
+                {warranty.claimPhone && (
+                  <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                    📞 Call Claims
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Insurance claim hint */}
+          {insurance && (insurance.coverageItems?.length ?? 0) > 0 &&
+            isLikelyCovered(item.tradeCategory ?? item.label, insurance.coverageItems!) && (
+            <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 10, padding: "10px 14px", marginBottom: 4 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "#0891b2", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
+                <Shield size={12}/> This may be covered by your {insurance.provider ?? "home insurance"}
+                {insurance.deductibleStandard ? ` — $${insurance.deductibleStandard.toLocaleString()} deductible` : ""}
+              </p>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                {insurance.claimUrl && (
+                  <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer"
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                    <ExternalLink size={11}/> File a Claim
+                  </a>
+                )}
+                {insurance.claimPhone && (
+                  <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`}
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                    📞 Call Claims
+                  </a>
+                )}
+              </div>
+            </div>
+          )}
+
           {/* CTA buttons */}
           <div style={{ display: "flex", gap: 10, paddingTop: 4 }}>
             <button onClick={() => { onClose(); onFindVendors(item.tradeCategory ?? item.label, item.label, item.finding?.description ?? item.label); }}
@@ -1140,7 +1207,33 @@ export default function Dashboard() {
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [docs, setDocs]         = useState<Doc[]>([]);
   const [q, setQ]               = useState("");
-  const [chatMessages, setChatMessages] = useState<{role:"user"|"assistant"; content:string}[]>([]);
+  type ButlerAction = {
+    label: string;
+    type: "find_vendor" | "open_url" | "tel" | "email" | "nav_documents";
+    trade?: string;
+    url?: string;
+    phone?: string;
+    emailAddr?: string;
+  };
+  type ChatMessage = {
+    role: "user" | "assistant";
+    content: string;
+    intent?: string;
+    actions?: ButlerAction[];
+    quickReplies?: string[];
+  };
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
+
+  // ── Butler settings (persisted to localStorage) ───────────────────────
+  const [voiceOutput, setVoiceOutput]         = useState(false);
+  const [humorMode, setHumorMode]             = useState(false);
+  const [showButlerSettings, setShowButlerSettings] = useState(false);
+
+  // ── Voice input ───────────────────────────────────────────────────────
+  const [isListening, setIsListening]         = useState(false);
+  const [speechSupported, setSpeechSupported] = useState(true);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const recognitionRef = useRef<any>(null);
   const [answer, setAnswer]     = useState("");
   const [aiLoading, setAiLoading]   = useState(false);
   const [inspecting, setInspecting] = useState(false);
@@ -1205,13 +1298,61 @@ export default function Dashboard() {
   const [fetchingProperty, setFetchingProperty] = useState(false);
 
   // Insurance
-  const [insurance, setInsurance]           = useState<{ provider?: string; premium?: number; expirationDate?: string } | null>(null);
+  const [insurance, setInsurance] = useState<{
+    provider?: string; policyNumber?: string; policyType?: string;
+    agentName?: string; agentPhone?: string; agentEmail?: string;
+    dwellingCoverage?: number; otherStructures?: number; personalProperty?: number;
+    lossOfUse?: number; liabilityCoverage?: number; medicalPayments?: number;
+    deductibleStandard?: number; deductibleWind?: number; deductibleHurricane?: number;
+    annualPremium?: number; paymentAmount?: number; paymentFrequency?: string; paymentDueDate?: number; paymentMethod?: string;
+    effectiveDate?: string; expirationDate?: string; autoRenews?: boolean;
+    coverageItems?: string[]; exclusions?: string[]; endorsements?: string[];
+    replacementCostDwelling?: boolean; replacementCostContents?: boolean;
+    claimPhone?: string; claimUrl?: string; claimEmail?: string; claimHours?: string;
+    // legacy fields from old parser / properties table
+    premium?: number;
+  } | null>(null);
   const [parsingInsurance, setParsingInsurance] = useState(false);
-  const [insuranceDone, setInsuranceDone]   = useState(false);
+  const [showInsuranceDetail, setShowInsuranceDetail] = useState(false);
   const insuranceRef = useRef<HTMLInputElement>(null);
+
+  // Home Warranty
+  const [warranty, setWarranty] = useState<{
+    provider?: string; planName?: string; policyNumber?: string;
+    serviceFee?: number; coverageItems?: string[]; exclusions?: string[];
+    coverageLimits?: Record<string, number>;
+    effectiveDate?: string; expirationDate?: string; autoRenews?: boolean;
+    paymentAmount?: number; paymentFrequency?: string; paymentDueDate?: number;
+    claimPhone?: string; claimUrl?: string; claimEmail?: string;
+    waitingPeriod?: string; responseTime?: string; maxAnnualBenefit?: number;
+  } | null>(null);
+  const [parsingWarranty, setParsingWarranty]     = useState(false);
+  const [showWarrantyDetail, setShowWarrantyDetail] = useState(false);
+  const warrantyRef = useRef<HTMLInputElement>(null);
 
   const inspRef = useRef<HTMLInputElement>(null);
   const docRef  = useRef<HTMLInputElement>(null);
+
+  // ── Butler settings persistence ───────────────────────────────────────
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("btlr_butler");
+      if (saved) {
+        const s = JSON.parse(saved);
+        if (s.voiceOutput !== undefined) setVoiceOutput(s.voiceOutput);
+        if (s.humorMode   !== undefined) setHumorMode(s.humorMode);
+      }
+    } catch { /* ignore */ }
+    // Check speech API support
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    if (!(window as any).SpeechRecognition && !(window as any).webkitSpeechRecognition) {
+      setSpeechSupported(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    try { localStorage.setItem("btlr_butler", JSON.stringify({ voiceOutput, humorMode })); } catch { /* ignore */ }
+  }, [voiceOutput, humorMode]);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -1284,16 +1425,67 @@ export default function Dashboard() {
 
   async function uploadInsurance(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
-    setParsingInsurance(true); setInsuranceDone(false);
+    setParsingInsurance(true);
     try {
-      const res = await fetch("/api/parse-insurance", {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData.session?.user?.id;
+      const { data: prop } = await supabase.from("properties").select("id").eq("user_id", uid).maybeSingle();
+      const propId = prop?.id;
+
+      if (uid) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const storagePath = `${uid}/insurance-${Date.now()}-${safeName}`;
+        await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
+      }
+
+      const params = new URLSearchParams();
+      if (uid)    params.set("userId",     uid);
+      if (propId) params.set("propertyId", String(propId));
+
+      const res = await fetch(`/api/parse-insurance?${params}`, {
         method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
       });
       const json = await res.json();
-      if (json.data) { setInsurance(json.data); setInsuranceDone(true); addEvent(`Insurance parsed: ${json.data.provider ?? file.name}`); }
+      if (json.data) {
+        setInsurance(json.data);
+        addEvent(`Insurance uploaded: ${json.data.provider ?? file.name}${json.data.policyType ? ` — ${json.data.policyType}` : ""}`);
+      }
     } catch { /* silent */ }
     setParsingInsurance(false);
     if (insuranceRef.current) insuranceRef.current.value = "";
+  }
+
+  async function uploadWarranty(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]; if (!file) return;
+    setParsingWarranty(true);
+    try {
+      // Upload to storage first
+      const { data: sessionData } = await supabase.auth.getSession();
+      const uid = sessionData.session?.user?.id;
+      const { data: prop } = await supabase.from("properties").select("id").eq("user_id", uid).maybeSingle();
+      const propId = prop?.id;
+
+      if (uid) {
+        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const storagePath = `${uid}/warranty-${Date.now()}-${safeName}`;
+        await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
+      }
+
+      const params = new URLSearchParams();
+      if (uid)    params.set("userId",     uid);
+      if (propId) params.set("propertyId", String(propId));
+
+      const res  = await fetch(`/api/parse-warranty?${params}`, {
+        method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
+      });
+      const json = await res.json();
+      if (json.data) {
+        setWarranty(json.data);
+        addEvent(`Warranty uploaded: ${json.data.provider ?? file.name}${json.data.planName ? ` — ${json.data.planName}` : ""}`);
+      }
+    } catch { /* silent */ }
+    setParsingWarranty(false);
+    if (warrantyRef.current) warrantyRef.current.value = "";
   }
 
   async function loadPlaidData() {
@@ -1414,7 +1606,28 @@ export default function Dashboard() {
       }
       if (data.home_value)          setHomeValue(data.home_value);
       if (data.property_tax_annual) setPropertyTax(data.property_tax_annual);
-      if (data.insurance_premium)   setInsurance({ premium: data.insurance_premium, expirationDate: data.insurance_renewal ?? undefined });
+      // Load full insurance from home_insurance table (falls back to legacy properties columns)
+      const { data: ins } = await supabase.from("home_insurance").select("*").limit(1).maybeSingle();
+      if (ins) {
+        setInsurance({
+          provider: ins.provider, policyNumber: ins.policy_number, policyType: ins.policy_type,
+          agentName: ins.agent_name, agentPhone: ins.agent_phone, agentEmail: ins.agent_email,
+          dwellingCoverage: ins.dwelling_coverage, otherStructures: ins.other_structures,
+          personalProperty: ins.personal_property, lossOfUse: ins.loss_of_use,
+          liabilityCoverage: ins.liability_coverage, medicalPayments: ins.medical_payments,
+          deductibleStandard: ins.deductible_standard, deductibleWind: ins.deductible_wind,
+          deductibleHurricane: ins.deductible_hurricane,
+          annualPremium: ins.annual_premium, paymentAmount: ins.payment_amount,
+          paymentFrequency: ins.payment_frequency, paymentDueDate: ins.payment_due_date,
+          paymentMethod: ins.payment_method,
+          effectiveDate: ins.effective_date, expirationDate: ins.expiration_date, autoRenews: ins.auto_renews,
+          coverageItems: ins.coverage_items ?? [], exclusions: ins.exclusions ?? [], endorsements: ins.endorsements ?? [],
+          replacementCostDwelling: ins.replacement_cost_dwelling, replacementCostContents: ins.replacement_cost_contents,
+          claimPhone: ins.claim_phone, claimUrl: ins.claim_url, claimEmail: ins.claim_email, claimHours: ins.claim_hours,
+        });
+      } else if (data.insurance_premium) {
+        setInsurance({ premium: data.insurance_premium, expirationDate: data.insurance_renewal ?? undefined });
+      }
       if (data.mortgage_balance || data.mortgage_payment) {
         setMortgage({
           lender: data.mortgage_lender ?? "loanDepot", balance: data.mortgage_balance,
@@ -1798,28 +2011,149 @@ export default function Dashboard() {
     await persistFindingStatuses(newStatuses);
   }
 
-  async function askAI() {
-    if (!q.trim() || aiLoading) return;
-    const userMsg = q.trim();
+  // ── Text-to-speech ────────────────────────────────────────────────────
+  function speakText(text: string) {
+    if (!voiceOutput || typeof window === "undefined" || !window.speechSynthesis) return;
+    window.speechSynthesis.cancel();
+    // Strip any markdown-style chars that sound odd when spoken
+    const clean = text.replace(/\*+/g, "").replace(/#+/g, "").replace(/\n+/g, " ").trim();
+    const utterance = new SpeechSynthesisUtterance(clean);
+    utterance.rate  = 0.91;   // slightly slower — composed, not rushed
+    utterance.pitch = 1.0;
+    utterance.volume = 1.0;
+    // Prefer a clear, neutral English voice
+    const loadVoice = () => {
+      const voices = window.speechSynthesis.getVoices();
+      const preferred = voices.find(v =>
+        v.lang.startsWith("en") &&
+        (v.name.includes("Daniel") || v.name.includes("Aaron") ||
+         v.name.includes("Alex") || v.name.includes("Nathan") ||
+         v.name.includes("Samantha") || v.name.includes("Google UK"))
+      ) || voices.find(v => v.lang === "en-US" && !v.name.includes("Google")) || voices[0];
+      if (preferred) utterance.voice = preferred;
+    };
+    if (window.speechSynthesis.getVoices().length) {
+      loadVoice();
+    } else {
+      window.speechSynthesis.onvoiceschanged = loadVoice;
+    }
+    window.speechSynthesis.speak(utterance);
+  }
+
+  // ── Speech-to-text ────────────────────────────────────────────────────
+  function startListening() {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) { setSpeechSupported(false); return; }
+    if (isListening) { stopListening(); return; }
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const recognition: any = new SR();
+    recognition.continuous      = false;
+    recognition.interimResults  = true;
+    recognition.lang            = "en-US";
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => setIsListening(true);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onresult = (event: any) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const transcript = Array.from(event.results as any[])
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        .map((r: any) => r[0].transcript)
+        .join("");
+      setQ(transcript);
+    };
+
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    recognition.onerror = (event: any) => {
+      setIsListening(false);
+      recognitionRef.current = null;
+      if (event.error === "not-allowed") {
+        setSpeechSupported(false);
+      }
+    };
+
+    recognitionRef.current = recognition;
+    recognition.start();
+  }
+
+  function stopListening() {
+    if (recognitionRef.current) {
+      recognitionRef.current.stop();
+      recognitionRef.current = null;
+    }
+    setIsListening(false);
+  }
+
+  async function askAI(overrideQ?: string) {
+    const userMsg = (overrideQ ?? q).trim();
+    if (!userMsg || aiLoading) return;
     setQ("");
     setAiLoading(true);
     setChatMessages(prev => [...prev, { role: "user", content: userMsg }]);
     try {
+      // Stop any active TTS before a new exchange
+      if (typeof window !== "undefined" && window.speechSynthesis) window.speechSynthesis.cancel();
       const authHeader = await getAuthHeader();
       const history = chatMessages.map(m => ({ role: m.role, content: m.content }));
       const res = await fetch("/api/home-ai", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...authHeader },
-        body: JSON.stringify({ question: userMsg, chatHistory: history, roofYear, hvacYear, timeline, findings: inspectionResult?.findings ?? [], address }),
+        body: JSON.stringify({
+          question:    userMsg,
+          chatHistory: history,
+          roofYear, hvacYear, timeline, address,
+          findings:    inspectionResult?.findings ?? [],
+          repairs:     repairDocs,
+          warranty:    warranty ?? null,
+          insurance:   insurance ?? null,
+          humorMode,
+        }),
       });
       const data = await res.json();
-      const aiReply = data.answer ?? "Sorry, couldn't generate a response.";
-      setChatMessages(prev => [...prev, { role: "assistant", content: aiReply }]);
-      setAnswer(aiReply); // keep for legacy compatibility
+      const reply: ChatMessage = {
+        role:         "assistant",
+        content:      data.answer       ?? "I was unable to generate a response.",
+        intent:       data.intent,
+        actions:      data.actions      ?? [],
+        quickReplies: data.quickReplies ?? [],
+      };
+      setChatMessages(prev => [...prev, reply]);
+      setAnswer(data.answer ?? "");
+      // Speak the response if voice output is on
+      if (data.answer) speakText(data.answer);
     } catch {
-      setChatMessages(prev => [...prev, { role: "assistant", content: "Something went wrong — please try again." }]);
+      setChatMessages(prev => [...prev, { role: "assistant", content: "I appear to be having difficulty connecting. Please try again momentarily." }]);
     }
     setAiLoading(false);
+  }
+
+  // Execute a Butler action button
+  function executeButlerAction(action: ButlerAction) {
+    switch (action.type) {
+      case "find_vendor":
+        handleFindVendors(action.trade ?? "General Contractor");
+        break;
+      case "open_url":
+        if (action.url) window.open(action.url, "_blank", "noopener,noreferrer");
+        break;
+      case "tel":
+        if (action.phone) window.location.href = `tel:${action.phone}`;
+        break;
+      case "email":
+        if (action.emailAddr) window.location.href = `mailto:${action.emailAddr}`;
+        break;
+      case "nav_documents":
+        setNav("Documents");
+        break;
+    }
   }
 
   function addEvent(event: string) {
@@ -1922,6 +2256,8 @@ export default function Dashboard() {
           findings={inspectionResult?.findings ?? []}
           onClose={() => { setShowCostModal(false); setSelectedCost(null); }}
           onFindVendors={handleFindVendors}
+          warranty={warranty}
+          insurance={insurance}
         />
       )}
 
@@ -2103,6 +2439,257 @@ export default function Dashboard() {
           {/* ── Documents ─────────────────────────────────────────────── */}
           {nav === "Documents" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+              {/* Home Warranty Upload + Detail */}
+              <div style={card()}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <Shield size={14} color="#7c3aed"/>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: C.text }}>Home Warranty / Maintenance Policy</span>
+                  </div>
+                  {warranty && (
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #7c3aed", color: "#7c3aed", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      {parsingWarranty ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
+                      {parsingWarranty ? "Parsing…" : "Replace"}
+                      <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
+                    </label>
+                  )}
+                </div>
+                <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5 }}>
+                  Upload your home warranty or maintenance policy. BTLR will extract your coverage, exclusions, service fee, and claim contact info.
+                </p>
+
+                {!warranty ? (
+                  <label style={{
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+                    padding: "22px 16px", borderRadius: 12, cursor: "pointer",
+                    border: `2px dashed ${parsingWarranty ? "#7c3aed" : "#e9d5ff"}`,
+                    background: parsingWarranty ? "#faf5ff" : "#faf5ff",
+                  }}>
+                    {parsingWarranty
+                      ? <><Loader2 size={20} color="#7c3aed" className="animate-spin"/><span style={{ fontSize: 14, color: "#7c3aed" }}>Parsing warranty document…</span></>
+                      : <><Shield size={20} color="#7c3aed"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
+                    }
+                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
+                  </label>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+                    {/* Summary row */}
+                    <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 12, padding: "14px 16px" }}>
+                      <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
+                        {warranty.provider ?? "Warranty"}{warranty.planName ? ` — ${warranty.planName}` : ""}
+                      </p>
+                      <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
+                        {[
+                          warranty.policyNumber ? `#${warranty.policyNumber}` : null,
+                          warranty.serviceFee ? `$${warranty.serviceFee} service fee` : null,
+                          warranty.expirationDate ? `Expires ${warranty.expirationDate}` : null,
+                        ].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+
+                    {/* Claim CTA */}
+                    {(warranty.claimUrl || warranty.claimPhone || warranty.claimEmail) && (
+                      <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px" }}>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>
+                          📋 File a Claim
+                        </p>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {warranty.claimUrl && (
+                            <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer"
+                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                              <ExternalLink size={12}/> File Online
+                            </a>
+                          )}
+                          {warranty.claimPhone && (
+                            <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                              📞 {warranty.claimPhone}
+                            </a>
+                          )}
+                          {warranty.claimEmail && (
+                            <a href={`mailto:${warranty.claimEmail}`}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                              ✉️ Email Claims
+                            </a>
+                          )}
+                        </div>
+                        {warranty.responseTime && (
+                          <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>⏱ Typical response: {warranty.responseTime}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Coverage */}
+                    {(warranty.coverageItems?.length ?? 0) > 0 && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({warranty.coverageItems!.length})</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {warranty.coverageItems!.map((item, i) => (
+                            <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Exclusions */}
+                    {(warranty.exclusions?.length ?? 0) > 0 && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({warranty.exclusions!.length})</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {warranty.exclusions!.map((item, i) => (
+                            <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Coverage limits */}
+                    {warranty.coverageLimits && Object.keys(warranty.coverageLimits).length > 0 && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>💰 Per-System Limits</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {Object.entries(warranty.coverageLimits).map(([sys, limit]) => (
+                            <span key={sys} style={{ fontSize: 12, background: C.amberBg, border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "3px 9px", color: C.amber }}>{sys}: ${(limit as number).toLocaleString()}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Home Insurance Upload + Detail */}
+              <div style={card()}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                    <Shield size={14} color="#0891b2"/>
+                    <span style={{ fontWeight: 700, fontSize: 15, color: C.text }}>Home Insurance Policy</span>
+                  </div>
+                  {insurance && (
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
+                      {parsingInsurance ? "Parsing…" : "Replace"}
+                      <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                    </label>
+                  )}
+                </div>
+                <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5 }}>
+                  Upload your homeowners insurance declarations page. BTLR will extract coverage amounts, deductibles, exclusions, and claim contact info.
+                </p>
+
+                {!insurance ? (
+                  <label style={{
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+                    padding: "22px 16px", borderRadius: 12, cursor: "pointer",
+                    border: `2px dashed ${parsingInsurance ? "#0891b2" : "#bae6fd"}`,
+                    background: "#f0f9ff",
+                  }}>
+                    {parsingInsurance
+                      ? <><Loader2 size={20} color="#0891b2" className="animate-spin"/><span style={{ fontSize: 14, color: "#0891b2" }}>Parsing insurance policy…</span></>
+                      : <><Shield size={20} color="#0891b2"/><span style={{ fontSize: 14, color: C.text }}>Upload homeowners insurance policy or dec page</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
+                    }
+                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                  </label>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+                    {/* Summary row */}
+                    <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 12, padding: "14px 16px" }}>
+                      <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
+                        {insurance.provider ?? "Insurance"}{insurance.policyType ? ` — ${insurance.policyType}` : ""}
+                      </p>
+                      <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
+                        {[
+                          insurance.policyNumber ? `#${insurance.policyNumber}` : null,
+                          (insurance.annualPremium ?? insurance.premium) ? `$${(insurance.annualPremium ?? insurance.premium)?.toLocaleString()}/yr` : null,
+                          insurance.deductibleStandard ? `$${insurance.deductibleStandard.toLocaleString()} deductible` : null,
+                          insurance.expirationDate ? `Renews ${insurance.expirationDate}` : null,
+                        ].filter(Boolean).join(" · ")}
+                      </p>
+                    </div>
+
+                    {/* Coverage amounts */}
+                    {(insurance.dwellingCoverage || insurance.personalProperty || insurance.liabilityCoverage) && (
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                        {insurance.dwellingCoverage  && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Dwelling</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.dwellingCoverage.toLocaleString()}</div></div>}
+                        {insurance.personalProperty  && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Personal Property</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.personalProperty.toLocaleString()}</div></div>}
+                        {insurance.liabilityCoverage && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Liability</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.liabilityCoverage.toLocaleString()}</div></div>}
+                        {insurance.deductibleStandard && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Deductible</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.deductibleStandard.toLocaleString()}</div></div>}
+                      </div>
+                    )}
+
+                    {/* Claim CTA */}
+                    {(insurance.claimUrl || insurance.claimPhone || insurance.claimEmail) && (
+                      <div style={{ background: "#e0f2fe", border: "1px solid #bae6fd", borderRadius: 10, padding: "12px 16px" }}>
+                        <p style={{ fontSize: 12, fontWeight: 700, color: "#0891b2", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>
+                          📋 File a Claim
+                        </p>
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {insurance.claimUrl && (
+                            <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer"
+                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                              <ExternalLink size={12}/> File Online
+                            </a>
+                          )}
+                          {insurance.claimPhone && (
+                            <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                              📞 {insurance.claimPhone}
+                            </a>
+                          )}
+                          {insurance.claimEmail && (
+                            <a href={`mailto:${insurance.claimEmail}`}
+                              style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                              ✉️ Email Claims
+                            </a>
+                          )}
+                        </div>
+                        {insurance.claimHours && (
+                          <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>⏱ {insurance.claimHours}</p>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Covered */}
+                    {(insurance.coverageItems?.length ?? 0) > 0 && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({insurance.coverageItems!.length})</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {insurance.coverageItems!.map((item, i) => (
+                            <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Endorsements */}
+                    {(insurance.endorsements?.length ?? 0) > 0 && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>➕ Endorsements ({insurance.endorsements!.length})</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {insurance.endorsements!.map((item, i) => (
+                            <span key={i} style={{ fontSize: 12, background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 6, padding: "3px 9px", color: "#0369a1" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Exclusions */}
+                    {(insurance.exclusions?.length ?? 0) > 0 && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({insurance.exclusions!.length})</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
+                          {insurance.exclusions!.map((item, i) => (
+                            <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
 
               {/* Repair Document Upload */}
               <div style={card()}>
@@ -2562,77 +3149,274 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* ── SECONDARY HERO: AI Butler ─────────────────────────── */}
-            <div style={{ ...card(), background: "linear-gradient(135deg, #f8faff 0%, #eff6ff 100%)", border: `1px solid ${C.accent}20` }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, #1d4ed8)`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 2px 8px rgba(37,99,235,0.3)" }}>
-                  <Sparkles size={16} color="white"/>
+            {/* ── AI BUTLER ─────────────────────────────────────────── */}
+            <div style={{ ...card(), background: "linear-gradient(160deg, #f8faff 0%, #eef2ff 100%)", border: `1.5px solid ${C.accent}22`, padding: 0, overflow: "hidden" }}>
+
+              {/* ── Header ── */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "15px 18px 13px" }}>
+                {/* BTLR avatar */}
+                <div style={{ width: 38, height: 38, borderRadius: 11, background: `linear-gradient(135deg, ${C.accent} 0%, #1d4ed8 100%)`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: "0 3px 10px rgba(37,99,235,0.28)", flexShrink: 0, position: "relative" }}>
+                  <Sparkles size={17} color="white"/>
+                  {/* Online dot */}
+                  <div style={{ position: "absolute", bottom: 1, right: 1, width: 9, height: 9, borderRadius: "50%", background: "#22c55e", border: "2px solid white" }}/>
                 </div>
-                <div>
-                  <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>Ask Butler</p>
-                  <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>Your AI home advisor</p>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                    <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: 0, letterSpacing: "-0.01em" }}>BTLR</p>
+                    {humorMode && <span style={{ fontSize: 9, fontWeight: 700, padding: "1px 5px", borderRadius: 4, background: "#fef3c7", color: "#92400e", border: "1px solid #fcd34d", letterSpacing: "0.04em" }}>WIT ON</span>}
+                  </div>
+                  <p style={{ fontSize: 11, color: C.text3, margin: 0, lineHeight: 1.3 }}>
+                    {warranty || insurance
+                      ? `Policy-aware · ${[warranty ? "Warranty" : null, insurance ? "Insurance" : null].filter(Boolean).join(" + ")} on file`
+                      : "Your private home chief-of-staff"}
+                  </p>
+                </div>
+                <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                  {/* Voice output toggle */}
+                  <button
+                    onClick={() => {
+                      const next = !voiceOutput;
+                      setVoiceOutput(next);
+                      if (!next && window.speechSynthesis) window.speechSynthesis.cancel();
+                    }}
+                    title={voiceOutput ? "Voice responses ON — click to mute" : "Voice responses OFF — click to enable"}
+                    style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${voiceOutput ? C.accent : C.border}`, background: voiceOutput ? `${C.accent}12` : "white", color: voiceOutput ? C.accent : C.text3, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    {voiceOutput ? <Volume2 size={13}/> : <VolumeX size={13}/>}
+                  </button>
+                  {/* Settings gear */}
+                  <button
+                    onClick={() => setShowButlerSettings(s => !s)}
+                    style={{ width: 30, height: 30, borderRadius: 8, border: `1px solid ${showButlerSettings ? C.accent : C.border}`, background: showButlerSettings ? `${C.accent}12` : "white", color: showButlerSettings ? C.accent : C.text3, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Settings size={13}/>
+                  </button>
+                  {/* Clear */}
+                  {chatMessages.length > 0 && (
+                    <button onClick={() => { setChatMessages([]); setAnswer(""); if (window.speechSynthesis) window.speechSynthesis.cancel(); }}
+                      style={{ fontSize: 11, color: C.text3, background: "white", border: `1px solid ${C.border}`, borderRadius: 7, cursor: "pointer", padding: "4px 9px" }}>
+                      Clear
+                    </button>
+                  )}
                 </div>
               </div>
-              {/* Conversation thread */}
-              {chatMessages.length > 0 && (
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 12,
-                  maxHeight: 320, overflowY: "auto", paddingRight: 2 }}>
-                  {chatMessages.map((msg, i) => (
-                    <div key={i} style={{
-                      display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start",
-                    }}>
-                      <div style={{
-                        maxWidth: "85%", borderRadius: msg.role === "user" ? "14px 14px 4px 14px" : "14px 14px 14px 4px",
-                        padding: "9px 13px", fontSize: 14, lineHeight: 1.6, whiteSpace: "pre-wrap",
-                        background: msg.role === "user" ? C.accent : C.surface,
-                        color: msg.role === "user" ? "white" : C.text,
-                        border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
-                        boxShadow: "0 1px 3px rgba(0,0,0,0.06)",
-                      }}>
-                        {msg.content}
+
+              {/* ── Settings panel ── */}
+              {showButlerSettings && (
+                <div style={{ margin: "0 18px 12px", background: "white", border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 12 }}>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>Butler Settings</p>
+
+                  {/* Voice output */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      {voiceOutput ? <Volume2 size={14} color={C.accent}/> : <VolumeX size={14} color={C.text3}/>}
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: 0 }}>Voice Responses</p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: 0 }}>Butler speaks responses aloud</p>
                       </div>
                     </div>
-                  ))}
+                    <button onClick={() => { setVoiceOutput(v => !v); if (voiceOutput && window.speechSynthesis) window.speechSynthesis.cancel(); }}
+                      style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", position: "relative",
+                        background: voiceOutput ? C.accent : "#d1d5db", transition: "background 0.2s" }}>
+                      <div style={{ position: "absolute", top: 3, left: voiceOutput ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s" }}/>
+                    </button>
+                  </div>
+
+                  {/* Humor mode */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 14 }}>{humorMode ? "🎩" : "💼"}</span>
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: 0 }}>Humor Mode</p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: 0 }}>Subtle dry wit — never for emergencies</p>
+                      </div>
+                    </div>
+                    <button onClick={() => setHumorMode(h => !h)}
+                      style={{ width: 44, height: 24, borderRadius: 12, border: "none", cursor: "pointer", position: "relative",
+                        background: humorMode ? "#f59e0b" : "#d1d5db", transition: "background 0.2s" }}>
+                      <div style={{ position: "absolute", top: 3, left: humorMode ? 23 : 3, width: 18, height: 18, borderRadius: "50%", background: "white", boxShadow: "0 1px 3px rgba(0,0,0,0.2)", transition: "left 0.2s" }}/>
+                    </button>
+                  </div>
+
+                  {!speechSupported && (
+                    <p style={{ fontSize: 11, color: C.red, margin: 0, display: "flex", alignItems: "center", gap: 4 }}>
+                      <MicOff size={11}/> Voice input not supported in this browser
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* ── Conversation thread ── */}
+              {(chatMessages.length > 0 || (aiLoading && chatMessages.length === 0)) && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 12, padding: "4px 18px 14px",
+                  maxHeight: isMobile ? 340 : 440, overflowY: "auto" }}>
+                  {chatMessages.map((msg, i) => {
+                    const isLast = i === chatMessages.length - 1;
+                    return (
+                      <div key={i} style={{ display: "flex", flexDirection: "column",
+                        alignItems: msg.role === "user" ? "flex-end" : "flex-start" }}>
+
+                        {/* Bubble */}
+                        <div style={{
+                          maxWidth: "88%",
+                          borderRadius: msg.role === "user" ? "16px 16px 4px 16px" : "4px 16px 16px 16px",
+                          padding: "11px 15px", fontSize: 14, lineHeight: 1.68, whiteSpace: "pre-wrap",
+                          background: msg.role === "user"
+                            ? `linear-gradient(135deg, ${C.accent}, #1d4ed8)`
+                            : "white",
+                          color: msg.role === "user" ? "white" : C.text,
+                          border: msg.role === "user" ? "none" : `1px solid ${C.border}`,
+                          boxShadow: msg.role === "user"
+                            ? "0 2px 8px rgba(37,99,235,0.22)"
+                            : "0 1px 4px rgba(0,0,0,0.06)",
+                        }}>
+                          {msg.content}
+                        </div>
+
+                        {/* Action buttons — assistant only */}
+                        {msg.role === "assistant" && msg.actions && msg.actions.length > 0 && (
+                          <div style={{ display: "flex", gap: 7, flexWrap: "wrap", marginTop: 8, maxWidth: "92%" }}>
+                            {msg.actions.map((action, ai) => {
+                              const isBlue   = action.type === "find_vendor" || action.type === "open_url";
+                              const isPurple = action.type === "tel";
+                              const bg = isBlue ? C.accent : isPurple ? "#7c3aed" : "white";
+                              const fg = (isBlue || isPurple) ? "white" : C.accent;
+                              const bdr = (isBlue || isPurple) ? "none" : `1.5px solid ${C.accent}`;
+                              return (
+                                <button key={ai} onClick={() => executeButlerAction(action)}
+                                  style={{ display: "inline-flex", alignItems: "center", gap: 5,
+                                    padding: "8px 14px", borderRadius: 9, border: bdr, background: bg,
+                                    color: fg, fontSize: 12, fontWeight: 700, cursor: "pointer",
+                                    boxShadow: "0 1px 5px rgba(0,0,0,0.10)", letterSpacing: "0.01em" }}>
+                                  {action.type === "find_vendor"   && <Users size={12}/>}
+                                  {action.type === "open_url"      && <ExternalLink size={12}/>}
+                                  {action.type === "tel"           && <span style={{ fontSize: 11 }}>📞</span>}
+                                  {action.type === "email"         && <span style={{ fontSize: 11 }}>✉️</span>}
+                                  {action.type === "nav_documents" && <FileText size={12}/>}
+                                  {action.label}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        )}
+
+                        {/* Quick replies — last assistant message only, when follow-up needed */}
+                        {msg.role === "assistant" && isLast && !aiLoading &&
+                          msg.quickReplies && msg.quickReplies.length > 0 && (
+                          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 9, maxWidth: "96%" }}>
+                            {msg.quickReplies.map((reply, ri) => (
+                              <button key={ri} onClick={() => askAI(reply)}
+                                style={{ fontSize: 12, padding: "7px 13px", borderRadius: 20,
+                                  border: `1.5px solid ${C.accent}35`, background: `${C.accent}0A`,
+                                  color: C.accent, cursor: "pointer", fontWeight: 600,
+                                  boxShadow: "0 1px 3px rgba(37,99,235,0.08)" }}>
+                                {reply}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {/* Typing indicator */}
                   {aiLoading && (
                     <div style={{ display: "flex", justifyContent: "flex-start" }}>
-                      <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: "14px 14px 14px 4px",
-                        padding: "9px 13px", display: "flex", alignItems: "center", gap: 6, color: C.text3, fontSize: 13 }}>
-                        <Loader2 size={13} className="animate-spin"/> Thinking…
+                      <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: "4px 16px 16px 16px",
+                        padding: "11px 15px", display: "flex", alignItems: "center", gap: 8, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          {[0, 1, 2].map(d => (
+                            <div key={d} style={{ width: 6, height: 6, borderRadius: "50%", background: C.accent, opacity: 0.7,
+                              animation: `btlrPulse 1.2s ${d * 0.2}s ease-in-out infinite` }}/>
+                          ))}
+                        </div>
+                        <span style={{ fontSize: 12, color: C.text3 }}>BTLR is thinking…</span>
                       </div>
                     </div>
                   )}
                 </div>
               )}
-              {aiLoading && chatMessages.length === 0 && (
-                <div style={{ display: "flex", alignItems: "center", gap: 6, color: C.text3, fontSize: 13, marginBottom: 10 }}>
-                  <Loader2 size={13} className="animate-spin"/> Thinking…
-                </div>
-              )}
-              <div style={{ display: "flex", gap: 8 }}>
-                <input value={q} onChange={e => setQ(e.target.value)} onKeyDown={e => e.key === "Enter" && askAI()}
-                  placeholder={chatMessages.length > 0 ? "Ask a follow-up…" : inspectDone ? `"What's my most urgent repair?"` : `"What home maintenance should I do this season?"`}
-                  style={{ flex: 1, borderRadius: 10, padding: "11px 14px", fontSize: 16, border: `1.5px solid ${C.border}`, background: C.surface, color: C.text, outline: "none" }}/>
-                <button onClick={askAI} disabled={aiLoading || !q.trim()}
-                  style={{ borderRadius: 10, padding: "11px 18px", border: "none", cursor: "pointer", background: C.accent, color: "white", opacity: aiLoading || !q.trim() ? 0.4 : 1, display: "flex", alignItems: "center", gap: 6, fontWeight: 700, fontSize: 13 }}>
-                  {aiLoading ? <Loader2 size={14} className="animate-spin"/> : <><Send size={13}/> Ask</>}
-                </button>
-              </div>
-              {chatMessages.length === 0 && !aiLoading && !isMobile && (
-                <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                  {["What maintenance is due this season?", "How much should I budget for repairs?", "When should I replace my roof?"].map(prompt => (
-                    <button key={prompt} onClick={() => { setQ(prompt); }}
-                      style={{ fontSize: 11, padding: "4px 10px", borderRadius: 20, border: `1px solid ${C.border}`, background: C.surface, color: C.text3, cursor: "pointer", fontWeight: 500 }}>
-                      {prompt}
+
+              {/* ── Input area ── */}
+              <div style={{ padding: chatMessages.length > 0 ? "0 18px 16px" : "0 18px 16px",
+                borderTop: chatMessages.length > 0 ? `1px solid ${C.border}` : "none",
+                paddingTop: chatMessages.length > 0 ? 12 : 0 }}>
+
+                {/* Listening indicator */}
+                {isListening && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8,
+                    padding: "8px 12px", borderRadius: 9, background: "#fef2f2", border: "1px solid #fca5a5" }}>
+                    <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#ef4444", animation: "btlrPulse 1s ease-in-out infinite" }}/>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: "#dc2626" }}>Listening…</span>
+                    <button onClick={stopListening}
+                      style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: "#dc2626", background: "none", border: "1px solid #fca5a5", borderRadius: 6, cursor: "pointer", padding: "2px 8px" }}>
+                      Cancel
                     </button>
-                  ))}
+                  </div>
+                )}
+
+                <div style={{ display: "flex", gap: 7, alignItems: "center" }}>
+                  {/* Mic button */}
+                  {speechSupported && (
+                    <button onClick={isListening ? stopListening : startListening}
+                      title={isListening ? "Stop listening" : "Speak to BTLR"}
+                      style={{ width: 42, height: 42, borderRadius: 11, flexShrink: 0, border: isListening ? "1.5px solid #ef4444" : `1.5px solid ${C.border}`,
+                        background: isListening ? "#fef2f2" : "white", color: isListening ? "#ef4444" : C.text3,
+                        cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                        boxShadow: isListening ? "0 0 0 3px rgba(239,68,68,0.15)" : "none", transition: "all 0.2s" }}>
+                      {isListening ? <MicOff size={16}/> : <Mic size={16}/>}
+                    </button>
+                  )}
+
+                  <input value={q} onChange={e => setQ(e.target.value)}
+                    onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); askAI(); } }}
+                    placeholder={
+                      isListening
+                        ? "Listening — speak now…"
+                        : chatMessages.length > 0
+                          ? "Reply to BTLR…"
+                          : "e.g. \"I have a leak\" or \"Can I file a claim?\""
+                    }
+                    style={{ flex: 1, borderRadius: 11, padding: "11px 14px", fontSize: 15,
+                      border: `1.5px solid ${isListening ? "#fca5a5" : C.border}`,
+                      background: isListening ? "#fef2f2" : "white", color: C.text,
+                      outline: "none", transition: "border-color 0.2s" }}/>
+
+                  <button onClick={() => askAI()} disabled={aiLoading || !q.trim()}
+                    style={{ width: 42, height: 42, borderRadius: 11, border: "none", cursor: "pointer",
+                      background: aiLoading || !q.trim() ? "#d1d5db" : `linear-gradient(135deg, ${C.accent}, #1d4ed8)`,
+                      color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+                      boxShadow: !q.trim() ? "none" : "0 2px 8px rgba(37,99,235,0.28)", transition: "all 0.2s", flexShrink: 0 }}>
+                    {aiLoading ? <Loader2 size={15} className="animate-spin"/> : <Send size={15}/>}
+                  </button>
                 </div>
-              )}
-              {chatMessages.length > 0 && (
-                <button onClick={() => { setChatMessages([]); setAnswer(""); }}
-                  style={{ marginTop: 8, fontSize: 11, color: C.text3, background: "none", border: "none", cursor: "pointer", textAlign: "left", padding: 0 }}>
-                  Clear conversation
-                </button>
-              )}
+
+                {/* Quick start prompts — empty state only */}
+                {chatMessages.length === 0 && !aiLoading && (
+                  <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                    {[
+                      "I have a leak",
+                      "File a warranty claim",
+                      "Most urgent repair?",
+                      "Will insurance cover this?",
+                    ].map(prompt => (
+                      <button key={prompt} onClick={() => askAI(prompt)}
+                        style={{ fontSize: 11, padding: "5px 12px", borderRadius: 20,
+                          border: `1px solid ${C.accent}28`, background: `${C.accent}07`,
+                          color: C.accent, cursor: "pointer", fontWeight: 600,
+                          transition: "background 0.15s" }}>
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Dot pulse + listening animation */}
+              <style>{`
+                @keyframes btlrPulse {
+                  0%, 100% { opacity: 0.3; transform: scale(0.85); }
+                  50%       { opacity: 1;   transform: scale(1); }
+                }
+              `}</style>
             </div>
 
             {/* House Photo */}
@@ -2730,29 +3514,262 @@ export default function Dashboard() {
               })()}
 
               {/* Insurance */}
+              <div style={card()}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: insurance ? 8 : 0 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: "#0891b218", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <Shield size={18} color="#0891b2"/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.07em", textTransform: "uppercase", margin: 0 }}>Home Insurance</p>
+                    {insurance ? (
+                      <>
+                        <p style={{ fontSize: 16, fontWeight: 700, color: C.text, margin: "3px 0 1px" }}>
+                          {insurance.provider ?? "Active"}
+                          {insurance.policyType ? ` · ${insurance.policyType}` : ""}
+                        </p>
+                        <p style={{ fontSize: 12, color: C.text3, margin: "0 0 4px" }}>
+                          {(insurance.annualPremium ?? insurance.premium) ? `$${(insurance.annualPremium ?? insurance.premium)?.toLocaleString()}/yr` : ""}
+                          {insurance.expirationDate ? `${(insurance.annualPremium ?? insurance.premium) ? " · " : ""}Renews ${insurance.expirationDate}` : ""}
+                        </p>
+                        <button onClick={() => setShowInsuranceDetail(d => !d)}
+                          style={{ fontSize: 12, fontWeight: 600, color: "#0891b2", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                          {showInsuranceDetail ? "Hide details ↑" : "View coverage ↓"}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "3px 0 6px" }}>—</p>
+                        <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 6, border: "1px solid #0891b2", background: "transparent", color: "#0891b2", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                          {parsingInsurance ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
+                          {parsingInsurance ? "Parsing…" : "Upload Policy"}
+                          <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                        </label>
+                      </>
+                    )}
+                  </div>
+                  {insurance && (
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #0891b220", background: "transparent", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer", flexShrink: 0 }}>
+                      {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
+                      {parsingInsurance ? "Parsing…" : "Replace"}
+                      <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                    </label>
+                  )}
+                </div>
+
+                {/* Insurance detail panel */}
+                {insurance && showInsuranceDetail && (
+                  <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 14, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14, marginTop: 4 }}>
+
+                    {/* File a Claim CTA */}
+                    {(insurance.claimUrl || insurance.claimPhone) && (
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                        {insurance.claimUrl && (
+                          <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer"
+                            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, background: "#0891b2", color: "white", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+                            <ExternalLink size={13}/> File a Claim Online
+                          </a>
+                        )}
+                        {insurance.claimPhone && (
+                          <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`}
+                            style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 13, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                            📞 {insurance.claimPhone}
+                          </a>
+                        )}
+                        {insurance.claimHours && (
+                          <span style={{ fontSize: 12, color: "#0891b2", alignSelf: "center" }}>⏱ {insurance.claimHours}</span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Coverage amounts grid */}
+                    {(insurance.dwellingCoverage || insurance.liabilityCoverage || insurance.personalProperty || insurance.deductibleStandard) && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>💰 Coverage Amounts</p>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                          {insurance.dwellingCoverage   && <div style={{ background: "white", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>Dwelling (Cov A)</div><div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>${insurance.dwellingCoverage.toLocaleString()}</div></div>}
+                          {insurance.personalProperty   && <div style={{ background: "white", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>Personal Property (C)</div><div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>${insurance.personalProperty.toLocaleString()}</div></div>}
+                          {insurance.liabilityCoverage  && <div style={{ background: "white", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>Liability (Cov E)</div><div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>${insurance.liabilityCoverage.toLocaleString()}</div></div>}
+                          {insurance.deductibleStandard && <div style={{ background: "white", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>Deductible</div><div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>${insurance.deductibleStandard.toLocaleString()}</div></div>}
+                          {insurance.lossOfUse          && <div style={{ background: "white", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>Loss of Use (D)</div><div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>${insurance.lossOfUse.toLocaleString()}</div></div>}
+                          {insurance.otherStructures    && <div style={{ background: "white", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase", marginBottom: 2 }}>Other Structures (B)</div><div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>${insurance.otherStructures.toLocaleString()}</div></div>}
+                        </div>
+                        {(insurance.deductibleWind || insurance.deductibleHurricane) && (
+                          <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>
+                            {insurance.deductibleWind      && <span style={{ fontSize: 12, background: "white", border: "1px solid #bae6fd", borderRadius: 6, padding: "3px 9px", color: "#0891b2" }}>🌬️ Wind deductible: ${insurance.deductibleWind.toLocaleString()}</span>}
+                            {insurance.deductibleHurricane && <span style={{ fontSize: 12, background: "white", border: "1px solid #bae6fd", borderRadius: 6, padding: "3px 9px", color: "#0891b2" }}>🌀 Hurricane deductible: ${insurance.deductibleHurricane.toLocaleString()}</span>}
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Replacement cost flags */}
+                    {(insurance.replacementCostDwelling !== undefined || insurance.replacementCostContents !== undefined) && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {insurance.replacementCostDwelling !== undefined && (
+                          <span style={{ fontSize: 12, background: insurance.replacementCostDwelling ? "#f0fdf4" : C.redBg, border: `1px solid ${insurance.replacementCostDwelling ? "#86efac" : "#fca5a5"}`, borderRadius: 6, padding: "3px 9px", color: insurance.replacementCostDwelling ? "#15803d" : C.red }}>
+                            Dwelling: {insurance.replacementCostDwelling ? "✓ Replacement Cost" : "⚠ Actual Cash Value"}
+                          </span>
+                        )}
+                        {insurance.replacementCostContents !== undefined && (
+                          <span style={{ fontSize: 12, background: insurance.replacementCostContents ? "#f0fdf4" : C.redBg, border: `1px solid ${insurance.replacementCostContents ? "#86efac" : "#fca5a5"}`, borderRadius: 6, padding: "3px 9px", color: insurance.replacementCostContents ? "#15803d" : C.red }}>
+                            Contents: {insurance.replacementCostContents ? "✓ Replacement Cost" : "⚠ Actual Cash Value"}
+                          </span>
+                        )}
+                      </div>
+                    )}
+
+                    {/* What's Covered */}
+                    {(insurance.coverageItems?.length ?? 0) > 0 && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: "#15803d", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({insurance.coverageItems!.length})</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {insurance.coverageItems!.map((item, i) => (
+                            <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Endorsements */}
+                    {(insurance.endorsements?.length ?? 0) > 0 && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>➕ Endorsements / Riders ({insurance.endorsements!.length})</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {insurance.endorsements!.map((item, i) => (
+                            <span key={i} style={{ fontSize: 12, background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 6, padding: "3px 9px", color: "#0369a1" }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Exclusions */}
+                    {(insurance.exclusions?.length ?? 0) > 0 && (
+                      <div>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({insurance.exclusions!.length})</p>
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                          {insurance.exclusions!.map((item, i) => (
+                            <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Agent */}
+                    {(insurance.agentName || insurance.agentPhone || insurance.agentEmail) && (
+                      <div style={{ borderTop: "1px solid #bae6fd", paddingTop: 12 }}>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>🧑‍💼 Your Agent</p>
+                        {insurance.agentName  && <p style={{ fontSize: 13, color: C.text, margin: "0 0 2px" }}>{insurance.agentName}</p>}
+                        {insurance.agentPhone && <a href={`tel:${insurance.agentPhone.replace(/\D/g, "")}`} style={{ fontSize: 13, color: "#0891b2", display: "block", textDecoration: "none", margin: "0 0 2px" }}>📞 {insurance.agentPhone}</a>}
+                        {insurance.agentEmail && <a href={`mailto:${insurance.agentEmail}`} style={{ fontSize: 13, color: "#0891b2", display: "block", textDecoration: "none" }}>✉️ {insurance.agentEmail}</a>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Home Warranty */}
               <div style={card({ display: "flex", gap: 14, alignItems: "center" })}>
-                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#0891b218", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                  <Shield size={18} color="#0891b2"/>
+                <div style={{ width: 40, height: 40, borderRadius: 12, background: "#7c3aed18", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Shield size={18} color="#7c3aed"/>
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.07em", textTransform: "uppercase", margin: 0 }}>Insurance</p>
-                  {insurance ? (
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, letterSpacing: "0.07em", textTransform: "uppercase", margin: 0 }}>Home Warranty</p>
+                  {warranty ? (
                     <>
-                      <p style={{ fontSize: 20, fontWeight: 700, color: C.text, margin: "3px 0 2px" }}>${insurance.premium?.toLocaleString()}/yr</p>
-                      <p style={{ fontSize: 12, color: C.text3 }}>{insurance.provider ?? "Active"}{insurance.expirationDate ? ` · Renews ${insurance.expirationDate}` : ""}</p>
+                      <p style={{ fontSize: 16, fontWeight: 700, color: C.text, margin: "3px 0 1px" }}>
+                        {warranty.provider ?? "Active"}
+                        {warranty.planName ? ` · ${warranty.planName}` : ""}
+                      </p>
+                      <p style={{ fontSize: 12, color: C.text3, margin: "0 0 6px" }}>
+                        {warranty.serviceFee ? `$${warranty.serviceFee} service fee` : ""}
+                        {warranty.expirationDate ? `${warranty.serviceFee ? " · " : ""}Expires ${warranty.expirationDate}` : ""}
+                      </p>
+                      <button
+                        onClick={() => setShowWarrantyDetail(d => !d)}
+                        style={{ fontSize: 12, fontWeight: 600, color: "#7c3aed", background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                        {showWarrantyDetail ? "Hide details ↑" : "View coverage ↓"}
+                      </button>
                     </>
                   ) : (
                     <>
                       <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "3px 0 6px" }}>—</p>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 6, border: "1px solid #0891b2", background: "transparent", color: "#0891b2", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                        {parsingInsurance ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
-                        {parsingInsurance ? "Parsing…" : "Upload Policy"}
-                        <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 10px", borderRadius: 6, border: "1px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        {parsingWarranty ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
+                        {parsingWarranty ? "Parsing…" : "Upload Warranty"}
+                        <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
                       </label>
                     </>
                   )}
                 </div>
               </div>
+
+              {/* Warranty detail panel */}
+              {warranty && showWarrantyDetail && (
+                <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 14, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+                  {/* File a Claim CTA */}
+                  {(warranty.claimUrl || warranty.claimPhone) && (
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                      {warranty.claimUrl && (
+                        <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, background: "#7c3aed", color: "white", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+                          <ExternalLink size={13}/> File a Claim Online
+                        </a>
+                      )}
+                      {warranty.claimPhone && (
+                        <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 13, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                          📞 {warranty.claimPhone}
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Key info row */}
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+                    {warranty.serviceFee     && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}><strong>${warranty.serviceFee}</strong> service fee/claim</span>}
+                    {warranty.responseTime   && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>⏱ {warranty.responseTime} response</span>}
+                    {warranty.maxAnnualBenefit && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>Max ${warranty.maxAnnualBenefit?.toLocaleString()}/yr</span>}
+                    {warranty.paymentAmount  && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>${warranty.paymentAmount}/{warranty.paymentFrequency ?? "mo"}</span>}
+                  </div>
+
+                  {/* Coverage */}
+                  {(warranty.coverageItems?.length ?? 0) > 0 && (
+                    <div>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered</p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {warranty.coverageItems!.map((item, i) => (
+                          <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Exclusions */}
+                  {(warranty.exclusions?.length ?? 0) > 0 && (
+                    <div>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered</p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {warranty.exclusions!.map((item, i) => (
+                          <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Coverage limits */}
+                  {warranty.coverageLimits && Object.keys(warranty.coverageLimits).length > 0 && (
+                    <div>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: C.amber, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>💰 Coverage Limits</p>
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                        {Object.entries(warranty.coverageLimits).map(([sys, limit]) => (
+                          <span key={sys} style={{ fontSize: 12, background: C.amberBg, border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "3px 9px", color: C.amber }}>{sys}: ${(limit as number).toLocaleString()}</span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Repair Fund */}
               <div style={card({ display: "flex", gap: 14, alignItems: "flex-start" })}>

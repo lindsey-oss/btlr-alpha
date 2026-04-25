@@ -341,7 +341,7 @@ export default function LandingPage() {
           /* Nav */
           .nav-links-hide{display:none !important}
           .vendor-join-btn{display:none !important}
-          nav{padding:16px 24px !important}
+          nav{padding:16px 20px !important}
           /* Hero */
           .hero-h1{font-size:clamp(32px,7vw,56px) !important}
           .hero-accent{font-size:clamp(36px,8vw,66px) !important}
@@ -360,6 +360,7 @@ export default function LandingPage() {
           .footer-flex{flex-direction:column !important;gap:20px !important;text-align:center !important;padding:36px 24px !important}
           /* Dollhouse */
           #sv-labels{display:none !important}
+          #sv-labels-mobile{display:flex !important}
           .dh-scroll-hint{display:none !important}
           #dollhouse{height:260vh !important}
           .dh-headline{margin-bottom:16px !important}
@@ -459,6 +460,12 @@ export default function LandingPage() {
               See your home <span style={{ transition: "transform .2s" }}>→</span>
             </a>
           </div>
+          {/* Vendor join link — visible on mobile where nav button is hidden */}
+          <p style={{ opacity: 0, animation: "fadeUp .7s .96s forwards", marginTop: 20 }}>
+            <Link href="/apply" style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: C.dim, textDecoration: "none", borderBottom: `1px solid ${C.borderGold}`, paddingBottom: 2 }}>
+              Are you a contractor? Join our network →
+            </Link>
+          </p>
         </div>
         {/* Scroll hint */}
         <div style={{ position: "absolute", bottom: 36, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, opacity: 0, animation: "fadeIn 1s 1.4s forwards", zIndex: 1 }}>
@@ -498,6 +505,32 @@ export default function LandingPage() {
               disablePictureInPicture
               style={{ width: "100%", height: "auto", display: "block" }}
             />
+          </div>
+
+          {/* Mobile system chips — always visible on small screens */}
+          <div id="sv-labels-mobile" style={{
+            display: "none", flexWrap: "wrap", gap: 8, justifyContent: "center",
+            padding: "14px 16px 0", position: "relative", zIndex: 3, maxWidth: "96vw",
+          }}>
+            {[
+              { label: "Roof & Structure", sub: "Lifespan tracked" },
+              { label: "HVAC", sub: "Filter reminder" },
+              { label: "Landscaping", sub: "Scheduled maintenance" },
+              { label: "Plumbing", sub: "Water heater: 7 yrs" },
+              { label: "Electrical", sub: "Panel up to code" },
+              { label: "All Systems", sub: "25+ tracked" },
+            ].map(({ label, sub }) => (
+              <div key={label} style={{
+                background: "white", border: `1.5px solid ${C.borderGold}`,
+                padding: "8px 14px", fontFamily: SYNE, fontSize: 10, fontWeight: 700,
+                letterSpacing: "0.1em", textTransform: "uppercase", color: C.gold,
+                whiteSpace: "nowrap", boxShadow: "0 2px 10px rgba(28,25,20,.07)",
+              }}>
+                <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: C.gold, marginRight: 6, verticalAlign: "middle" }}/>
+                {label}
+                <span style={{ display: "block", fontFamily: DM, fontSize: 10, fontWeight: 400, color: C.muted, letterSpacing: "0.01em", marginTop: 2, textTransform: "none" }}>{sub}</span>
+              </div>
+            ))}
           </div>
 
           {/* System labels — shown via JS scroll */}
@@ -757,6 +790,7 @@ export default function LandingPage() {
           {[
             { label: "Features",     href: "#features" },
             { label: "Health Score", href: "#health-score" },
+            { label: "For Contractors", href: "/apply" },
             { label: "Privacy",      href: "/privacy" },
             { label: "Terms",        href: "/terms" },
           ].map(l => (
