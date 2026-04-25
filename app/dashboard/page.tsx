@@ -1701,6 +1701,32 @@ export default function Dashboard() {
       }
       if (data.home_value)          setHomeValue(data.home_value);
       if (data.property_tax_annual) setPropertyTax(data.property_tax_annual);
+      // Load home warranty from home_warranties table
+      const { data: war } = await supabase.from("home_warranties").select("*").limit(1).maybeSingle();
+      if (war) {
+        setWarranty({
+          provider:         war.provider,
+          planName:         war.plan_name,
+          policyNumber:     war.policy_number,
+          serviceFee:       war.service_fee,
+          coverageItems:    war.coverage_items ?? [],
+          exclusions:       war.exclusions ?? [],
+          coverageLimits:   war.coverage_limits,
+          effectiveDate:    war.effective_date,
+          expirationDate:   war.expiration_date,
+          autoRenews:       war.auto_renews,
+          paymentAmount:    war.payment_amount,
+          paymentFrequency: war.payment_frequency,
+          paymentDueDate:   war.payment_due_date,
+          claimPhone:       war.claim_phone,
+          claimUrl:         war.claim_url,
+          claimEmail:       war.claim_email,
+          waitingPeriod:    war.waiting_period,
+          responseTime:     war.response_time,
+          maxAnnualBenefit: war.max_annual_benefit,
+        });
+      }
+
       // Load full insurance from home_insurance table (falls back to legacy properties columns)
       const { data: ins } = await supabase.from("home_insurance").select("*").limit(1).maybeSingle();
       if (ins) {
@@ -2368,9 +2394,15 @@ export default function Dashboard() {
     costs.push({ label: hvacAge >= 13 ? "HVAC Replacement" : "HVAC Service", horizon: hvacAge >= 13 ? "Within 2–3 yrs" : "Annual", amount: hvacAge >= 13 ? 8500 : 400, severity: hvacAge >= 13 ? "warning" : "info", systemAge: hvacAge, tradeCategory: "HVAC" });
   }
   // Only add costs for ACTIVE findings (not completed/dismissed ones)
+  // When the inspection didn't provide a cost estimate, use a severity-based fallback
+  // so the Repair Fund reflects all real findings, not just the ones with exact numbers
+  const FALLBACK_COST: Record<string, number> = { critical: 3000, warning: 1200, info: 400 };
   activeFindings.forEach(f => {
-    if (f.estimated_cost && f.estimated_cost > 0 && !costs.find(c => c.label.toLowerCase().includes(f.category.toLowerCase()))) {
-      costs.push({ label: f.category, horizon: f.severity === "critical" ? "Immediate" : f.severity === "warning" ? "Within 1–2 yrs" : "Ongoing", amount: f.estimated_cost, severity: f.severity, finding: f, tradeCategory: f.category });
+    if (!costs.find(c => c.label.toLowerCase().includes(f.category.toLowerCase()))) {
+      const amount = (f.estimated_cost && f.estimated_cost > 0)
+        ? f.estimated_cost
+        : (FALLBACK_COST[f.severity] ?? 500);
+      costs.push({ label: f.category, horizon: f.severity === "critical" ? "Immediate" : f.severity === "warning" ? "Within 1–2 yrs" : "Ongoing", amount, severity: f.severity, finding: f, tradeCategory: f.category });
     }
   });
 
