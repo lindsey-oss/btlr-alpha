@@ -131,12 +131,143 @@ function ScoreRing({ score = 84 }: { score?: number }) {
   );
 }
 
+// ── Vendor types ─────────────────────────────────────────────────────────────
+const VENDOR_TYPES = [
+  "HVAC / Heating & Cooling", "Roofing", "Plumbing", "Electrical",
+  "General Contractor", "Landscaping", "Pest Control", "Foundation & Waterproofing",
+  "Painting", "Windows & Doors", "Appliance Repair", "Flooring",
+  "Solar & Energy", "Pool & Spa", "Other",
+];
+
+// ── Vendor Modal ──────────────────────────────────────────────────────────────
+function VendorModal({ onClose }: { onClose: () => void }) {
+  const [step, setStep]       = useState<"type" | "info" | "done">("type");
+  const [selected, setSelected] = useState<string>("");
+  const [form, setForm]       = useState({ name: "", company: "", email: "", phone: "", zip: "" });
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      const res = await fetch("/api/vendor-apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trade: selected, ...form }),
+      });
+      if (!res.ok) throw new Error("Submit failed");
+      setStep("done");
+    } catch {
+      alert("Something went wrong — please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 900,
+      background: "rgba(15,20,35,0.55)", backdropFilter: "blur(6px)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
+    }} onClick={onClose}>
+      <div style={{
+        background: "#fff", width: "100%", maxWidth: 520, borderRadius: 16,
+        padding: 40, position: "relative", boxShadow: "0 24px 80px rgba(0,0,0,.18)",
+      }} onClick={e => e.stopPropagation()}>
+
+        {/* Close */}
+        <button onClick={onClose} style={{ position: "absolute", top: 16, right: 16, background: "none", border: "none", cursor: "pointer", color: C.dim, fontSize: 20, lineHeight: 1 }}>✕</button>
+
+        {step === "done" ? (
+          <div style={{ textAlign: "center", padding: "24px 0" }}>
+            <div style={{ width: 56, height: 56, borderRadius: "50%", background: C.goldDim, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.gold} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <h2 style={{ fontFamily: SYNE, fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 10 }}>You&apos;re on the list!</h2>
+            <p style={{ fontFamily: DM, fontSize: 15, color: C.muted, lineHeight: 1.7 }}>
+              We&apos;ll be in touch at <strong>{form.email}</strong> when your vendor profile is ready. We&apos;re onboarding contractors in your area soon.
+            </p>
+            <button onClick={onClose} style={{ marginTop: 28, fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "14px 32px", background: C.gold, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>
+              Close
+            </button>
+          </div>
+        ) : step === "type" ? (
+          <>
+            <div style={{ marginBottom: 28 }}>
+              <div style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.gold, marginBottom: 10 }}>Join the Trusted Network</div>
+              <h2 style={{ fontFamily: SYNE, fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>What kind of contractor are you?</h2>
+              <p style={{ fontFamily: DM, fontSize: 14, color: C.muted, lineHeight: 1.6 }}>We match homeowners with pre-vetted local pros. Select your trade to get started.</p>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 24 }}>
+              {VENDOR_TYPES.map(v => (
+                <button key={v} onClick={() => setSelected(v)} style={{
+                  padding: "10px 14px", border: `1.5px solid ${selected === v ? C.gold : C.border}`,
+                  borderRadius: 8, background: selected === v ? C.goldDim : "#fff",
+                  fontFamily: DM, fontSize: 13, color: selected === v ? C.gold : C.text,
+                  fontWeight: selected === v ? 600 : 400,
+                  cursor: "pointer", textAlign: "left", transition: "all .15s",
+                }}>
+                  {v}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => selected && setStep("info")} style={{
+              width: "100%", padding: "14px", fontFamily: SYNE, fontSize: 12, fontWeight: 700,
+              letterSpacing: "0.1em", textTransform: "uppercase", border: "none", borderRadius: 8,
+              background: selected ? C.gold : C.surface2, color: selected ? "#fff" : C.dim,
+              cursor: selected ? "pointer" : "default", transition: "background .2s",
+            }}>
+              Continue →
+            </button>
+          </>
+        ) : (
+          <form onSubmit={handleSubmit}>
+            <div style={{ marginBottom: 24 }}>
+              <div style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.gold, marginBottom: 10 }}>{selected}</div>
+              <h2 style={{ fontFamily: SYNE, fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>Tell us about your business</h2>
+              <p style={{ fontFamily: DM, fontSize: 14, color: C.muted }}>We&apos;ll reach out to verify and activate your profile.</p>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
+              {[
+                { key: "name", label: "Your Name", placeholder: "Jane Smith", type: "text" },
+                { key: "company", label: "Company Name", placeholder: "Smith Roofing Co.", type: "text" },
+                { key: "email", label: "Email", placeholder: "jane@smithroofing.com", type: "email" },
+                { key: "phone", label: "Phone", placeholder: "(619) 555-0100", type: "tel" },
+                { key: "zip", label: "Service Area (ZIP)", placeholder: "92101", type: "text" },
+              ].map(({ key, label, placeholder, type }) => (
+                <div key={key}>
+                  <label style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, display: "block", marginBottom: 6 }}>{label}</label>
+                  <input
+                    required type={type} placeholder={placeholder}
+                    value={form[key as keyof typeof form]}
+                    onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
+                    style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontFamily: DM, fontSize: 16, color: C.text, outline: "none", background: "#fff" }}
+                  />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button type="button" onClick={() => setStep("type")} style={{ flex: "0 0 auto", padding: "14px 18px", fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", background: C.surface, color: C.muted, border: "none", borderRadius: 8, cursor: "pointer" }}>
+                ← Back
+              </button>
+              <button type="submit" disabled={submitting} style={{ flex: 1, padding: "14px", fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", border: "none", borderRadius: 8, background: C.gold, color: "#fff", cursor: "pointer" }}>
+                {submitting ? "Submitting…" : "Request to Join"}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function LandingPage() {
   useReveal();
   const [scrolled, setScrolled] = useState(false);
   const [email, setEmail]       = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [vendorModalOpen, setVendorModalOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -151,6 +282,7 @@ export default function LandingPage() {
 
   return (
     <>
+      {vendorModalOpen && <VendorModal onClose={() => setVendorModalOpen(false)} />}
       <style>{`
         *{margin:0;padding:0;box-sizing:border-box}
         html{scroll-behavior:smooth}
@@ -169,6 +301,7 @@ export default function LandingPage() {
         .feat-card::after{content:'';position:absolute;bottom:0;left:0;width:0;height:2px;background:${C.gold};transition:width .4s}
         .feat-card:hover::after{width:100%}
         .nav-link-hover:hover{color:${C.text} !important}
+        .vendor-join-btn:hover{background:${C.goldDim} !important;border-color:${C.gold} !important}
         .btn-primary-hover:hover{background:${C.goldDk} !important;transform:translateY(-2px);box-shadow:0 10px 36px rgba(44,95,138,.25)}
         .pain-item{display:flex;align-items:flex-start;gap:16px;padding:22px 0;border-bottom:1px solid rgba(255,255,255,.07)}
         .pain-item:first-child{border-top:1px solid rgba(255,255,255,.07)}
@@ -184,6 +317,7 @@ export default function LandingPage() {
           .steps-grid::before{display:none !important}
           .stats-flex{flex-direction:column !important;gap:32px !important;padding:60px 32px !important}
           .nav-links-hide{display:none !important}
+          .vendor-join-btn{display:none !important}
           .section-pad{padding:80px 28px !important}
           .hero-pad{padding:120px 28px 80px !important}
           .footer-flex{flex-direction:column !important;gap:20px !important;text-align:center !important;padding:36px 24px !important}
@@ -216,6 +350,15 @@ export default function LandingPage() {
           ))}
         </ul>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button onClick={() => setVendorModalOpen(true)} className="vendor-join-btn" style={{
+            fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em",
+            textTransform: "uppercase", padding: "11px 18px",
+            background: "transparent", color: C.gold,
+            border: `1.5px solid ${C.borderGold}`, borderRadius: 8, cursor: "pointer",
+            transition: "background .2s, border-color .2s",
+          }}>
+            Join Trusted Network
+          </button>
           <Link href="/dashboard" style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 20px", color: C.muted, textDecoration: "none" }}>
             Log In
           </Link>
