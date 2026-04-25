@@ -675,6 +675,8 @@ function HealthScoreModal({
   const roofAge = roofYear ? year - Number(roofYear) : null;
   const hvacAge = hvacYear ? year - Number(hvacYear) : null;
 
+  const [expandedIdx, setExpandedIdx] = useState<number | null>(null);
+
   function sourceBadge(d: ScoreDeduction) {
     if (d.source === "system_age")    return { label: "System Age",  color: C.amber, bg: C.amberBg };
     if (d.severity === "critical")    return { label: "Critical",    color: C.red,   bg: C.redBg   };
@@ -766,42 +768,47 @@ function HealthScoreModal({
             <span style={{ fontSize: 14, fontWeight: 700, color: C.green }}>100</span>
           </div>
 
-          {/* Active deduction rows */}
+          {/* Active deduction rows — accordion */}
           {deductions.length === 0 ? (
             <p style={{ fontSize: 13, color: C.green, display: "flex", alignItems: "center", gap: 5, marginBottom: 10 }}>
               <CheckCircle2 size={14}/> No active deductions — great shape!
             </p>
           ) : (
-            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 10 }}>
               {deductions.map((d, i) => {
-                const badge = sourceBadge(d);
+                const badge    = sourceBadge(d);
+                const open     = expandedIdx === i;
+                const rowColor = d.severity === "critical" ? C.red : C.amber;
+                const rowBg    = d.severity === "critical" ? C.redBg : C.bg;
+                const rowBdr   = d.severity === "critical" ? "#fecaca" : C.border;
                 return (
-                  <div key={i} style={{
-                    background: d.severity === "critical" ? C.redBg : C.bg,
-                    border: `1px solid ${d.severity === "critical" ? "#fecaca" : C.border}`,
-                    borderRadius: 10, padding: "10px 14px",
-                    display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12,
-                  }}>
-                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10, flex: 1, minWidth: 0 }}>
-                      <div style={{ width: 28, height: 28, borderRadius: 7, background: C.surface, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, marginTop: 1 }}>
+                  <div key={i} style={{ borderRadius: 10, border: `1px solid ${open ? rowColor + "55" : rowBdr}`, overflow: "hidden", background: open ? rowBg : C.surface }}>
+                    {/* Clickable header row */}
+                    <button
+                      onClick={() => setExpandedIdx(open ? null : i)}
+                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
+                      <div style={{ width: 26, height: 26, borderRadius: 7, background: C.surface, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
                         {systemIcon(d.category)}
                       </div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
-                          <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.category}</span>
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, color: badge.color, background: badge.bg }}>
-                            {badge.label}
-                          </span>
-                        </div>
-                        <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.5 }}>{d.reason}</p>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: C.text, flex: 1 }}>{d.category}</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, color: badge.color, background: badge.bg, flexShrink: 0 }}>
+                        {badge.label}
+                      </span>
+                      <span style={{ fontSize: 13, fontWeight: 800, color: C.red, flexShrink: 0, minWidth: 28, textAlign: "right" }}>{d.points}</span>
+                      <ChevronRight size={14} color={C.text3} style={{ flexShrink: 0, transform: open ? "rotate(90deg)" : "none", transition: "transform 0.18s" }}/>
+                    </button>
+
+                    {/* Expanded detail */}
+                    {open && (
+                      <div style={{ padding: "0 14px 12px 50px", display: "flex", flexDirection: "column", gap: 8 }}>
+                        <p style={{ fontSize: 12, color: C.text2, margin: 0, lineHeight: 1.6 }}>{d.reason}</p>
                         <button
                           onClick={() => { onClose(); onFindVendors(d.category, d.category, d.reason); }}
-                          style={{ marginTop: 6, fontSize: 11, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 3 }}>
+                          style={{ alignSelf: "flex-start", fontSize: 11, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 3 }}>
                           <Users size={10}/> Find Vendors →
                         </button>
                       </div>
-                    </div>
-                    <span style={{ fontSize: 14, fontWeight: 800, color: C.red, flexShrink: 0 }}>{d.points}</span>
+                    )}
                   </div>
                 );
               })}
@@ -2454,8 +2461,47 @@ export default function Dashboard() {
   const costs: CostItem[] = [];
   const usedCategories = new Set<string>();
 
-  // Severity-based fallback costs when inspection doesn't provide a dollar estimate
-  const FALLBACK_COST: Record<string, number> = { critical: 2500, warning: 900, info: 300 };
+  // Category-specific fallback costs (when inspection doesn't provide a dollar estimate)
+  // Keyed by lowercase substring match — first match wins
+  const CATEGORY_COST: Array<{ match: string; critical: number; warning: number; info: number }> = [
+    { match: "roof",           critical: 14000, warning: 4500,  info: 800  },
+    { match: "hvac",           critical: 9000,  warning: 3500,  info: 500  },
+    { match: "heating",        critical: 8000,  warning: 3000,  info: 400  },
+    { match: "cooling",        critical: 7500,  warning: 2800,  info: 400  },
+    { match: "ventilation",    critical: 3000,  warning: 1200,  info: 300  },
+    { match: "foundation",     critical: 15000, warning: 6000,  info: 1000 },
+    { match: "structural",     critical: 12000, warning: 5000,  info: 800  },
+    { match: "electrical",     critical: 4500,  warning: 1800,  info: 400  },
+    { match: "plumbing",       critical: 4000,  warning: 1500,  info: 300  },
+    { match: "water heater",   critical: 1800,  warning: 900,   info: 200  },
+    { match: "water",          critical: 3000,  warning: 1000,  info: 250  },
+    { match: "sewer",          critical: 6000,  warning: 2500,  info: 500  },
+    { match: "exterior",       critical: 5000,  warning: 2000,  info: 400  },
+    { match: "siding",         critical: 8000,  warning: 3000,  info: 600  },
+    { match: "window",         critical: 4000,  warning: 1500,  info: 300  },
+    { match: "door",           critical: 2000,  warning: 800,   info: 200  },
+    { match: "garage",         critical: 3500,  warning: 1200,  info: 300  },
+    { match: "driveway",       critical: 3000,  warning: 1200,  info: 300  },
+    { match: "deck",           critical: 5000,  warning: 2000,  info: 400  },
+    { match: "insulation",     critical: 3000,  warning: 1200,  info: 300  },
+    { match: "mold",           critical: 5000,  warning: 2000,  info: 500  },
+    { match: "pest",           critical: 2500,  warning: 800,   info: 200  },
+    { match: "termite",        critical: 3500,  warning: 1500,  info: 400  },
+    { match: "fireplace",      critical: 3000,  warning: 1000,  info: 250  },
+    { match: "chimney",        critical: 3500,  warning: 1200,  info: 300  },
+    { match: "attic",          critical: 4000,  warning: 1500,  info: 300  },
+    { match: "crawl",          critical: 4500,  warning: 1800,  info: 400  },
+    { match: "drainage",       critical: 3500,  warning: 1200,  info: 300  },
+    { match: "grading",        critical: 3000,  warning: 1000,  info: 250  },
+  ];
+
+  function getFallbackCost(category: string, severity: string): number {
+    const cat = category.toLowerCase();
+    const row = CATEGORY_COST.find(c => cat.includes(c.match));
+    if (row) return row[severity as "critical" | "warning" | "info"] ?? row.warning;
+    // Generic severity fallback if no category match
+    return severity === "critical" ? 3000 : severity === "warning" ? 1200 : 350;
+  }
 
   activeFindings.forEach(f => {
     const catKey = f.category.toLowerCase().trim();
@@ -2463,7 +2509,7 @@ export default function Dashboard() {
     usedCategories.add(catKey);
     const amount = (f.estimated_cost && f.estimated_cost > 0)
       ? f.estimated_cost
-      : (FALLBACK_COST[f.severity] ?? 400);
+      : getFallbackCost(f.category, f.severity);
     costs.push({
       label:         f.category,
       horizon:       f.severity === "critical" ? "Immediate" : f.severity === "warning" ? "Within 1–2 yrs" : "Ongoing",

@@ -17,7 +17,7 @@ export async function POST(req) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        from: `BTLR <notifications@${new URL(process.env.NEXT_PUBLIC_APP_URL).hostname}>`,
+        from: process.env.RESEND_FROM_EMAIL ?? "BTLR <onboarding@resend.dev>",
         to,
         subject,
         html,
