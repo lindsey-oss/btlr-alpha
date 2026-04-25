@@ -126,7 +126,8 @@ function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; locati
     loadGoogleMaps()
       .then(() => {
         if (cancelled) return;
-        const g = (window as unknown as { google: typeof google }).google;
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const g = (window as unknown as { google: any }).google;
         const geocoder = new g.maps.Geocoder();
         geocoder.geocode({ address: location }, (results, status) => {
           if (cancelled) return;
