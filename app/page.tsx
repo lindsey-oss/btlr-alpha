@@ -63,42 +63,6 @@ function FeatIcon({ d }: { d: string }) {
   );
 }
 
-// ── Systems grid (replaces scroll-video) ─────────────────────────────────────
-const SYSTEMS = [
-  { label: "Roof", sub: "Condition + age tracked", icon: "M3 9.5L12 3l9 6.5V21H3V9.5z", status: "good" },
-  { label: "HVAC", sub: "Filter + service alerts", icon: "M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18", status: "warn" },
-  { label: "Plumbing", sub: "Leak risk monitoring", icon: "M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14H9V8h2v8zm4 0h-2V8h2v8z", status: "good" },
-  { label: "Electrical", sub: "Panel health score", icon: "M13 2L3 14h9l-1 8 10-12h-9l1-8z", status: "good" },
-  { label: "Foundation", sub: "Settling & cracks", icon: "M3 21h18M4 21V7l8-4 8 4v14", status: "good" },
-  { label: "Water Heater", sub: "Lifespan: 2 yrs left", icon: "M12 2a5 5 0 015 5v3a5 5 0 01-10 0V7a5 5 0 015-5z", status: "warn" },
-  { label: "Windows", sub: "Seal + efficiency", icon: "M3 3h18v18H3z M12 3v18 M3 12h18", status: "good" },
-  { label: "Appliances", sub: "Warranty tracking", icon: "M5 3a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2V5a2 2 0 00-2-2H5z", status: "good" },
-  { label: "Exterior", sub: "Paint, siding, deck", icon: "M3 9.5L12 3l9 6.5M12 22v-7 M5 22v-5 M19 22v-5", status: "good" },
-];
-
-function SystemsGrid() {
-  return (
-    <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 2, width: "100%", maxWidth: 680 }}>
-      {SYSTEMS.map((s, i) => (
-        <div key={i} style={{
-          background: C.surface, border: `1px solid ${C.border}`,
-          padding: "18px 16px", display: "flex", flexDirection: "column", gap: 6,
-          transition: "border-color 0.2s",
-          borderTop: s.status === "warn" ? `2px solid ${C.gold}` : `1px solid ${C.border}`,
-        }}>
-          <div style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, color: C.text }}>{s.label}</div>
-          <div style={{ fontSize: 11, color: C.muted, fontFamily: DM }}>{s.sub}</div>
-          <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: s.status === "warn" ? "#E8A04A" : "#4A9E6B", display: "inline-block" }}/>
-            <span style={{ fontFamily: SYNE, fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: s.status === "warn" ? "#E8A04A" : "#4A9E6B" }}>
-              {s.status === "warn" ? "Monitor" : "Good"}
-            </span>
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
 
 // ── Score ring ────────────────────────────────────────────────────────────────
 function ScoreRing({ score = 84 }: { score?: number }) {
@@ -170,9 +134,10 @@ function VendorModal({ onClose }: { onClose: () => void }) {
       background: "rgba(15,20,35,0.55)", backdropFilter: "blur(6px)",
       display: "flex", alignItems: "center", justifyContent: "center", padding: 24,
     }} onClick={onClose}>
-      <div style={{
+      <div className="vendor-modal-inner" style={{
         background: "#fff", width: "100%", maxWidth: 520, borderRadius: 16,
         padding: 40, position: "relative", boxShadow: "0 24px 80px rgba(0,0,0,.18)",
+        maxHeight: "90vh", overflowY: "auto",
       }} onClick={e => e.stopPropagation()}>
 
         {/* Close */}
@@ -198,7 +163,7 @@ function VendorModal({ onClose }: { onClose: () => void }) {
               <h2 style={{ fontFamily: SYNE, fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>What kind of contractor are you?</h2>
               <p style={{ fontFamily: DM, fontSize: 14, color: C.muted, lineHeight: 1.6 }}>We match homeowners with pre-vetted local pros. Select your trade to get started.</p>
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 24 }}>
+            <div className="vendor-type-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 24 }}>
               {VENDOR_TYPES.map(v => (
                 <button key={v} onClick={() => setSelected(v)} style={{
                   padding: "10px 14px", border: `1.5px solid ${selected === v ? C.gold : C.border}`,
@@ -267,7 +232,6 @@ export default function LandingPage() {
   const [scrolled, setScrolled] = useState(false);
   const [email, setEmail]       = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [vendorModalOpen, setVendorModalOpen] = useState(false);
 
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 40);
@@ -282,7 +246,7 @@ export default function LandingPage() {
 
   return (
     <>
-      {vendorModalOpen && <VendorModal onClose={() => setVendorModalOpen(false)} />}
+      {/* VendorModal removed — nav button now links to /apply */}
       <style>{`
         *{margin:0;padding:0;box-sizing:border-box}
         html{scroll-behavior:smooth}
@@ -308,20 +272,47 @@ export default function LandingPage() {
         .step-hover:hover{border-color:${C.gold} !important}
         .vendor-row-hover:hover{border-color:${C.borderGold} !important;background:${C.surface} !important}
         @media(max-width:900px){
-          .hero-h1{font-size:clamp(36px,8vw,60px) !important}
-          .hero-accent{font-size:clamp(40px,9vw,72px) !important}
-          .two-col{grid-template-columns:1fr !important;gap:48px !important}
-          .three-col{grid-template-columns:1fr !important}
-          .feat-grid-col{grid-template-columns:1fr 1fr !important}
-          .steps-grid{grid-template-columns:1fr !important;gap:32px !important}
-          .steps-grid::before{display:none !important}
-          .stats-flex{flex-direction:column !important;gap:32px !important;padding:60px 32px !important}
+          /* Nav */
           .nav-links-hide{display:none !important}
           .vendor-join-btn{display:none !important}
-          .section-pad{padding:80px 28px !important}
-          .hero-pad{padding:120px 28px 80px !important}
+          nav{padding:16px 24px !important}
+          /* Hero */
+          .hero-h1{font-size:clamp(36px,8vw,60px) !important}
+          .hero-accent{font-size:clamp(40px,9vw,72px) !important}
+          .hero-pad{padding:110px 24px 72px !important}
+          .hero-ctas{flex-direction:column !important;align-items:center !important;gap:16px !important}
+          /* Sections */
+          .section-pad{padding:72px 24px !important}
+          /* Grids */
+          .two-col{grid-template-columns:1fr !important;gap:40px !important}
+          .three-col{grid-template-columns:1fr !important}
+          .feat-grid-col{grid-template-columns:1fr 1fr !important}
+          .steps-grid{grid-template-columns:1fr !important;gap:28px !important}
+          .steps-grid::before{display:none !important}
+          .stats-flex{flex-wrap:wrap !important;gap:28px 40px !important;padding:56px 28px !important;justify-content:center !important}
+          /* Footer */
           .footer-flex{flex-direction:column !important;gap:20px !important;text-align:center !important;padding:36px 24px !important}
-          .systems-grid{grid-template-columns:repeat(2,1fr) !important}
+          /* Dollhouse: hide floating labels on mobile — too cluttered */
+          #sv-labels{display:none !important}
+          .dh-scroll-hint{display:none !important}
+          /* Health score — visual below text on mobile */
+          #hs-visual{order:2}
+          /* Concierge chat */
+          .chat-bubble{max-width:90% !important}
+        }
+        @media(max-width:600px){
+          /* Features go single column on phones */
+          .feat-grid-col{grid-template-columns:1fr !important}
+          /* Vendor modal */
+          .vendor-modal-inner{padding:28px 20px !important}
+          .vendor-type-grid{grid-template-columns:1fr !important}
+          /* Stats strip — 2 per row */
+          .stat-item{flex:0 0 calc(50% - 20px) !important;text-align:center}
+          /* Dollhouse: collapse scroll height on phones to avoid long deadzone */
+          #dollhouse{height:180vh !important}
+          /* Section padding tighter */
+          .section-pad{padding:56px 20px !important}
+          .hero-pad{padding:100px 20px 60px !important}
         }
       `}</style>
 
@@ -350,15 +341,15 @@ export default function LandingPage() {
           ))}
         </ul>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => setVendorModalOpen(true)} className="vendor-join-btn" style={{
+          <Link href="/apply" className="vendor-join-btn" style={{
             fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em",
             textTransform: "uppercase", padding: "11px 18px",
             background: "transparent", color: C.gold,
-            border: `1.5px solid ${C.borderGold}`, borderRadius: 8, cursor: "pointer",
-            transition: "background .2s, border-color .2s",
+            border: `1.5px solid ${C.borderGold}`, borderRadius: 8,
+            textDecoration: "none", transition: "background .2s, border-color .2s",
           }}>
             Join Trusted Network
-          </button>
+          </Link>
           <Link href="/dashboard" style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 20px", color: C.muted, textDecoration: "none" }}>
             Log In
           </Link>
@@ -386,7 +377,7 @@ export default function LandingPage() {
           <p style={{ fontSize: 17, fontWeight: 300, color: C.muted, lineHeight: 1.78, maxWidth: 580, margin: "0 auto 44px", opacity: 0, animation: "fadeUp .7s .64s forwards" }}>
             BTLR is your AI home operating system — health scores, repair budgeting, mortgage tracking, and a concierge that handles the rest.
           </p>
-          <div style={{ display: "flex", gap: 20, alignItems: "center", justifyContent: "center", opacity: 0, animation: "fadeUp .7s .8s forwards", flexWrap: "wrap" }}>
+          <div className="hero-ctas" style={{ display: "flex", gap: 20, alignItems: "center", justifyContent: "center", opacity: 0, animation: "fadeUp .7s .8s forwards", flexWrap: "wrap" }}>
             <a href="#cta" className="btn-primary-hover" style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "16px 38px", background: C.gold, color: "#fff", textDecoration: "none", display: "inline-block", transition: "all .2s" }}>
               Sign Up Free
             </a>
@@ -402,42 +393,112 @@ export default function LandingPage() {
         </div>
       </section>
 
-      {/* ── SYSTEMS ── */}
-      <section id="features" className="section-pad" style={{ padding: "120px 64px", background: C.surface, borderTop: `1px solid ${C.border}`, borderBottom: `1px solid ${C.border}` }}>
-        <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 80, alignItems: "center" }} className="two-col">
-          <div className="reveal">
-            <Eyebrow>Your Home, Intelligently Managed</Eyebrow>
-            <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(28px,3.2vw,46px)", fontWeight: 300, lineHeight: 1.15, marginBottom: 20, letterSpacing: "-0.02em", color: C.text }}>
-              Every corner of your home,<br/><strong style={{ fontWeight: 700, color: C.goldDk }}>covered and connected.</strong>
+      {/* ── SCROLL VIDEO (DOLLHOUSE) ── */}
+      <section id="dollhouse" style={{ height: "340vh", position: "relative", background: "#fff" }}>
+        <div style={{
+          position: "sticky", top: 0, height: "100vh",
+          display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+          overflow: "hidden", background: "#ffffff",
+        }}>
+          {/* Warm glow */}
+          <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 70% 55% at 50% 56%,rgba(255,246,224,0.55),transparent 68%)", pointerEvents: "none", zIndex: 0 }}/>
+
+          {/* Headline */}
+          <div style={{ position: "relative", zIndex: 2, textAlign: "center", marginBottom: 28 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.gold, marginBottom: 14 }}>
+              Your Home, Intelligently Managed
+            </div>
+            <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(22px,3.2vw,44px)", fontWeight: 300, color: C.text, lineHeight: 1.2, letterSpacing: "-0.02em" }}>
+              Every corner of your home,<br/><strong style={{ fontWeight: 700 }}>covered and connected.</strong>
             </h2>
-            <p style={{ fontSize: 16, fontWeight: 300, color: C.muted, lineHeight: 1.82, marginBottom: 28 }}>
-              BTLR tracks 25+ home systems — roof, HVAC, plumbing, electrical — and alerts you before anything becomes a problem.
-            </p>
-            <div style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1px solid ${C.borderGold}`, padding: "7px 16px", fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.gold }}>
-              25+ Home Systems Tracked
-            </div>
           </div>
-          <div className="reveal d2" style={{ display: "flex", justifyContent: "center" }}>
-            <div className="systems-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 2, width: "100%", maxWidth: 520, animation: "float 6s ease-in-out infinite" }}>
-              {SYSTEMS.map((s, i) => (
-                <div key={i} style={{
-                  background: "#fff", border: `1px solid ${C.border}`,
-                  borderTop: s.status === "warn" ? `2px solid #E8A04A` : `1px solid ${C.border}`,
-                  padding: "14px 13px",
-                }}>
-                  <div style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 700, color: C.text, marginBottom: 3 }}>{s.label}</div>
-                  <div style={{ fontSize: 10, color: C.muted }}>{s.sub}</div>
-                  <div style={{ display: "flex", alignItems: "center", gap: 4, marginTop: 6 }}>
-                    <span style={{ width: 5, height: 5, borderRadius: "50%", background: s.status === "warn" ? "#E8A04A" : "#4A9E6B", display: "inline-block" }}/>
-                    <span style={{ fontFamily: SYNE, fontSize: 8, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: s.status === "warn" ? "#E8A04A" : "#4A9E6B" }}>
-                      {s.status === "warn" ? "Monitor" : "Good"}
-                    </span>
-                  </div>
-                </div>
-              ))}
-            </div>
+
+          {/* Scroll-scrubbed video */}
+          <div style={{ position: "relative", zIndex: 2, width: "min(900px,92vw)" }}>
+            <video
+              id="house-scroll-video"
+              src="/house-scroll.mp4"
+              preload="auto"
+              muted
+              playsInline
+              disablePictureInPicture
+              style={{ width: "100%", height: "auto", display: "block" }}
+            />
+          </div>
+
+          {/* System labels — shown via JS scroll */}
+          <div id="sv-labels" style={{ position: "absolute", inset: 0, zIndex: 5, pointerEvents: "none" }}>
+            {[
+              { id: "lbl-roof",        style: { top: "29%", left: "50%", transform: "translateX(-50%)" }, label: "Roof & Structure",    sub: "Lifespan tracked" },
+              { id: "lbl-hvac",        style: { top: "32%", right: "8%" },                                label: "HVAC",               sub: "Filter due in 3 weeks" },
+              { id: "lbl-landscaping", style: { top: "38%", left: "4%" },                                 label: "Landscaping",        sub: "Scheduled maintenance" },
+              { id: "lbl-plumbing",    style: { bottom: "24%", left: "6%" },                              label: "Plumbing",           sub: "Water heater: 7 yrs" },
+              { id: "lbl-electrical",  style: { bottom: "24%", right: "6%" },                             label: "Electrical",         sub: "Panel up to code" },
+              { id: "lbl-all",         style: { bottom: "6%", left: 0, right: 0, margin: "0 auto", width: "fit-content" }, label: "All Systems", sub: "25+ home systems tracked" },
+            ].map(({ id, style, label, sub }) => (
+              <div key={id} id={id} style={{
+                position: "absolute", ...style,
+                background: "white", border: `1.5px solid ${C.borderGold}`,
+                padding: "11px 20px", fontFamily: SYNE, fontSize: 12, fontWeight: 700,
+                letterSpacing: "0.12em", textTransform: "uppercase", color: C.gold,
+                whiteSpace: "nowrap", boxShadow: "0 4px 18px rgba(28,25,20,.08)",
+                opacity: 0, transform: "translateY(6px)", transition: "opacity .45s, transform .45s",
+              }}>
+                <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: C.gold, marginRight: 7, verticalAlign: "middle" }}/>
+                {label}
+                <span style={{ display: "block", fontFamily: DM, fontSize: 11, fontWeight: 400, color: C.muted, letterSpacing: "0.02em", marginTop: 3, textTransform: "none" }}>{sub}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom fade */}
+          <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "10%", background: "linear-gradient(to top,#ffffff 0%,transparent 100%)", pointerEvents: "none", zIndex: 3 }}/>
+
+          {/* Scroll hint */}
+          <div className="dh-scroll-hint" style={{ position: "absolute", bottom: 36, left: 32, fontFamily: SYNE, fontSize: 10, fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: C.dim, display: "flex", alignItems: "center", gap: 8, zIndex: 4 }}>
+            <div style={{ width: 1, height: 40, background: `linear-gradient(${C.gold},transparent)`, animation: "pulse 2s infinite" }}/>
+            Scroll to reveal
           </div>
         </div>
+
+        {/* Inline scroll script for video scrubbing */}
+        <script dangerouslySetInnerHTML={{ __html: `
+          (function() {
+            var section = document.getElementById('dollhouse');
+            var video, raf, targetTime = 0, currentTime = 0;
+            function lerp(a,b,t){return a+(b-a)*t;}
+            function tick(){
+              if(!video||!video.duration){raf=requestAnimationFrame(tick);return;}
+              currentTime=lerp(currentTime,targetTime,0.12);
+              if(Math.abs(currentTime-video.currentTime)>0.016){
+                video.currentTime=Math.max(0,Math.min(video.duration,currentTime));
+              }
+              raf=requestAnimationFrame(tick);
+            }
+            function showLabel(id,show){
+              var el=document.getElementById(id);
+              if(el){el.style.opacity=show?'1':'0';el.style.transform=show?'translateY(0)':'translateY(6px)';}
+            }
+            window.addEventListener('scroll',function(){
+              if(!section)return;
+              var rect=section.getBoundingClientRect();
+              var total=section.offsetHeight-window.innerHeight;
+              var raw=Math.max(0,Math.min(1,-rect.top/total));
+              var progress=raw<0.10?0:raw>0.90?1:(raw-0.10)/0.80;
+              if(video&&video.duration){targetTime=progress*video.duration;}
+              showLabel('lbl-roof',        raw>0.15);
+              showLabel('lbl-hvac',        raw>0.25);
+              showLabel('lbl-landscaping', raw>0.35);
+              showLabel('lbl-plumbing',    raw>0.50);
+              showLabel('lbl-electrical',  raw>0.60);
+              showLabel('lbl-all',         raw>0.75);
+            });
+            document.addEventListener('DOMContentLoaded',function(){
+              video=document.getElementById('house-scroll-video');
+              if(video){video.pause();raf=requestAnimationFrame(tick);}
+            });
+          })();
+        ` }}/>
       </section>
 
       {/* ── REALITY ── */}
@@ -472,7 +533,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── FEATURES ── */}
-      <section className="section-pad" style={{ padding: "140px 64px", maxWidth: 1200, margin: "0 auto" }}>
+      <section id="features" className="section-pad" style={{ padding: "140px 64px", maxWidth: 1200, margin: "0 auto" }}>
         <div className="reveal" style={{ textAlign: "center", marginBottom: 72 }}>
           <Eyebrow center>What BTLR Does</Eyebrow>
           <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(26px,3.6vw,50px)", fontWeight: 300, color: C.text, letterSpacing: "-0.02em" }}>
@@ -502,7 +563,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── HEALTH SCORE ── */}
-      <section id="health-score" className="section-pad" style={{ padding: "140px 64px", maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 100, alignItems: "center" }} >
+      <section id="health-score" className="section-pad two-col" style={{ padding: "140px 64px", maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 100, alignItems: "center" }}>
         <div className="reveal">
           <Eyebrow>Home Health</Eyebrow>
           <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, marginBottom: 20, letterSpacing: "-0.02em" }}>
@@ -539,7 +600,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── CONCIERGE ── */}
-      <section id="concierge" className="section-pad" style={{ padding: "140px 64px", maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 100, alignItems: "center" }}>
+      <section id="concierge" className="section-pad two-col" style={{ padding: "140px 64px", maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 100, alignItems: "center" }}>
         <div className="reveal">
           <Eyebrow>AI Concierge</Eyebrow>
           <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, marginBottom: 20, letterSpacing: "-0.02em" }}>
@@ -567,7 +628,7 @@ export default function LandingPage() {
               { user: true,  text: "Yes, find me the best-rated one available this week." },
               { user: false, text: "Found 3 licensed plumbers with same-week availability. FlowRight Plumbing is rated 4.9★ with 203 reviews. Want me to send them your home details and request a quote?" },
             ].map((m, i) => (
-              <div key={i} style={{ maxWidth: "80%", padding: "10px 14px", fontSize: 13, lineHeight: 1.6, alignSelf: m.user ? "flex-end" : "flex-start", background: m.user ? C.gold : C.surface, color: m.user ? "#fff" : C.text, border: m.user ? "none" : `1px solid ${C.border}` }}>
+              <div key={i} className="chat-bubble" style={{ maxWidth: "80%", padding: "10px 14px", fontSize: 13, lineHeight: 1.6, alignSelf: m.user ? "flex-end" : "flex-start", background: m.user ? C.gold : C.surface, color: m.user ? "#fff" : C.text, border: m.user ? "none" : `1px solid ${C.border}` }}>
                 {m.text}
               </div>
             ))}
@@ -617,7 +678,7 @@ export default function LandingPage() {
           { big: "∞",   desc: "Documents organized" },
           { big: "AI",  desc: "Powered inspection parsing" },
         ].map(s => (
-          <div key={s.big} style={{ textAlign: "center" }}>
+          <div key={s.big} className="stat-item" style={{ textAlign: "center" }}>
             <div style={{ fontFamily: OUTFIT, fontSize: 54, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{s.big}</div>
             <div style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,.75)", marginTop: 6 }}>{s.desc}</div>
           </div>
