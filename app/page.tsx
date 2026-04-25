@@ -238,22 +238,33 @@ export default function LandingPage() {
   useEffect(() => {
     const video = videoRef.current;
     if (!video) return;
+
+    // Force load on iOS — Safari won't preload without explicit call
+    video.muted = true;
+    video.load();
     video.pause();
 
     let raf: number;
     let targetTime = 0;
     let currentTime = 0;
+    let ready = false;
 
     function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
 
+    const v = video; // stable non-null reference for closures
+
     function tick() {
-      if (!video || !video.duration) { raf = requestAnimationFrame(tick); return; }
+      if (!ready || !v.duration) { raf = requestAnimationFrame(tick); return; }
       currentTime = lerp(currentTime, targetTime, 0.12);
-      if (Math.abs(currentTime - video.currentTime) > 0.016) {
-        video.currentTime = Math.max(0, Math.min(video.duration, currentTime));
+      if (Math.abs(currentTime - v.currentTime) > 0.016) {
+        try { v.currentTime = Math.max(0, Math.min(v.duration, currentTime)); } catch {}
       }
       raf = requestAnimationFrame(tick);
     }
+
+    function onReady() { ready = true; }
+    v.addEventListener("loadedmetadata", onReady);
+    if (v.readyState >= 1) ready = true; // already loaded
 
     function showLabel(id: string, show: boolean) {
       const el = document.getElementById(id);
@@ -265,12 +276,12 @@ export default function LandingPage() {
 
     function onScroll() {
       const section = document.getElementById("dollhouse");
-      if (!section || !video || !video.duration) return;
+      if (!section || !v.duration) return;
       const rect = section.getBoundingClientRect();
       const total = section.offsetHeight - window.innerHeight;
       const raw = Math.max(0, Math.min(1, -rect.top / total));
       const progress = raw < 0.10 ? 0 : raw > 0.90 ? 1 : (raw - 0.10) / 0.80;
-      targetTime = progress * video.duration;
+      targetTime = progress * v.duration;
       showLabel("lbl-roof",        raw > 0.15);
       showLabel("lbl-hvac",        raw > 0.25);
       showLabel("lbl-landscaping", raw > 0.35);
@@ -284,6 +295,7 @@ export default function LandingPage() {
     return () => {
       cancelAnimationFrame(raf);
       window.removeEventListener("scroll", onScroll);
+      v.removeEventListener("loadedmetadata", onReady);
     };
   }, []);
 
@@ -331,8 +343,8 @@ export default function LandingPage() {
           .vendor-join-btn{display:none !important}
           nav{padding:16px 24px !important}
           /* Hero */
-          .hero-h1{font-size:clamp(36px,8vw,60px) !important}
-          .hero-accent{font-size:clamp(40px,9vw,72px) !important}
+          .hero-h1{font-size:clamp(32px,7vw,56px) !important}
+          .hero-accent{font-size:clamp(36px,8vw,66px) !important}
           .hero-pad{padding:110px 24px 72px !important}
           .hero-ctas{flex-direction:column !important;align-items:center !important;gap:16px !important}
           /* Sections */
@@ -346,27 +358,35 @@ export default function LandingPage() {
           .stats-flex{flex-wrap:wrap !important;gap:28px 40px !important;padding:56px 28px !important;justify-content:center !important}
           /* Footer */
           .footer-flex{flex-direction:column !important;gap:20px !important;text-align:center !important;padding:36px 24px !important}
-          /* Dollhouse: hide floating labels on mobile — too cluttered */
+          /* Dollhouse */
           #sv-labels{display:none !important}
           .dh-scroll-hint{display:none !important}
+          #dollhouse{height:260vh !important}
+          .dh-headline{margin-bottom:16px !important}
+          .dh-headline h2{font-size:clamp(20px,5vw,32px) !important}
+          .dh-video-wrap{width:96vw !important}
           /* Health score — visual below text on mobile */
           #hs-visual{order:2}
           /* Concierge chat */
           .chat-bubble{max-width:90% !important}
+          /* Reality section */
+          #reality{padding:72px 24px !important}
         }
         @media(max-width:600px){
           /* Features go single column on phones */
           .feat-grid-col{grid-template-columns:1fr !important}
-          /* Vendor modal */
-          .vendor-modal-inner{padding:28px 20px !important}
-          .vendor-type-grid{grid-template-columns:1fr !important}
           /* Stats strip — 2 per row */
           .stat-item{flex:0 0 calc(50% - 20px) !important;text-align:center}
-          /* Dollhouse: collapse scroll height on phones to avoid long deadzone */
-          #dollhouse{height:180vh !important}
+          /* Dollhouse: shorter scroll on phones */
+          #dollhouse{height:220vh !important}
+          .dh-video-wrap video{max-height:52vh !important;width:auto !important;max-width:96vw !important}
           /* Section padding tighter */
           .section-pad{padding:56px 20px !important}
           .hero-pad{padding:100px 20px 60px !important}
+          /* Reality section */
+          #reality{padding:60px 20px !important}
+          /* Features section */
+          #features{padding:60px 20px !important}
         }
       `}</style>
 
@@ -458,7 +478,7 @@ export default function LandingPage() {
           <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 70% 55% at 50% 56%,rgba(255,246,224,0.55),transparent 68%)", pointerEvents: "none", zIndex: 0 }}/>
 
           {/* Headline */}
-          <div style={{ position: "relative", zIndex: 2, textAlign: "center", marginBottom: 28 }}>
+          <div className="dh-headline" style={{ position: "relative", zIndex: 2, textAlign: "center", marginBottom: 28, padding: "0 20px" }}>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.gold, marginBottom: 14 }}>
               Your Home, Intelligently Managed
             </div>
@@ -468,7 +488,7 @@ export default function LandingPage() {
           </div>
 
           {/* Scroll-scrubbed video */}
-          <div style={{ position: "relative", zIndex: 2, width: "min(900px,92vw)" }}>
+          <div className="dh-video-wrap" style={{ position: "relative", zIndex: 2, width: "min(900px,92vw)", display: "flex", alignItems: "center", justifyContent: "center" }}>
             <video
               ref={videoRef}
               src="/house-scroll.mp4"
@@ -519,7 +539,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── REALITY ── */}
-      <section id="reality" className="section-pad" style={{ background: "#3A6491", padding: "140px 64px" }}>
+      <section id="reality" className="section-pad" style={{ background: "#3A6491", padding: "120px 64px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 80, alignItems: "start" }} className="two-col">
           <div className="reveal">
             <div style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.goldLt, marginBottom: 18 }}>
@@ -550,7 +570,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── FEATURES ── */}
-      <section id="features" className="section-pad" style={{ padding: "140px 64px", maxWidth: 1200, margin: "0 auto" }}>
+      <section id="features" className="section-pad" style={{ padding: "120px 64px", maxWidth: 1200, margin: "0 auto" }}>
         <div className="reveal" style={{ textAlign: "center", marginBottom: 72 }}>
           <Eyebrow center>What BTLR Does</Eyebrow>
           <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(26px,3.6vw,50px)", fontWeight: 300, color: C.text, letterSpacing: "-0.02em" }}>

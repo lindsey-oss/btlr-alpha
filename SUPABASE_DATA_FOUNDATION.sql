@@ -371,9 +371,15 @@ EXCEPTION WHEN OTHERS THEN NULL; END $$;
 CREATE POLICY "Public can view active vendors" ON vendors FOR SELECT USING (status = 'active');
 
 -- Add FK from repairs to vendors
-ALTER TABLE repairs
-  ADD CONSTRAINT IF NOT EXISTS repairs_vendor_id_fk
-  FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE SET NULL;
+DO $$ BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_constraint WHERE conname = 'repairs_vendor_id_fk'
+  ) THEN
+    ALTER TABLE repairs
+      ADD CONSTRAINT repairs_vendor_id_fk
+      FOREIGN KEY (vendor_id) REFERENCES vendors(id) ON DELETE SET NULL;
+  END IF;
+END $$;
 
 CREATE TRIGGER vendors_updated_at
   BEFORE UPDATE ON vendors

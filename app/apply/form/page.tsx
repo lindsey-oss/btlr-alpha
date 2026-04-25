@@ -220,6 +220,14 @@ export default function VendorApplicationForm() {
     }
   }, []);
 
+  // Auto-save when reaching step 4 without an appId so uploads unlock automatically
+  useEffect(() => {
+    if (step === 4 && !appId) {
+      saveDraft();
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step]);
+
   const set = (key: string, val: unknown) => setData(d => ({ ...d, [key]: val }));
 
   const saveDraft = useCallback(async (nextStep?: number) => {
@@ -468,14 +476,23 @@ export default function VendorApplicationForm() {
                   </p>
                 </div>
                 {appId ? (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 24 }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 24 }}>
                     {[1,2,3,4,5,6,7,8,9,10].map(n => (
-                      <UploadField key={n} label={`Work Photo ${n}${n <= 5 ? " *" : " (optional)"}`} docType={`work_photo_${n}`} appId={appId} onUploaded={() => {}} />
+                      <UploadField key={n} label={`Photo ${n}${n <= 5 ? " (required)" : " (optional)"}`} docType={`work_photo_${n}`} appId={appId} onUploaded={() => {}} />
                     ))}
                   </div>
                 ) : (
-                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, padding: 20, marginBottom: 24, textAlign: "center" as const }}>
-                    <p style={{ fontSize: 13, color: C.muted, margin: 0 }}>Save your progress first (top right) to enable photo uploads.</p>
+                  <div style={{ background: "#EFF6FF", border: `1.5px solid #BFDBFE`, borderRadius: 10, padding: "24px 20px", marginBottom: 24, textAlign: "center" as const }}>
+                    <p style={{ fontSize: 14, color: "#1E40AF", marginBottom: 14, fontWeight: 500 }}>
+                      Your progress needs to be saved before uploads are enabled.
+                    </p>
+                    <button
+                      onClick={() => saveDraft()}
+                      disabled={saving}
+                      style={{ padding: "11px 28px", background: C.gold, color: "#fff", border: "none", borderRadius: 8, fontFamily: SYNE, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" as const, cursor: "pointer" }}
+                    >
+                      {saving ? "Saving…" : "Save & Enable Uploads"}
+                    </button>
                   </div>
                 )}
                 <Field label="Optional: Video Walkthrough Link" hint="YouTube, Vimeo, or Google Drive link showing a completed project.">
@@ -597,7 +614,16 @@ export default function VendorApplicationForm() {
                     <input style={inp()} value={data.service_hours as string} onChange={e => set("service_hours", e.target.value)} placeholder="Mon–Fri 8am–5pm" />
                   </Field>
                 </div>
-                <YesNo label="Are estimates free or paid?" value={data.estimates_free as boolean | null} onChange={v => set("estimates_free", v)} />
+                <Field label="Are estimates free or paid?">
+                  <div style={{ display: "flex", gap: 10 }}>
+                    {[{ label: "Free", val: true }, { label: "Paid", val: false }].map(opt => (
+                      <button key={String(opt.val)} type="button" onClick={() => set("estimates_free", opt.val)}
+                        style={{ flex: 1, padding: "11px 0", border: `1.5px solid ${data.estimates_free === opt.val ? C.gold : C.border}`, borderRadius: 8, background: data.estimates_free === opt.val ? C.goldDim : C.white, fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: data.estimates_free === opt.val ? C.gold : C.muted, cursor: "pointer" }}>
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </Field>
                 <YesNo label="Do you offer emergency / after-hours availability?" value={data.emergency_availability as boolean | null} onChange={v => set("emergency_availability", v)} required />
                 <YesNo label="Are you available on weekends?" value={data.after_hours as boolean | null} onChange={v => set("after_hours", v)} />
               </div>
