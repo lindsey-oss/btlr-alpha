@@ -82,7 +82,9 @@ Use null for any field not found. coverageItems, exclusions, and endorsements mu
 
     const parsed = JSON.parse(completion.choices[0].message.content);
 
-    // Persist to Supabase — isolated try/catch so a missing key never kills the parse response
+    // Persist to Supabase — MERGE with existing row so uploading a 2nd policy
+    // doesn't erase data from the first. Scalar fields: keep existing if new is null.
+    // Array fields (coverageItems, exclusions, endorsements): union-deduplicate.
     if (userId && propId) {
       try {
         const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -91,41 +93,55 @@ Use null for any field not found. coverageItems, exclusions, and endorsements mu
           console.warn("[parse-insurance] Skipping DB save — SUPABASE_SERVICE_ROLE_KEY not set");
         } else {
           const supabase = createClient(supabaseUrl, supabaseKey);
+
+          // Fetch existing row so we can merge rather than overwrite
+          const { data: existing } = await supabase
+            .from("home_insurance")
+            .select("*")
+            .eq("user_id", userId)
+            .eq("property_id", parseInt(propId))
+            .maybeSingle();
+
+          // Prefer new non-null value, fall back to existing
+          const m = (newVal, existingVal) => newVal ?? existingVal ?? null;
+          // Union-dedup arrays
+          const mergeArr = (a, b) => Array.from(new Set([...(a ?? []), ...(b ?? [])]));
+
           const { error } = await supabase.from("home_insurance").upsert({
             user_id:                     userId,
             property_id:                 parseInt(propId),
-            provider:                    parsed.provider,
-            policy_number:               parsed.policyNumber,
-            policy_type:                 parsed.policyType,
-            agent_name:                  parsed.agentName,
-            agent_phone:                 parsed.agentPhone,
-            agent_email:                 parsed.agentEmail,
-            dwelling_coverage:           parsed.dwellingCoverage,
-            other_structures:            parsed.otherStructures,
-            personal_property:           parsed.personalProperty,
-            loss_of_use:                 parsed.lossOfUse,
-            liability_coverage:          parsed.liabilityCoverage,
-            medical_payments:            parsed.medicalPayments,
-            deductible_standard:         parsed.deductibleStandard,
-            deductible_wind:             parsed.deductibleWind,
-            deductible_hurricane:        parsed.deductibleHurricane,
-            annual_premium:              parsed.annualPremium,
-            payment_amount:              parsed.paymentAmount,
-            payment_frequency:           parsed.paymentFrequency,
-            payment_due_date:            parsed.paymentDueDate,
-            payment_method:              parsed.paymentMethod,
-            effective_date:              parsed.effectiveDate,
-            expiration_date:             parsed.expirationDate,
-            auto_renews:                 parsed.autoRenews,
-            coverage_items:              parsed.coverageItems  ?? [],
-            exclusions:                  parsed.exclusions     ?? [],
-            endorsements:                parsed.endorsements   ?? [],
-            replacement_cost_dwelling:   parsed.replacementCostDwelling,
-            replacement_cost_contents:   parsed.replacementCostContents,
-            claim_phone:                 parsed.claimPhone,
-            claim_url:                   parsed.claimUrl,
-            claim_email:                 parsed.claimEmail,
-            claim_hours:                 parsed.claimHours,
+            provider:                    m(parsed.provider,                existing?.provider),
+            policy_number:               m(parsed.policyNumber,            existing?.policy_number),
+            policy_type:                 m(parsed.policyType,              existing?.policy_type),
+            agent_name:                  m(parsed.agentName,               existing?.agent_name),
+            agent_phone:                 m(parsed.agentPhone,              existing?.agent_phone),
+            agent_email:                 m(parsed.agentEmail,              existing?.agent_email),
+            dwelling_coverage:           m(parsed.dwellingCoverage,        existing?.dwelling_coverage),
+            other_structures:            m(parsed.otherStructures,         existing?.other_structures),
+            personal_property:           m(parsed.personalProperty,        existing?.personal_property),
+            loss_of_use:                 m(parsed.lossOfUse,               existing?.loss_of_use),
+            liability_coverage:          m(parsed.liabilityCoverage,       existing?.liability_coverage),
+            medical_payments:            m(parsed.medicalPayments,         existing?.medical_payments),
+            deductible_standard:         m(parsed.deductibleStandard,      existing?.deductible_standard),
+            deductible_wind:             m(parsed.deductibleWind,          existing?.deductible_wind),
+            deductible_hurricane:        m(parsed.deductibleHurricane,     existing?.deductible_hurricane),
+            annual_premium:              m(parsed.annualPremium,           existing?.annual_premium),
+            payment_amount:              m(parsed.paymentAmount,           existing?.payment_amount),
+            payment_frequency:           m(parsed.paymentFrequency,        existing?.payment_frequency),
+            payment_due_date:            m(parsed.paymentDueDate,          existing?.payment_due_date),
+            payment_method:              m(parsed.paymentMethod,           existing?.payment_method),
+            effective_date:              m(parsed.effectiveDate,           existing?.effective_date),
+            expiration_date:             m(parsed.expirationDate,          existing?.expiration_date),
+            auto_renews:                 m(parsed.autoRenews,              existing?.auto_renews),
+            coverage_items:              mergeArr(parsed.coverageItems,    existing?.coverage_items),
+            exclusions:                  mergeArr(parsed.exclusions,       existing?.exclusions),
+            endorsements:                mergeArr(parsed.endorsements,     existing?.endorsements),
+            replacement_cost_dwelling:   m(parsed.replacementCostDwelling, existing?.replacement_cost_dwelling),
+            replacement_cost_contents:   m(parsed.replacementCostContents, existing?.replacement_cost_contents),
+            claim_phone:                 m(parsed.claimPhone,              existing?.claim_phone),
+            claim_url:                   m(parsed.claimUrl,                existing?.claim_url),
+            claim_email:                 m(parsed.claimEmail,              existing?.claim_email),
+            claim_hours:                 m(parsed.claimHours,              existing?.claim_hours),
             parsed_at:                   new Date().toISOString(),
           }, { onConflict: "user_id,property_id" });
           if (error) console.error("[parse-insurance] DB error:", error.message);

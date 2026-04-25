@@ -347,15 +347,19 @@ function HousePhoto({ address, height = 200 }: { address: string; height?: numbe
   const hasAddress = address && address !== "My Home" && address.length > 5;
   const encoded    = hasAddress ? encodeURIComponent(address) : null;
 
-  // Street View Static API — requires "Street View Static API" enabled in Google Cloud
+  // Reset mode whenever address changes so a new property always tries Street View first
+  useEffect(() => { setImgMode("streetview"); }, [address]);
+
+  // Street View Static API — max size per dimension is 640px (hard Google limit).
+  // Requesting larger than 640 causes an API error, which is why the image failed before.
+  // objectFit:cover handles scaling to fill any container size.
   const streetViewUrl = hasKey && encoded && imgMode === "streetview"
-    ? `https://maps.googleapis.com/maps/api/streetview?size=940x220&location=${encoded}&key=${mapsKey}&fov=90&pitch=0&return_error_code=true`
+    ? `https://maps.googleapis.com/maps/api/streetview?size=640x400&location=${encoded}&key=${mapsKey}&fov=90&pitch=5&source=outdoor&return_error_code=true`
     : null;
 
   // Maps Static API (satellite/hybrid) — fallback when Street View has no coverage
-  // Requires "Maps Static API" enabled in Google Cloud (same key)
   const satelliteUrl = hasKey && encoded && imgMode === "satellite"
-    ? `https://maps.googleapis.com/maps/api/staticmap?center=${encoded}&zoom=18&size=940x220&maptype=hybrid&key=${mapsKey}`
+    ? `https://maps.googleapis.com/maps/api/staticmap?center=${encoded}&zoom=19&size=640x400&maptype=hybrid&key=${mapsKey}`
     : null;
 
   // Keep legacy variable name for the label below
@@ -1378,6 +1382,7 @@ export default function Dashboard() {
   const [insuranceError, setInsuranceError] = useState<string | null>(null);
   const [showInsuranceDetail, setShowInsuranceDetail] = useState(false);
   const [insuranceDocCount, setInsuranceDocCount] = useState(0); // how many docs have been uploaded
+  const [insuranceFileKey, setInsuranceFileKey] = useState(0); // bump to reset file inputs after upload
   const insuranceRef = useRef<HTMLInputElement>(null);
 
   // Home Warranty
@@ -1485,10 +1490,10 @@ export default function Dashboard() {
     // Chain them so loadProperty only fires after the session is confirmed.
     checkAuth().then(async authed => {
       if (authed) {
+        loadDocs(); // runs independently — not gated on propId so docs always show
         const propId = await loadAllProperties();
         if (propId) {
           loadProperty(propId);
-          loadDocs();
           loadRepairDocs();
         }
         loadPlaidData();
@@ -1681,6 +1686,7 @@ export default function Dashboard() {
 
     setParsingInsurance(false);
     if (insuranceRef.current) insuranceRef.current.value = "";
+    setInsuranceFileKey(k => k + 1); // reset all insurance file inputs so re-selecting same file works
   }
 
   async function uploadWarranty(e: React.ChangeEvent<HTMLInputElement>) {
@@ -1891,12 +1897,41 @@ export default function Dashboard() {
       setAllProperties(prev => [...prev, data]);
       setShowAddPropDrawer(false);
       setNewPropForm({ address: "", nickname: "", home_type: "single_family", year_built: "" });
+      setShowAddPropDrawer(false);
+      setNav("Home"); // switch to blank Home tab for the new property
       await switchProperty(data.id);
       showToast(`✓ Property added: ${data.address}`, "success");
     } catch (err: unknown) {
       setNewPropError(err instanceof Error ? err.message : "Failed to save property.");
     }
     setAddingProp(false);
+  }
+
+  async function deleteProperty(propId: number) {
+    const prop = allProperties.find(p => p.id === propId);
+    const label = prop?.nickname || prop?.address || "this property";
+    if (!confirm(`Delete "${label}"? All data (inspection, insurance, warranty) will be removed. This cannot be undone.`)) return;
+    try {
+      const { error } = await supabase.from("properties").delete().eq("id", propId);
+      if (error) throw new Error(error.message);
+      const remaining = allProperties.filter(p => p.id !== propId);
+      setAllProperties(remaining);
+      showToast(`Deleted ${label}`, "success");
+      if (activePropertyId === propId) {
+        clearPropertyState();
+        if (remaining.length > 0) {
+          setActivePropertyId(remaining[0].id);
+          activePropertyIdRef.current = remaining[0].id;
+          localStorage.setItem("btlr_active_property_id", String(remaining[0].id));
+          await loadProperty(remaining[0].id);
+        } else {
+          setActivePropertyId(null as unknown as number);
+          localStorage.removeItem("btlr_active_property_id");
+        }
+      }
+    } catch (err: unknown) {
+      showToast("Delete failed: " + (err instanceof Error ? err.message : "Unknown error"), "error");
+    }
   }
 
   async function getAuthHeader(): Promise<Record<string, string>> {
@@ -2234,6 +2269,10 @@ export default function Dashboard() {
 
       const items = data.filter(item => item.id !== null && item.name.startsWith("docs-"));
 
+      // Also restore insurance doc count from storage (so it survives logout/login)
+      const insCount = data.filter(item => item.id !== null && item.name.startsWith("insurance-")).length;
+      if (insCount > 0) setInsuranceDocCount(insCount);
+
       const files: Doc[] = await Promise.all(
         items.map(async (item) => {
           const fullPath = `${userId}/${item.name}`;
@@ -2273,6 +2312,14 @@ export default function Dashboard() {
     setDocs(prev => [{ name: file.name, path: fullPath, url: signed?.signedUrl ?? undefined }, ...prev]);
     setDocLoading(false);
     if (docRef.current) docRef.current.value = "";
+  }
+
+  async function deleteDoc(doc: Doc) {
+    if (!confirm(`Delete "${doc.name}"? This cannot be undone.`)) return;
+    const { error } = await supabase.storage.from("documents").remove([doc.path]);
+    if (error) { showToast("Delete failed: " + error.message, "error"); return; }
+    setDocs(prev => prev.filter(d => d.path !== doc.path));
+    showToast(`Deleted ${doc.name}`, "success");
   }
 
   // ── Load repair history from DB on mount ────────────────────────────────
@@ -2894,17 +2941,26 @@ export default function Dashboard() {
           {showPropDropdown && (
             <div style={{ position: "absolute", left: 10, right: 10, top: "calc(100% + 4px)", zIndex: 200, background: "#1e3a5f", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.4)" }}>
               {allProperties.map(p => (
-                <button key={p.id} onClick={() => switchProperty(p.id)}
-                  style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: p.id === activePropertyId ? "rgba(255,255,255,0.1)" : "transparent", border: "none", cursor: "pointer", textAlign: "left", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                  <HomeIcon size={12} color={p.id === activePropertyId ? "white" : "rgba(255,255,255,0.4)"}/>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 12, fontWeight: 600, color: p.id === activePropertyId ? "white" : "rgba(255,255,255,0.7)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {p.nickname || toTitleCase(p.address).split(",")[0]}
-                    </p>
-                    {p.nickname && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toTitleCase(p.address)}</p>}
-                  </div>
-                  {p.id === activePropertyId && <Check size={12} color="white" style={{ flexShrink: 0 }}/>}
-                </button>
+                <div key={p.id} style={{ display: "flex", alignItems: "center", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <button onClick={() => switchProperty(p.id)}
+                    style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: p.id === activePropertyId ? "rgba(255,255,255,0.1)" : "transparent", border: "none", cursor: "pointer", textAlign: "left", minWidth: 0 }}>
+                    <HomeIcon size={12} color={p.id === activePropertyId ? "white" : "rgba(255,255,255,0.4)"}/>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 12, fontWeight: 600, color: p.id === activePropertyId ? "white" : "rgba(255,255,255,0.7)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {p.nickname || toTitleCase(p.address).split(",")[0]}
+                      </p>
+                      {p.nickname && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toTitleCase(p.address)}</p>}
+                    </div>
+                    {p.id === activePropertyId && <Check size={12} color="white" style={{ flexShrink: 0 }}/>}
+                  </button>
+                  <button onClick={e => { e.stopPropagation(); deleteProperty(p.id); }}
+                    title="Delete property"
+                    style={{ flexShrink: 0, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", cursor: "pointer", borderRadius: 6, marginRight: 6, opacity: 0.4 }}
+                    onMouseEnter={e => (e.currentTarget.style.opacity = "1")}
+                    onMouseLeave={e => (e.currentTarget.style.opacity = "0.4")}>
+                    <X size={12} color="white"/>
+                  </button>
+                </div>
               ))}
               <button onClick={() => { setShowPropDropdown(false); setShowAddPropDrawer(true); }}
                 style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
@@ -2956,8 +3012,8 @@ export default function Dashboard() {
       </aside>
 
       {/* ── Main ─────────────────────────────────────────────────────── */}
-      <main style={{ flex: 1, overflowY: "auto" }}>
-        <div style={{ maxWidth: 940, margin: "0 auto", padding: isMobile ? "16px 16px 100px" : "36px 28px", display: "flex", flexDirection: "column", gap: 18 }}>
+      <main style={{ flex: 1, minWidth: 0, overflowY: "auto", overflowX: "hidden" }}>
+        <div style={{ maxWidth: 940, margin: "0 auto", padding: isMobile ? "16px 16px 100px" : "36px 28px", display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
 
           {/* Mobile Property Selector */}
           {isMobile && (
@@ -2973,14 +3029,23 @@ export default function Dashboard() {
               {showPropDropdown && (
                 <div style={{ position: "absolute", left: 0, top: "calc(100% + 6px)", zIndex: 300, minWidth: 240, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden", boxShadow: "0 8px 24px rgba(0,0,0,0.15)" }}>
                   {allProperties.map(p => (
-                    <button key={p.id} onClick={() => switchProperty(p.id)}
-                      style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: p.id === activePropertyId ? C.accentLt + "15" : "transparent", border: "none", borderBottom: `1px solid ${C.border}`, cursor: "pointer", textAlign: "left" }}>
-                      <HomeIcon size={12} color={p.id === activePropertyId ? C.accent : C.text3}/>
-                      <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {p.nickname || toTitleCase(p.address).split(",")[0]}
-                      </span>
-                      {p.id === activePropertyId && <Check size={12} color={C.accent}/>}
-                    </button>
+                    <div key={p.id} style={{ display: "flex", alignItems: "center", borderBottom: `1px solid ${C.border}` }}>
+                      <button onClick={() => switchProperty(p.id)}
+                        style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: p.id === activePropertyId ? C.accentLt + "15" : "transparent", border: "none", cursor: "pointer", textAlign: "left", minWidth: 0 }}>
+                        <HomeIcon size={12} color={p.id === activePropertyId ? C.accent : C.text3}/>
+                        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {p.nickname || toTitleCase(p.address).split(",")[0]}
+                        </span>
+                        {p.id === activePropertyId && <Check size={12} color={C.accent}/>}
+                      </button>
+                      <button onClick={e => { e.stopPropagation(); deleteProperty(p.id); }}
+                        title="Delete property"
+                        style={{ flexShrink: 0, width: 28, height: 28, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", cursor: "pointer", borderRadius: 6, marginRight: 6, color: C.text3 }}
+                        onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+                        onMouseLeave={e => (e.currentTarget.style.color = C.text3)}>
+                        <X size={12}/>
+                      </button>
+                    </div>
                   ))}
                   <button onClick={() => { setShowPropDropdown(false); setShowAddPropDrawer(true); }}
                     style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
@@ -3290,7 +3355,7 @@ export default function Dashboard() {
                                   ? <><Loader2 size={20} color="#0891b2" className="animate-spin"/><span style={{ fontSize: 14, color: "#0891b2" }}>Parsing insurance documents…</span></>
                                   : <><Shield size={20} color="#0891b2"/><span style={{ fontSize: 14, color: C.text }}>Upload homeowners insurance policy or dec page</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text — select multiple files at once</span></>
                                 }
-                                <input type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                                <input key={insuranceFileKey} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                               </label>
                             ) : (
                               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -3304,7 +3369,7 @@ export default function Dashboard() {
                                     <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                                       {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
                                       {parsingInsurance ? "Parsing…" : "Add / Replace"}
-                                      <input type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                                      <input key={insuranceFileKey} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                                     </label>
                                   </div>
                                 </div>
@@ -3516,10 +3581,18 @@ export default function Dashboard() {
                                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                                   {docs.map((doc, i) => (
                                     <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 9, padding: "9px 13px" }}>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                        <FileText size={13} color={C.text3}/><span style={{ fontSize: 13, color: C.text }}>{doc.name}</span>
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
+                                        <FileText size={13} color={C.text3} style={{ flexShrink: 0 }}/>
+                                        <span style={{ fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</span>
                                       </div>
-                                      {doc.url ? <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.accent, textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}>View <ExternalLink size={10}/></a> : <span style={{ fontSize: 12, color: C.text3 }}>Unavailable</span>}
+                                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                        {doc.url ? <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.accent, textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}>View <ExternalLink size={10}/></a> : <span style={{ fontSize: 12, color: C.text3 }}>Unavailable</span>}
+                                        <button onClick={() => deleteDoc(doc)} title="Delete file" style={{ width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", cursor: "pointer", borderRadius: 5, color: C.text3 }}
+                                          onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+                                          onMouseLeave={e => (e.currentTarget.style.color = C.text3)}>
+                                          <X size={12}/>
+                                        </button>
+                                      </div>
                                     </div>
                                   ))}
                                 </div>
@@ -4142,7 +4215,7 @@ export default function Dashboard() {
                     <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #0891b230", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                       {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
                       {parsingInsurance ? "…" : "Replace"}
-                      <input type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                      <input key={insuranceFileKey} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                     </label>
                   )}
                 </div>
@@ -4214,7 +4287,7 @@ export default function Dashboard() {
                       <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>We&apos;ll extract your coverage amounts, deductibles, exclusions, and claims contact from your declarations page.</p>
                       <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         <Upload size={12}/> Upload Policy PDF
-                        <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                        <input key={insuranceFileKey} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                       </label>
                     </div>
                   );
