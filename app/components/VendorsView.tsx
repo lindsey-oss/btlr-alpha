@@ -128,84 +128,112 @@ function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; locati
         if (cancelled) return;
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const g = (window as unknown as { google: any }).google;
-        const geocoder = new g.maps.Geocoder();
-        geocoder.geocode({ address: location }, (results: any, status: any) => {
-          if (cancelled) return;
-          if (status !== "OK" || !results || !results[0]) {
-            setError("Couldn't locate your area."); setLoading(false); return;
-          }
-          const center = results[0].geometry.location;
+        if (!mapRef.current) { setLoading(false); return; }
 
-          if (!mapRef.current) { setLoading(false); return; }
-          const map = new g.maps.Map(mapRef.current, {
-            center, zoom: 13,
-            mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
-            zoomControlOptions: { position: g.maps.ControlPosition.RIGHT_BOTTOM },
-            styles: [
-              { featureType: "poi", elementType: "labels", stylers: [{ visibility: "off" }] },
-              { featureType: "transit", stylers: [{ visibility: "off" }] },
-            ],
-          });
-
-          const service = new g.maps.places.PlacesService(map);
-          service.textSearch(
-            { query: `${searchTerm} contractor`, location: center, radius: 24000 },
-            (places: any, pStatus: any) => {
-              if (cancelled) return;
-              if (pStatus !== g.maps.places.PlacesServiceStatus.OK || !places) {
-                setError("No results found nearby."); setLoading(false); return;
-              }
-              const top3: any[] = places.slice(0, 3);
-              const bounds = new g.maps.LatLngBounds();
-
-              top3.forEach((place: any, i: number) => {
-                if (!place.geometry?.location) return;
-                bounds.extend(place.geometry.location);
-
-                // Numbered marker
-                const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
-                  <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 24 16 24s16-12 16-24C32 7.163 24.837 0 16 0z" fill="#0f1f3d"/>
-                  <circle cx="16" cy="16" r="10" fill="#ffffff"/>
-                  <text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="13" font-weight="bold" fill="#0f1f3d">${i + 1}</text>
-                </svg>`;
-                new g.maps.Marker({
-                  position: place.geometry.location,
-                  map,
-                  icon: { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, scaledSize: new g.maps.Size(32, 40) },
-                  title: place.name,
-                });
-              });
-              map.fitBounds(bounds);
-
-              // Fetch details for each
-              let done = 0;
-              const results2: VendorResult[] = top3.map((p: any) => ({
-                name: p.name ?? "Unknown",
-                rating: p.rating,
-                userRatingsTotal: p.user_ratings_total,
-                vicinity: p.formatted_address ?? p.vicinity,
-                placeId: p.place_id,
-              }));
-
-              top3.forEach((place: any, i: number) => {
-                if (!place.place_id) { done++; if (done === top3.length) { setVendors(results2); setLoading(false); } return; }
-                service.getDetails(
-                  { placeId: place.place_id, fields: ["formatted_phone_number", "website", "url"] },
-                  (det: any, dStatus: any) => {
-                    if (cancelled) return;
-                    if (dStatus === g.maps.places.PlacesServiceStatus.OK && det) {
-                      results2[i].phone   = det.formatted_phone_number ?? undefined;
-                      results2[i].website = det.website ?? undefined;
-                      results2[i].mapsUrl = det.url ?? undefined;
-                    }
-                    done++;
-                    if (done === top3.length) { setVendors([...results2]); setLoading(false); }
-                  }
-                );
-              });
-            }
-          );
+        // ── Step 1: initialise the map at a neutral US center ──────────────
+        // We do NOT rely on the Geocoding API (separate billing/enablement).
+        // Instead we embed the location in the Places textSearch query and
+        // use the first result's coordinates to re-center the map.
+        const defaultCenter = { lat: 33.17, lng: -117.25 }; // San Diego metro fallback
+        const mapStyles = [
+          { featureType: "poi",     elementType: "labels", stylers: [{ visibility: "off" }] },
+          { featureType: "transit", stylers: [{ visibility: "off" }] },
+        ];
+        const map = new g.maps.Map(mapRef.current, {
+          center: defaultCenter, zoom: 12,
+          mapTypeControl: false, streetViewControl: false, fullscreenControl: false,
+          zoomControlOptions: { position: g.maps.ControlPosition.RIGHT_BOTTOM },
+          styles: mapStyles,
         });
+
+        // ── Step 2: textSearch — location embedded in query, no geocoder ──
+        // Also try geocoding in parallel to get a better map center, but
+        // don't block the search on it.
+        const service = new g.maps.places.PlacesService(map);
+
+        // Attempt to re-center via Geocoding API (silent fallback if denied)
+        try {
+          const geocoder = new g.maps.Geocoder();
+          geocoder.geocode({ address: `${location}, USA` }, (geoRes: any, geoSt: any) => {
+            if (!cancelled && geoSt === "OK" && geoRes?.[0]) {
+              map.setCenter(geoRes[0].geometry.location);
+              map.setZoom(13);
+            }
+          });
+        } catch { /* geocoding not available — map stays at default center */ }
+
+        // Embed location in the search query so Places API finds local results
+        // even if geocoding failed. Append "CA" if location looks like a zip.
+        const locSuffix = /^\d{5}$/.test(location.trim())
+          ? `${location}, CA`
+          : location;
+        const searchQuery = `${searchTerm} contractor near ${locSuffix}`;
+
+        service.textSearch(
+          { query: searchQuery, radius: 24000 },
+          (places: any, pStatus: any) => {
+            if (cancelled) return;
+            if (pStatus !== g.maps.places.PlacesServiceStatus.OK || !places?.length) {
+              setError("No contractors found in your area."); setLoading(false); return;
+            }
+
+            const top3: any[] = places.slice(0, 3);
+            const bounds = new g.maps.LatLngBounds();
+
+            // Re-center map on first result if geocoding hadn't done it yet
+            if (top3[0]?.geometry?.location) {
+              map.setCenter(top3[0].geometry.location);
+              map.setZoom(12);
+            }
+
+            top3.forEach((place: any, i: number) => {
+              if (!place.geometry?.location) return;
+              bounds.extend(place.geometry.location);
+              const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="40" viewBox="0 0 32 40">
+                <path d="M16 0C7.163 0 0 7.163 0 16c0 12 16 24 16 24s16-12 16-24C32 7.163 24.837 0 16 0z" fill="#0f1f3d"/>
+                <circle cx="16" cy="16" r="10" fill="#ffffff"/>
+                <text x="16" y="21" text-anchor="middle" font-family="Arial" font-size="13" font-weight="bold" fill="#0f1f3d">${i + 1}</text>
+              </svg>`;
+              new g.maps.Marker({
+                position: place.geometry.location, map,
+                icon: { url: `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`, scaledSize: new g.maps.Size(32, 40) },
+                title: place.name,
+              });
+            });
+            if (top3.length > 1) map.fitBounds(bounds);
+
+            // Fetch phone/website for each result
+            let done = 0;
+            const results2: VendorResult[] = top3.map((p: any) => ({
+              name: p.name ?? "Unknown",
+              rating: p.rating,
+              userRatingsTotal: p.user_ratings_total,
+              vicinity: p.formatted_address ?? p.vicinity,
+              placeId: p.place_id,
+            }));
+
+            top3.forEach((place: any, i: number) => {
+              if (!place.place_id) {
+                done++;
+                if (done === top3.length) { setVendors([...results2]); setLoading(false); }
+                return;
+              }
+              service.getDetails(
+                { placeId: place.place_id, fields: ["formatted_phone_number", "website", "url"] },
+                (det: any, dStatus: any) => {
+                  if (cancelled) return;
+                  if (dStatus === g.maps.places.PlacesServiceStatus.OK && det) {
+                    results2[i].phone   = det.formatted_phone_number ?? undefined;
+                    results2[i].website = det.website ?? undefined;
+                    results2[i].mapsUrl = det.url ?? undefined;
+                  }
+                  done++;
+                  if (done === top3.length) { setVendors([...results2]); setLoading(false); }
+                }
+              );
+            });
+          }
+        );
       })
       .catch((err) => {
         if (!cancelled) { setError(err.message || "Failed to load map."); setLoading(false); }

@@ -2015,23 +2015,34 @@ export default function Dashboard() {
   function speakText(text: string) {
     if (!voiceOutput || typeof window === "undefined" || !window.speechSynthesis) return;
     window.speechSynthesis.cancel();
-    // Strip any markdown-style chars that sound odd when spoken
     const clean = text.replace(/\*+/g, "").replace(/#+/g, "").replace(/\n+/g, " ").trim();
     const utterance = new SpeechSynthesisUtterance(clean);
-    utterance.rate  = 0.91;   // slightly slower — composed, not rushed
-    utterance.pitch = 1.0;
+    // Composed, measured — slightly slower than default, authoritative
+    utterance.rate   = 0.88;
+    utterance.pitch  = 0.92;  // slightly lower pitch — calm, deep, male
     utterance.volume = 1.0;
-    // Prefer a clear, neutral English voice
+
     const loadVoice = () => {
       const voices = window.speechSynthesis.getVoices();
-      const preferred = voices.find(v =>
-        v.lang.startsWith("en") &&
-        (v.name.includes("Daniel") || v.name.includes("Aaron") ||
-         v.name.includes("Alex") || v.name.includes("Nathan") ||
-         v.name.includes("Samantha") || v.name.includes("Google UK"))
-      ) || voices.find(v => v.lang === "en-US" && !v.name.includes("Google")) || voices[0];
+      // Priority order: British male voices first, then en-GB, then en-US male fallback
+      const preferred =
+        // macOS / iOS — Daniel is the canonical British male voice
+        voices.find(v => v.name === "Daniel") ||
+        // macOS alternative
+        voices.find(v => v.name === "Arthur") ||
+        // Google Chrome — Google UK English Male
+        voices.find(v => v.name === "Google UK English Male") ||
+        // Windows — any en-GB male
+        voices.find(v => v.lang === "en-GB" && /male/i.test(v.name)) ||
+        // Any en-GB voice
+        voices.find(v => v.lang === "en-GB") ||
+        // Fallback: en-US male (Aaron, Tom, Fred, Alex)
+        voices.find(v => v.lang.startsWith("en") && (v.name === "Aaron" || v.name === "Tom" || v.name === "Fred")) ||
+        voices.find(v => v.lang === "en-US") ||
+        voices[0];
       if (preferred) utterance.voice = preferred;
     };
+
     if (window.speechSynthesis.getVoices().length) {
       loadVoice();
     } else {
@@ -3557,7 +3568,25 @@ export default function Dashboard() {
                 </div>
 
                 {/* Insurance detail panel */}
-                {insurance && showInsuranceDetail && (
+                {insurance && showInsuranceDetail && (() => {
+                  const hasRichData = !!(
+                    insurance.dwellingCoverage || insurance.liabilityCoverage || insurance.personalProperty ||
+                    insurance.deductibleStandard || insurance.claimUrl || insurance.claimPhone ||
+                    (insurance.coverageItems?.length ?? 0) > 0 || (insurance.exclusions?.length ?? 0) > 0 ||
+                    insurance.agentName || insurance.replacementCostDwelling !== undefined
+                  );
+                  if (!hasRichData) return (
+                    <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 14, padding: "18px 20px", marginTop: 4, display: "flex", flexDirection: "column", alignItems: "center", gap: 10, textAlign: "center" }}>
+                      <Shield size={28} color="#0891b2" style={{ opacity: 0.5 }}/>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: "#0891b2", margin: 0 }}>Upload your policy for full coverage details</p>
+                      <p style={{ fontSize: 12, color: "#64748b", margin: 0 }}>We&apos;ll extract your coverage amounts, deductibles, exclusions, and claims contact from your declarations page.</p>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "8px 16px", borderRadius: 8, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        <Upload size={12}/> Upload Policy PDF
+                        <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                      </label>
+                    </div>
+                  );
+                  return (
                   <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 14, padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14, marginTop: 4 }}>
 
                     {/* File a Claim CTA */}
@@ -3664,7 +3693,8 @@ export default function Dashboard() {
                       </div>
                     )}
                   </div>
-                )}
+                  );
+                })()}
               </div>
 
               {/* Home Warranty */}
