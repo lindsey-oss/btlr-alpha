@@ -3033,7 +3033,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div style={{ minHeight: "100vh", display: "flex", background: C.bg, fontFamily: "'DM Sans', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+    <div style={{ height: "100vh", overflow: "hidden", display: "flex", background: C.bg, fontFamily: "'DM Sans', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
       `}</style>
@@ -3088,7 +3088,7 @@ export default function Dashboard() {
       )}
 
       {/* ── Sidebar ──────────────────────────────────────────────────── */}
-      <aside style={{ width: 216, flexShrink: 0, display: isMobile ? "none" : "flex", flexDirection: "column", background: C.navy, position: "sticky", top: 0, height: "100vh" }}>
+      <aside style={{ width: 216, flexShrink: 0, display: isMobile ? "none" : "flex", flexDirection: "column", background: C.navy, height: "100vh", overflowY: "auto" }}>
         <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
             <div style={{ width: 32, height: 32, borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, ${C.accentDk})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 8px ${C.accent}80` }}>
@@ -3185,7 +3185,7 @@ export default function Dashboard() {
       </aside>
 
       {/* ── Main ─────────────────────────────────────────────────────── */}
-      <main style={{ flex: 1, minWidth: 0, overflowY: "auto", overflowX: "hidden" }}>
+      <main style={{ flex: 1, minWidth: 0, height: "100vh", overflowY: "auto", overflowX: "hidden" }}>
         <div style={{ maxWidth: 940, margin: "0 auto", padding: isMobile ? "16px 16px 100px" : "36px 28px", display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
 
           {/* Mobile Property Selector */}
@@ -3984,6 +3984,9 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+
+            {/* Hidden file input for inspection upload — always in DOM so inspRef works */}
+            <input ref={inspRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
 
             {/* Street View — directly under home score */}
             <HousePhoto address={toTitleCase(address)} height={isMobile ? 140 : 200} />
