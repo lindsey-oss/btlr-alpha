@@ -3288,235 +3288,6 @@ export default function Dashboard() {
             {/* Street View — directly under home score */}
             <HousePhoto address={toTitleCase(address)} height={isMobile ? 140 : 200} />
 
-            {/* ── REPAIR FUND CARD ─────────────────────────────────── */}
-            {(costs.length > 0 || repairFundAllTime > 0) ? (
-            <div style={{ ...card({ padding: 0, overflow: "hidden" }), border: `1px solid ${C.border}` }}>
-
-              {/* Dark header strip */}
-              <div style={{
-                background: `linear-gradient(135deg, #1a3a2a 0%, #2D6A4F 100%)`,
-                padding: "20px 24px",
-              }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Your Home Repair Fund</p>
-                <p style={{ fontSize: 32, fontWeight: 800, color: "white", margin: "4px 0 2px", letterSpacing: "-0.02em" }}>
-                  ${(repairFundNeeded > 0 ? repairFundNeeded : repairFundAllTime).toLocaleString()}
-                </p>
-                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", margin: 0 }}>
-                  {repairFundNeeded > 0 ? "estimated repairs in the next 12 months" : "total projected repair costs"}
-                </p>
-              </div>
-
-              <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
-
-                {/* ── Connected Repair Fund Balance ─────────────────── */}
-                {(() => {
-                  const target    = repairFundNeeded > 0 ? repairFundNeeded : repairFundAllTime;
-                  const balance   = repairSavingsBalance ?? 0;
-                  const gap       = Math.max(0, target - balance);
-                  const suggested = target > 0 && gap > 0 ? Math.ceil(gap / 12) : 0;
-                  const covered   = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
-
-                  return repairSavingsSource ? (
-                    <div style={{ background: C.surface, borderRadius: 12, padding: "14px 16px", border: `1px solid ${C.border}` }}>
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: C.text2, textTransform: "uppercase", letterSpacing: "0.06em" }}>Connected Repair Fund Balance</span>
-                        <span style={{ fontSize: 11, color: repairSavingsSource === "plaid" ? C.green : C.text3, fontWeight: 600 }}>
-                          {repairSavingsSource === "plaid" ? "● Plaid" : "● Manual"}
-                        </span>
-                      </div>
-                      <p style={{ fontSize: 11, color: C.text3, margin: "0 0 10px" }}>{repairSavingsName}</p>
-
-                      {/* 4-row breakdown */}
-                      {[
-                        { label: "Repair Fund Target",        value: `$${target.toLocaleString()}`,   color: C.text   },
-                        { label: "Current Balance",           value: `$${balance.toLocaleString()}`,  color: C.green  },
-                        { label: "Remaining Gap",             value: gap > 0 ? `$${gap.toLocaleString()}` : "Fully covered ✓", color: gap > 0 ? C.amber : C.green },
-                        { label: "Suggested Monthly Savings", value: suggested > 0 ? `$${suggested.toLocaleString()}/mo` : "On track ✓", color: C.text2 },
-                      ].map(row => (
-                        <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}` }}>
-                          <span style={{ fontSize: 12, color: C.text3 }}>{row.label}</span>
-                          <span style={{ fontSize: 12, fontWeight: 700, color: row.color }}>{row.value}</span>
-                        </div>
-                      ))}
-
-                      {/* Coverage bar */}
-                      {target > 0 && (
-                        <div style={{ marginTop: 12 }}>
-                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                            <span style={{ fontSize: 11, color: C.text3 }}>Coverage</span>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: covered >= 100 ? C.green : C.amber }}>{covered}%</span>
-                          </div>
-                          <div style={{ height: 6, borderRadius: 3, background: C.border }}>
-                            <div style={{ height: "100%", borderRadius: 3, width: `${covered}%`, background: covered >= 100 ? C.green : C.amber, transition: "width 0.4s" }}/>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Edit / disconnect */}
-                      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
-                        {repairSavingsSource === "manual" && (
-                          <button onClick={() => { setEditingManualSavings(true); setManualSavingsInput(String(repairSavingsBalance ?? "")); }}
-                            style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                            Edit
-                          </button>
-                        )}
-                        <button onClick={() => { setRepairSavingsBalance(null); setRepairSavingsSource(null); setRepairSavingsName("Savings Account"); localStorage.removeItem("btlr_repair_savings"); }}
-                          style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.redBg}`, background: "transparent", color: C.red, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                          Disconnect
-                        </button>
-                      </div>
-
-                      {/* Manual edit inline form */}
-                      {editingManualSavings && (
-                        <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
-                          <input
-                            type="number" placeholder="Balance ($)" value={manualSavingsInput}
-                            onChange={e => setManualSavingsInput(e.target.value)}
-                            style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, color: C.text, background: C.bg }}
-                          />
-                          <button onClick={() => {
-                            const v = parseFloat(manualSavingsInput);
-                            if (!isNaN(v) && v >= 0) { setRepairSavingsBalance(v); setRepairSavingsSource("manual"); }
-                            setEditingManualSavings(false);
-                          }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: C.accent, color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
-                          <button onClick={() => setEditingManualSavings(false)}
-                            style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, fontSize: 12, cursor: "pointer" }}>✕</button>
-                        </div>
-                      )}
-
-                      <p style={{ fontSize: 10, color: C.text3, margin: "10px 0 0", lineHeight: 1.5 }}>
-                        Balance shown is for informational purposes only. BTLR does not move or hold funds.
-                      </p>
-                    </div>
-                  ) : (
-                    <div style={{ background: C.surface, borderRadius: 12, padding: "14px 16px", border: `1px solid ${C.border}` }}>
-                      <p style={{ fontSize: 12, fontWeight: 700, color: C.text2, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 6px" }}>Track Your Repair Savings</p>
-                      <p style={{ fontSize: 12, color: C.text3, margin: "0 0 12px", lineHeight: 1.5 }}>
-                        See how your Acorns, savings, or investment balance covers your repair fund.
-                      </p>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <button onClick={connectPlaid} disabled={connectingPlaid}
-                          style={{ padding: "9px 14px", borderRadius: 9, border: `1px solid ${C.accent}`, background: C.accentLt, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: connectingPlaid ? 0.6 : 1 }}>
-                          {connectingPlaid ? <><Loader2 size={13} className="animate-spin"/>Connecting…</> : <><LinkIcon size={13}/>Connect via Plaid (Acorns, Banks, Brokerages)</>}
-                        </button>
-                        {!editingManualSavings ? (
-                          <button onClick={() => setEditingManualSavings(true)}
-                            style={{ padding: "8px 14px", borderRadius: 9, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                            Enter Manually
-                          </button>
-                        ) : (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                            <input
-                              type="number" placeholder="Current savings balance ($)"
-                              value={manualSavingsInput}
-                              onChange={e => setManualSavingsInput(e.target.value)}
-                              style={{ padding: "8px 12px", borderRadius: 9, border: `1px solid ${C.border}`, fontSize: 13, color: C.text, background: C.bg }}
-                            />
-                            <div style={{ display: "flex", gap: 6 }}>
-                              <button onClick={() => {
-                                const v = parseFloat(manualSavingsInput);
-                                if (!isNaN(v) && v >= 0) {
-                                  setRepairSavingsBalance(v);
-                                  setRepairSavingsName("Manual Entry");
-                                  setRepairSavingsSource("manual");
-                                }
-                                setEditingManualSavings(false); setManualSavingsInput("");
-                              }} style={{ flex: 1, padding: "7px 12px", borderRadius: 8, border: "none", background: C.accent, color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save Balance</button>
-                              <button onClick={() => { setEditingManualSavings(false); setManualSavingsInput(""); }}
-                                style={{ padding: "7px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, fontSize: 12, cursor: "pointer" }}>✕</button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* Smart Save toggle */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>Smart Save Mode</p>
-                    <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>
-                      {smartSaveMode ? `Saving $${weeklySmartSave}/week toward repairs` : "Auto-round up purchases to build your fund"}
-                    </p>
-                  </div>
-                  <button onClick={() => setSmartSaveMode(p => !p)} style={{
-                    width: 42, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
-                    background: smartSaveMode ? C.green : C.border, transition: "background 0.2s", position: "relative", flexShrink: 0,
-                  }}>
-                    <div style={{ position: "absolute", top: 3, left: smartSaveMode ? 21 : 3, width: 18, height: 18, borderRadius: "50%", background: "white", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}/>
-                  </button>
-                </div>
-
-                {/* Monthly contribution tracker */}
-                <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <p style={{ fontSize: 12, fontWeight: 700, color: C.text2, margin: 0, textTransform: "uppercase", letterSpacing: "0.06em" }}>Monthly Savings Goal</p>
-                    {!editingContribution ? (
-                      <button onClick={() => { setEditingContribution(true); setContributionInput(monthlyContribution > 0 ? String(monthlyContribution) : ""); }}
-                        style={{ fontSize: 11, color: C.accent, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Edit</button>
-                    ) : (
-                      <div style={{ display: "flex", gap: 4 }}>
-                        <button onClick={() => {
-                          const v = parseFloat(contributionInput);
-                          if (!isNaN(v) && v >= 0) setMonthlyContribution(v);
-                          setEditingContribution(false);
-                        }} style={{ fontSize: 11, color: C.green, background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}>Save</button>
-                        <button onClick={() => setEditingContribution(false)} style={{ fontSize: 11, color: C.text3, background: "none", border: "none", cursor: "pointer" }}>✕</button>
-                      </div>
-                    )}
-                  </div>
-
-                  {editingContribution ? (
-                    <input type="number" placeholder={`Suggested: $${recommendedMonthly}/mo`}
-                      value={contributionInput} onChange={e => setContributionInput(e.target.value)}
-                      style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, color: C.text, background: C.bg, boxSizing: "border-box" }}
-                    />
-                  ) : (
-                    <>
-                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
-                        <span style={{ fontSize: 13, color: C.text3 }}>
-                          {monthlyContribution > 0 ? `$${monthlyContribution}/mo` : `Suggested: $${recommendedMonthly}/mo`}
-                        </span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: fundOnTrack ? C.green : C.amber }}>
-                          {fundOnTrack ? "On track ✓" : `${fundProgressPct}% of goal`}
-                        </span>
-                      </div>
-                      <div style={{ height: 6, borderRadius: 3, background: C.border }}>
-                        <div style={{ height: "100%", borderRadius: 3, width: `${fundProgressPct}%`, background: fundOnTrack ? C.green : C.amber, transition: "width 0.4s" }}/>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Cost breakdown rows */}
-                {repairFundAllTime > 0 && (
-                  <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Cost Breakdown</p>
-                    {costs.slice(0, 4).map((c, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: i < Math.min(3, costs.length - 1) ? `1px solid ${C.border}` : "none" }}>
-                        <span style={{ fontSize: 12, color: C.text3 }}>{c.label}</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: c.severity === "critical" ? C.red : c.severity === "warning" ? C.amber : C.text2 }}>${c.amount.toLocaleString()}</span>
-                      </div>
-                    ))}
-                    {costs.length > 4 && (
-                      <p style={{ fontSize: 11, color: C.text3, margin: "6px 0 0", textAlign: "right" }}>+{costs.length - 4} more in Repairs tab</p>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-            ) : (
-            <div style={{ ...card(), textAlign: "center", padding: "32px 24px" }}>
-              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#16a34a18", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-                <DollarSign size={22} color="#16a34a"/>
-              </div>
-              <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 6px" }}>Your Home Repair Fund</p>
-              <p style={{ fontSize: 13, color: C.text3, margin: 0, lineHeight: 1.5 }}>
-                Upload an inspection report or enter your system ages to generate cost projections.
-              </p>
-            </div>
-            )}
 
             {/* ── AI BUTLER ─────────────────────────────────────────── */}
             <div style={{ ...card(), background: "linear-gradient(160deg, #f8faff 0%, #eef2ff 100%)", border: `1.5px solid ${C.accent}22`, padding: 0, overflow: "hidden" }}>
@@ -4178,6 +3949,235 @@ export default function Dashboard() {
 
             </div>
 
+            {/* ── REPAIR FUND CARD ─────────────────────────────────── */}
+            {(costs.length > 0 || repairFundAllTime > 0) ? (
+            <div style={{ ...card({ padding: 0, overflow: "hidden" }), border: `1px solid ${C.border}` }}>
+
+              {/* Dark header strip */}
+              <div style={{
+                background: `linear-gradient(135deg, #1a3a2a 0%, #2D6A4F 100%)`,
+                padding: "20px 24px",
+              }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Your Home Repair Fund</p>
+                <p style={{ fontSize: 32, fontWeight: 800, color: "white", margin: "4px 0 2px", letterSpacing: "-0.02em" }}>
+                  ${(repairFundNeeded > 0 ? repairFundNeeded : repairFundAllTime).toLocaleString()}
+                </p>
+                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", margin: 0 }}>
+                  {repairFundNeeded > 0 ? "estimated repairs in the next 12 months" : "total projected repair costs"}
+                </p>
+              </div>
+
+              <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
+
+                {/* ── Connected Repair Fund Balance ─────────────────── */}
+                {(() => {
+                  const target    = repairFundNeeded > 0 ? repairFundNeeded : repairFundAllTime;
+                  const balance   = repairSavingsBalance ?? 0;
+                  const gap       = Math.max(0, target - balance);
+                  const suggested = target > 0 && gap > 0 ? Math.ceil(gap / 12) : 0;
+                  const covered   = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
+
+                  return repairSavingsSource ? (
+                    <div style={{ background: C.surface, borderRadius: 12, padding: "14px 16px", border: `1px solid ${C.border}` }}>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.text2, textTransform: "uppercase", letterSpacing: "0.06em" }}>Connected Repair Fund Balance</span>
+                        <span style={{ fontSize: 11, color: repairSavingsSource === "plaid" ? C.green : C.text3, fontWeight: 600 }}>
+                          {repairSavingsSource === "plaid" ? "● Plaid" : "● Manual"}
+                        </span>
+                      </div>
+                      <p style={{ fontSize: 11, color: C.text3, margin: "0 0 10px" }}>{repairSavingsName}</p>
+
+                      {/* 4-row breakdown */}
+                      {[
+                        { label: "Repair Fund Target",        value: `$${target.toLocaleString()}`,   color: C.text   },
+                        { label: "Current Balance",           value: `$${balance.toLocaleString()}`,  color: C.green  },
+                        { label: "Remaining Gap",             value: gap > 0 ? `$${gap.toLocaleString()}` : "Fully covered ✓", color: gap > 0 ? C.amber : C.green },
+                        { label: "Suggested Monthly Savings", value: suggested > 0 ? `$${suggested.toLocaleString()}/mo` : "On track ✓", color: C.text2 },
+                      ].map(row => (
+                        <div key={row.label} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: `1px solid ${C.border}` }}>
+                          <span style={{ fontSize: 12, color: C.text3 }}>{row.label}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: row.color }}>{row.value}</span>
+                        </div>
+                      ))}
+
+                      {/* Coverage bar */}
+                      {target > 0 && (
+                        <div style={{ marginTop: 12 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                            <span style={{ fontSize: 11, color: C.text3 }}>Coverage</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: covered >= 100 ? C.green : C.amber }}>{covered}%</span>
+                          </div>
+                          <div style={{ height: 6, borderRadius: 3, background: C.border }}>
+                            <div style={{ height: "100%", borderRadius: 3, width: `${covered}%`, background: covered >= 100 ? C.green : C.amber, transition: "width 0.4s" }}/>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Edit / disconnect */}
+                      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                        {repairSavingsSource === "manual" && (
+                          <button onClick={() => { setEditingManualSavings(true); setManualSavingsInput(String(repairSavingsBalance ?? "")); }}
+                            style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                            Edit
+                          </button>
+                        )}
+                        <button onClick={() => { setRepairSavingsBalance(null); setRepairSavingsSource(null); setRepairSavingsName("Savings Account"); localStorage.removeItem("btlr_repair_savings"); }}
+                          style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.redBg}`, background: "transparent", color: C.red, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                          Disconnect
+                        </button>
+                      </div>
+
+                      {/* Manual edit inline form */}
+                      {editingManualSavings && (
+                        <div style={{ marginTop: 10, display: "flex", gap: 6 }}>
+                          <input
+                            type="number" placeholder="Balance ($)" value={manualSavingsInput}
+                            onChange={e => setManualSavingsInput(e.target.value)}
+                            style={{ flex: 1, padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, color: C.text, background: C.bg }}
+                          />
+                          <button onClick={() => {
+                            const v = parseFloat(manualSavingsInput);
+                            if (!isNaN(v) && v >= 0) { setRepairSavingsBalance(v); setRepairSavingsSource("manual"); }
+                            setEditingManualSavings(false);
+                          }} style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: C.accent, color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save</button>
+                          <button onClick={() => setEditingManualSavings(false)}
+                            style={{ padding: "6px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, fontSize: 12, cursor: "pointer" }}>✕</button>
+                        </div>
+                      )}
+
+                      <p style={{ fontSize: 10, color: C.text3, margin: "10px 0 0", lineHeight: 1.5 }}>
+                        Balance shown is for informational purposes only. BTLR does not move or hold funds.
+                      </p>
+                    </div>
+                  ) : (
+                    <div style={{ background: C.surface, borderRadius: 12, padding: "14px 16px", border: `1px solid ${C.border}` }}>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: C.text2, textTransform: "uppercase", letterSpacing: "0.06em", margin: "0 0 6px" }}>Track Your Repair Savings</p>
+                      <p style={{ fontSize: 12, color: C.text3, margin: "0 0 12px", lineHeight: 1.5 }}>
+                        See how your Acorns, savings, or investment balance covers your repair fund.
+                      </p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <button disabled
+                          style={{ padding: "9px 14px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text3, fontSize: 13, fontWeight: 700, cursor: "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: 0.7 }}>
+                          <LinkIcon size={13}/>Connect via Plaid — Coming Soon
+                        </button>
+                        {!editingManualSavings ? (
+                          <button onClick={() => setEditingManualSavings(true)}
+                            style={{ padding: "8px 14px", borderRadius: 9, border: `1px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                            Enter Manually
+                          </button>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                            <input
+                              type="number" placeholder="Current savings balance ($)"
+                              value={manualSavingsInput}
+                              onChange={e => setManualSavingsInput(e.target.value)}
+                              style={{ padding: "8px 12px", borderRadius: 9, border: `1px solid ${C.border}`, fontSize: 13, color: C.text, background: C.bg }}
+                            />
+                            <div style={{ display: "flex", gap: 6 }}>
+                              <button onClick={() => {
+                                const v = parseFloat(manualSavingsInput);
+                                if (!isNaN(v) && v >= 0) {
+                                  setRepairSavingsBalance(v);
+                                  setRepairSavingsName("Manual Entry");
+                                  setRepairSavingsSource("manual");
+                                }
+                                setEditingManualSavings(false); setManualSavingsInput("");
+                              }} style={{ flex: 1, padding: "7px 12px", borderRadius: 8, border: "none", background: C.accent, color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Save Balance</button>
+                              <button onClick={() => { setEditingManualSavings(false); setManualSavingsInput(""); }}
+                                style={{ padding: "7px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, fontSize: 12, cursor: "pointer" }}>✕</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })()}
+
+                {/* Smart Save toggle */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 0", borderTop: `1px solid ${C.border}` }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>Smart Save Mode</p>
+                    <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>
+                      {smartSaveMode ? `Saving $${weeklySmartSave}/week toward repairs` : "Auto-round up purchases to build your fund"}
+                    </p>
+                  </div>
+                  <button onClick={() => setSmartSaveMode(p => !p)} style={{
+                    width: 42, height: 24, borderRadius: 12, border: "none", cursor: "pointer",
+                    background: smartSaveMode ? C.green : C.border, transition: "background 0.2s", position: "relative", flexShrink: 0,
+                  }}>
+                    <div style={{ position: "absolute", top: 3, left: smartSaveMode ? 21 : 3, width: 18, height: 18, borderRadius: "50%", background: "white", transition: "left 0.2s", boxShadow: "0 1px 3px rgba(0,0,0,0.2)" }}/>
+                  </button>
+                </div>
+
+                {/* Monthly contribution tracker */}
+                <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: C.text2, margin: 0, textTransform: "uppercase", letterSpacing: "0.06em" }}>Monthly Savings Goal</p>
+                    {!editingContribution ? (
+                      <button onClick={() => { setEditingContribution(true); setContributionInput(monthlyContribution > 0 ? String(monthlyContribution) : ""); }}
+                        style={{ fontSize: 11, color: C.accent, background: "none", border: "none", cursor: "pointer", fontWeight: 600 }}>Edit</button>
+                    ) : (
+                      <div style={{ display: "flex", gap: 4 }}>
+                        <button onClick={() => {
+                          const v = parseFloat(contributionInput);
+                          if (!isNaN(v) && v >= 0) setMonthlyContribution(v);
+                          setEditingContribution(false);
+                        }} style={{ fontSize: 11, color: C.green, background: "none", border: "none", cursor: "pointer", fontWeight: 700 }}>Save</button>
+                        <button onClick={() => setEditingContribution(false)} style={{ fontSize: 11, color: C.text3, background: "none", border: "none", cursor: "pointer" }}>✕</button>
+                      </div>
+                    )}
+                  </div>
+
+                  {editingContribution ? (
+                    <input type="number" placeholder={`Suggested: $${recommendedMonthly}/mo`}
+                      value={contributionInput} onChange={e => setContributionInput(e.target.value)}
+                      style={{ width: "100%", padding: "7px 10px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, color: C.text, background: C.bg, boxSizing: "border-box" }}
+                    />
+                  ) : (
+                    <>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                        <span style={{ fontSize: 13, color: C.text3 }}>
+                          {monthlyContribution > 0 ? `$${monthlyContribution}/mo` : `Suggested: $${recommendedMonthly}/mo`}
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: fundOnTrack ? C.green : C.amber }}>
+                          {fundOnTrack ? "On track ✓" : `${fundProgressPct}% of goal`}
+                        </span>
+                      </div>
+                      <div style={{ height: 6, borderRadius: 3, background: C.border }}>
+                        <div style={{ height: "100%", borderRadius: 3, width: `${fundProgressPct}%`, background: fundOnTrack ? C.green : C.amber, transition: "width 0.4s" }}/>
+                      </div>
+                    </>
+                  )}
+                </div>
+
+                {/* Cost breakdown rows */}
+                {repairFundAllTime > 0 && (
+                  <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Cost Breakdown</p>
+                    {costs.slice(0, 4).map((c, i) => (
+                      <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: i < Math.min(3, costs.length - 1) ? `1px solid ${C.border}` : "none" }}>
+                        <span style={{ fontSize: 12, color: C.text3 }}>{c.label}</span>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: c.severity === "critical" ? C.red : c.severity === "warning" ? C.amber : C.text2 }}>${c.amount.toLocaleString()}</span>
+                      </div>
+                    ))}
+                    {costs.length > 4 && (
+                      <p style={{ fontSize: 11, color: C.text3, margin: "6px 0 0", textAlign: "right" }}>+{costs.length - 4} more in Repairs tab</p>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+            ) : (
+            <div style={{ ...card(), textAlign: "center", padding: "32px 24px" }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#16a34a18", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
+                <DollarSign size={22} color="#16a34a"/>
+              </div>
+              <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 6px" }}>Your Home Repair Fund</p>
+              <p style={{ fontSize: 13, color: C.text3, margin: 0, lineHeight: 1.5 }}>
+                Upload an inspection report or enter your system ages to generate cost projections.
+              </p>
+            </div>
+            )}
             {/* Inspection Upload — full width */}
             <div style={card()}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
