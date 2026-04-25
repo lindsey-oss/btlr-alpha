@@ -44,6 +44,37 @@ function findingKey(category: string, index: number): string {
   return `${toCategoryKey(category)}_${index}`;
 }
 
+// Returns true if this finding's category maps to one of the 8 scored categories
+// that actually drive the Home Health Score. Supplemental findings (pool, spa,
+// deck, fireplace, chimney, attic, etc.) are still stored and shown in the
+// Repairs tab but are excluded from the post-upload review modal.
+function isScoredFinding(category: string): boolean {
+  const t = (category || "").toLowerCase();
+  return (
+    t.includes("roof") || t.includes("gutter") || t.includes("exterior") ||
+    t.includes("siding") || t.includes("fascia") || t.includes("soffit") ||
+    t.includes("drain") || t.includes("grading") ||
+    t.includes("foundation") || t.includes("structural") || t.includes("structure") ||
+    t.includes("basement") || t.includes("crawl") || t.includes("settling") ||
+    t.includes("plumb") || t.includes("pipe") || t.includes("water heater") ||
+    t.includes("sewer") || t.includes("hose") || t.includes("toilet") || t.includes("sink") ||
+    t.includes("electr") || t.includes("panel") || t.includes("wiring") ||
+    t.includes("outlet") || t.includes("gfci") || t.includes("circuit") ||
+    t.includes("hvac") || t.includes("heat") || t.includes("cool") ||
+    t.includes("furnace") || t.includes("duct") || t.includes("air handler") ||
+    t.includes("thermostat") || t.includes("ventilat") ||
+    t.includes("safety") || t.includes("smoke") || t.includes("carbon") ||
+    t.includes("mold") || t.includes("pest") || t.includes("termite") ||
+    t.includes("radon") || t.includes("asbestos") || t.includes("lead") ||
+    t.includes("window") || t.includes("door") || t.includes("floor") ||
+    t.includes("ceiling") || t.includes("wall") || t.includes("stair") ||
+    t.includes("interior") || t.includes("handrail") ||
+    t.includes("appliance") || t.includes("washer") || t.includes("dryer") ||
+    t.includes("dishwasher") || t.includes("oven") || t.includes("range") ||
+    t.includes("refrigerator") || t.includes("stove")
+  );
+}
+
 // Maps a raw finding category to a broader display group key
 function toGroupKey(category: string): string {
   const t = category.toLowerCase();
@@ -561,8 +592,15 @@ function InspectionReviewModal({
         </div>
 
         {/* Footer */}
+        <div style={{ padding: "12px 24px 6px", borderTop: `1px solid ${C.border}` }}>
+          <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.5 }}>
+            Showing findings that impact your Home Health Score.
+            To see the full breakdown of all repairs — including pool, deck, fireplace, and other systems — visit the{" "}
+            <strong style={{ color: C.accent }}>Repairs tab</strong>.
+          </p>
+        </div>
         <div style={{
-          padding: "16px 24px 20px", borderTop: `1px solid ${C.border}`,
+          padding: "10px 24px 18px",
           display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
         }}>
           {completedCount > 0 && (
@@ -2340,9 +2378,11 @@ export default function Dashboard() {
         const findingCount = newFindings.length;
         addEvent(`${result.inspection_type ?? "Inspection"} analyzed: ${findingCount} finding${findingCount !== 1 ? "s" : ""} detected`);
         setInspectDone(true);
-        // Show post-inspection review modal if there are findings to review
+        // Show post-inspection review modal — only scored findings (impact Home Health Score)
+        // All findings (including pool, deck, fireplace, etc.) remain in the Repairs tab
         if (newFindings.length > 0) {
-          setReviewFindings(newFindings);
+          const scoredOnly = newFindings.filter(f => isScoredFinding(f.category));
+          setReviewFindings(scoredOnly.length > 0 ? scoredOnly : newFindings);
           setShowReviewModal(true);
         } else {
           // No findings — tell the user so they know something may be wrong
@@ -3669,7 +3709,7 @@ export default function Dashboard() {
                                     <span style={{ fontSize: 12, color: C.amber, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "warning").length} warnings</span>
                                     <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>{completedFindings.length} resolved</span>
                                   </div>
-                                  <button onClick={() => { setReviewFindings(inspectionResult?.findings ?? []); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
+                                  <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category)); setReviewFindings(scored.length > 0 ? scored : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
                                 </div>
                                 {groups.map(({ gk, label, items }, gi) => {
                                   const isGrpOpen = expandedGroups.has(gk);

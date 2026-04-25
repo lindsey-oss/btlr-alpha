@@ -338,15 +338,14 @@ function buildSecondPassPrompt(firstPassFindings, addressCandidates) {
     ? `\nADDRESS CANDIDATES:\n${addressCandidates.map((a, i) => `  ${i + 1}. ${a}`).join("\n")}\n`
     : "";
 
-  // Summarise what was found so the second pass can focus on gaps
   const systemCategories = [...new Set(firstPassFindings.map(f => f.category))].join(", ");
 
   return `You are doing a SECOND REVIEW of this home inspection report. A first pass already found findings in these categories: ${systemCategories || "none yet"}.
 
-Your job is to find ANYTHING that was missed — including:
-- Minor maintenance items (info-level findings)
-- Systems not yet represented: pool, spa, deck, garage, fireplace, attic, crawlspace, gutters, grading/drainage, chimney, water heater, doors, windows, appliances, insulation, ventilation, environmental hazards
+Your job is to find ANYTHING that was missed — report every finding regardless of system type, including:
 - Additional findings within already-identified categories
+- Systems not yet represented: pool, spa, deck, garage, fireplace, attic, crawlspace, chimney, gutters, grading/drainage, water heater, doors, windows, appliances, insulation, ventilation, environmental hazards
+- Minor maintenance items (info-level findings)
 - Age or condition notes for any system not yet captured
 
 Respond ONLY with valid JSON in exactly this shape:
@@ -371,7 +370,7 @@ Respond ONLY with valid JSON in exactly this shape:
   ]
 }
 ${addressHint}
-Apply the same field rules as a standard extraction. Return ALL findings you see — including any from the first-pass categories if you find more detail. The merger will deduplicate. Return up to 30 findings.`;
+Return ALL findings you see across all systems. The merger will deduplicate against pass 1. Return up to 30 findings.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
