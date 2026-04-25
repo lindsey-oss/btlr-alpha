@@ -1,12 +1,51 @@
 import OpenAI from "openai";
+import { createHash } from "crypto";
 import { extractPdfTextAsync } from "../../../lib/extractPdfText";
 import { normalizeLegacyFindings, computeHomeHealthReport } from "../../../lib/scoring-engine";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// IN-PROCESS PARSE CACHE
+//
+// Stores the last N parse results keyed by SHA-256 of the text sent to AI.
+// Survives within a single server process lifetime — not across restarts.
+// Prevents re-parsing the exact same report and guarantees identical results
+// when the same file is re-uploaded in the same session.
+// ─────────────────────────────────────────────────────────────────────────────
+const parseCache = new Map();   // hash → { result, ts }
+const CACHE_MAX  = 50;          // evict oldest when full
+const CACHE_TTL  = 1000 * 60 * 60 * 24; // 24 hours
+
+function cacheKey(text) {
+  return createHash("sha256").update(text).digest("hex");
+}
+
+function cacheGet(key) {
+  const entry = parseCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.ts > CACHE_TTL) { parseCache.delete(key); return null; }
+  return entry.result;
+}
+
+function cacheSet(key, result) {
+  if (parseCache.size >= CACHE_MAX) {
+    // Evict the oldest entry
+    const oldestKey = parseCache.keys().next().value;
+    parseCache.delete(oldestKey);
+  }
+  parseCache.set(key, { result, ts: Date.now() });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
 const CHAR_LIMIT = 48000;        // ~12k tokens — plenty for gpt-4o context
 const MIN_TEXT_LENGTH = 80;      // below this = likely image/scanned PDF
+
+// Determinism settings — critical for consistent results across re-uploads
+// temperature: 0  → fully greedy decoding, no sampling randomness
+// seed: fixed int → OpenAI uses same internal RNG state each call
+const AI_TEMPERATURE = 0;
+const AI_SEED = 91472;  // arbitrary fixed value — never change this
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -288,6 +327,120 @@ findings:
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// SECOND-PASS PROMPT
+//
+// The second pass uses a different system instruction to encourage the model
+// to find anything the first pass missed — especially minor/info findings and
+// systems not covered in the main summary section.
+// ─────────────────────────────────────────────────────────────────────────────
+function buildSecondPassPrompt(firstPassFindings, addressCandidates) {
+  const addressHint = addressCandidates.length > 0
+    ? `\nADDRESS CANDIDATES:\n${addressCandidates.map((a, i) => `  ${i + 1}. ${a}`).join("\n")}\n`
+    : "";
+
+  // Summarise what was found so the second pass can focus on gaps
+  const systemCategories = [...new Set(firstPassFindings.map(f => f.category))].join(", ");
+
+  return `You are doing a SECOND REVIEW of this home inspection report. A first pass already found findings in these categories: ${systemCategories || "none yet"}.
+
+Your job is to find ANYTHING that was missed — including:
+- Minor maintenance items (info-level findings)
+- Systems not yet represented: pool, spa, deck, garage, fireplace, attic, crawlspace, gutters, grading/drainage, chimney, water heater, doors, windows, appliances, insulation, ventilation, environmental hazards
+- Additional findings within already-identified categories
+- Age or condition notes for any system not yet captured
+
+Respond ONLY with valid JSON in exactly this shape:
+{
+  "property_address": "string | null",
+  "inspection_date": "string | null",
+  "company_name": "string | null",
+  "inspector_name": "string | null",
+  "summary": "string | null",
+  "roof_year": number | null,
+  "hvac_year": number | null,
+  "findings": [
+    {
+      "category": "string",
+      "description": "string",
+      "severity": "critical" | "warning" | "info",
+      "estimated_cost": number | null,
+      "age_years": number | null,
+      "remaining_life_years": number | null,
+      "lifespan_years": number | null
+    }
+  ]
+}
+${addressHint}
+Apply the same field rules as a standard extraction. Return ALL findings you see — including any from the first-pass categories if you find more detail. The merger will deduplicate. Return up to 30 findings.`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FINDINGS MERGER
+//
+// Combines two sets of findings, deduplicating by semantic similarity.
+// A finding is considered a duplicate if it has the same category AND
+// its description overlaps significantly with an existing finding.
+// Always keeps the higher-severity version when there's a conflict.
+// ─────────────────────────────────────────────────────────────────────────────
+function mergeFindings(pass1, pass2) {
+  const SEVERITY_RANK = { critical: 3, warning: 2, info: 1 };
+
+  // Normalise a description for fuzzy comparison
+  function norm(s) {
+    return (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
+  }
+
+  // Word-overlap ratio between two strings (Jaccard on word sets)
+  function similarity(a, b) {
+    const wa = new Set(norm(a).split(" ").filter(w => w.length > 3));
+    const wb = new Set(norm(b).split(" ").filter(w => w.length > 3));
+    if (wa.size === 0 && wb.size === 0) return 1;
+    if (wa.size === 0 || wb.size === 0) return 0;
+    let inter = 0;
+    for (const w of wa) if (wb.has(w)) inter++;
+    return inter / Math.max(wa.size, wb.size);
+  }
+
+  const merged = [...pass1];
+
+  for (const f2 of pass2) {
+    // Check if a similar finding already exists in the same category
+    const dupIdx = merged.findIndex(f1 =>
+      (f1.category || "").toLowerCase() === (f2.category || "").toLowerCase()
+      && similarity(f1.description, f2.description) >= 0.45
+    );
+
+    if (dupIdx === -1) {
+      // New finding — add it
+      merged.push(f2);
+    } else {
+      // Duplicate — keep the higher-severity version
+      const existing = merged[dupIdx];
+      const existRank = SEVERITY_RANK[existing.severity] ?? 0;
+      const newRank   = SEVERITY_RANK[f2.severity] ?? 0;
+      if (newRank > existRank) {
+        merged[dupIdx] = { ...existing, ...f2 }; // upgrade severity + any new fields
+      } else {
+        // Keep existing but fill in any null fields from the second pass
+        merged[dupIdx] = {
+          estimated_cost:      existing.estimated_cost      ?? f2.estimated_cost,
+          age_years:           existing.age_years           ?? f2.age_years,
+          remaining_life_years:existing.remaining_life_years?? f2.remaining_life_years,
+          lifespan_years:      existing.lifespan_years      ?? f2.lifespan_years,
+          ...existing,
+        };
+      }
+    }
+  }
+
+  // Sort: critical first, then warning, then info; within tier sort by category
+  const order = f => `${3 - (SEVERITY_RANK[f.severity] ?? 0)}_${(f.category || "").toLowerCase()}`;
+  merged.sort((a, b) => order(a).localeCompare(order(b)));
+
+  return merged.slice(0, 30); // cap at 30
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // IMAGE/SCANNED PDF FALLBACK
 //
 // If text extraction yields too little (scanned PDF, image-based report),
@@ -310,7 +463,8 @@ async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       response_format: { type: "json_object" },
-      temperature: 0.1,
+      temperature: AI_TEMPERATURE,
+      seed: AI_SEED,
       messages: [
         {
           role: "system",
@@ -378,6 +532,7 @@ export async function POST(req) {
 
   const charCount = inspectionText.trim().length;
   console.log(`[parse-inspection] Extracted ${charCount} chars from document`);
+  let _parseHash = null; // hoisted so cacheSet can reference it after the if block
 
   // ── Image / scanned PDF detection ────────────────────────────────────────
   // If text extraction produced almost nothing, the PDF is likely scanned.
@@ -417,12 +572,22 @@ export async function POST(req) {
     const textForAI = smartExtractSection(inspectionText);
     console.log(`[parse-inspection] Sending ${textForAI.length} chars to gpt-4o`);
 
+    // ── Cache check — same text always returns same result ────────────────
+    const hash = cacheKey(textForAI);
+    _parseHash = hash; // hoist into outer scope for cacheSet below
+    const cached = cacheGet(hash);
+    if (cached) {
+      console.log(`[parse-inspection] Cache HIT (${hash.slice(0, 12)}…) — returning stored result`);
+      return Response.json(cached);
+    }
+
     const prompt = buildPrompt(addressCandidates);
 
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       response_format: { type: "json_object" },
-      temperature: 0.1,
+      temperature: AI_TEMPERATURE,
+      seed: AI_SEED,
       messages: [
         {
           role: "system",
@@ -436,6 +601,45 @@ export async function POST(req) {
     });
 
     message = completion.choices[0].message.content;
+
+    // ── Second pass — find anything missed ───────────────────────────────
+    // Run a second AI call with a gap-focused prompt, then merge results.
+    // Both calls use temperature=0 + same seed so each pass is itself stable.
+    try {
+      const pass1Findings = JSON.parse(message).findings ?? [];
+      const pass2Prompt   = buildSecondPassPrompt(pass1Findings, addressCandidates);
+
+      const completion2 = await openai.chat.completions.create({
+        model: "gpt-4o",
+        response_format: { type: "json_object" },
+        temperature: AI_TEMPERATURE,
+        seed: AI_SEED + 1, // offset by 1 so pass2 explores slightly different coverage
+        messages: [
+          {
+            role: "system",
+            content: "You are reviewing a home inspection report for a SECOND TIME to find missed findings. Respond only with valid JSON.",
+          },
+          {
+            role: "user",
+            content: `${pass2Prompt}\n\nINSPECTION REPORT TEXT:\n${textForAI}`,
+          },
+        ],
+      });
+
+      const pass2Raw     = JSON.parse(completion2.choices[0].message.content);
+      const pass2Findings = Array.isArray(pass2Raw.findings) ? pass2Raw.findings : [];
+      console.log(`[parse-inspection] Pass 1: ${pass1Findings.length} findings | Pass 2: ${pass2Findings.length} findings`);
+
+      // Merge and replace the message with a combined payload
+      const mergedFindings = mergeFindings(pass1Findings, pass2Findings);
+      console.log(`[parse-inspection] After merge: ${mergedFindings.length} findings`);
+
+      const pass1Parsed = JSON.parse(message);
+      message = JSON.stringify({ ...pass1Parsed, findings: mergedFindings });
+    } catch (pass2Err) {
+      // Second pass failed — first pass result still used
+      console.error("[parse-inspection] Second pass failed (using first pass):", pass2Err?.message);
+    }
   }
 
   try {
@@ -464,7 +668,7 @@ export async function POST(req) {
       console.error("[parse-inspection] Scoring engine error:", engineErr?.message);
     }
 
-    return Response.json({
+    const finalResult = {
       property_address:  parsed.property_address  ?? null,
       inspection_date:   parsed.inspection_date   ?? null,
       company_name:      parsed.company_name      ?? null,
@@ -474,7 +678,12 @@ export async function POST(req) {
       hvac_year:         safeHvacYear,
       findings,
       home_health_report,
-    });
+    };
+
+    // Store in cache so re-uploads of the same report return identical results
+    if (_parseHash) cacheSet(_parseHash, finalResult);
+
+    return Response.json(finalResult);
   } catch {
     return Response.json({
       property_address: null, inspection_date: null, company_name: null,

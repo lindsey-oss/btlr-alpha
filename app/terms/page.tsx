@@ -83,7 +83,7 @@ export default function TermsPage() {
             "You are responsible for keeping your login credentials secure",
             "One account per person — do not share accounts",
             "You are responsible for all activity that occurs under your account",
-            "Notify us immediately at support@btlrai.com if you suspect unauthorized access",
+            "Notify us immediately at btlr.info@gmail.com if you suspect unauthorized access",
           ]} />
         </Section>
 
@@ -177,7 +177,7 @@ export default function TermsPage() {
         </Section>
 
         <Section title="14. Contact">
-          <P>Questions about these terms? Email: <a href="mailto:support@btlrai.com" style={{ color: accent }}>support@btlrai.com</a></P>
+          <P>Questions about these terms? Email: <a href="mailto:btlr.info@gmail.com" style={{ color: accent }}>btlr.info@gmail.com</a></P>
         </Section>
 
       </main>

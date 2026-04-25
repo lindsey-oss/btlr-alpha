@@ -107,6 +107,18 @@ export default function PrivacyPage() {
           <P>We do not use your data for advertising or share it with data brokers.</P>
         </Section>
 
+        <Section title="2a. Aggregated &amp; Anonymized Data">
+          <P>We may use aggregated, anonymized data derived from user activity and home information to improve our services and generate insights about home maintenance, repair trends, and system performance. This data will never include personally identifiable information and cannot be used to identify individual users or properties.</P>
+          <P>Specifically, this means:</P>
+          <UL items={[
+            "Aggregated data may be used internally to improve BTLR's product, algorithms, and recommendations",
+            "Aggregated data may be used to generate insights about home maintenance and repair trends (e.g., average roof replacement costs by region)",
+            "BTLR does not sell personally identifiable information (PII) — ever",
+            "Any data used externally is stripped of names, addresses, and all identifiable user details before use",
+          ]} />
+          <Note>In plain terms: we may learn from patterns across all homes on the platform. We will never share anything traceable back to you or your property.</Note>
+        </Section>
+
         <Section title="3. Document Parsing & AI">
           <P>When you upload a PDF — inspection report, insurance policy, mortgage statement — we send the text to OpenAI&apos;s API to extract findings and summaries. This means:</P>
           <UL items={[
@@ -158,7 +170,7 @@ export default function PrivacyPage() {
             "Export: ask for a copy of your data",
             "Disconnect bank: remove Plaid connection at any time in Settings",
           ]} />
-          <P>To exercise any of these rights, email: <a href="mailto:privacy@btlrai.com" style={{ color: accent }}>privacy@btlrai.com</a></P>
+          <P>To exercise any of these rights, email: <a href="mailto:btlr.info@gmail.com" style={{ color: accent }}>btlr.info@gmail.com</a></P>
         </Section>
 
         <Section title="8. Cookies & Tracking">
@@ -174,7 +186,7 @@ export default function PrivacyPage() {
         </Section>
 
         <Section title="Contact">
-          <P>Questions about your privacy? Email us: <a href="mailto:privacy@btlrai.com" style={{ color: accent }}>privacy@btlrai.com</a></P>
+          <P>Questions about your privacy? Email us: <a href="mailto:btlr.info@gmail.com" style={{ color: accent }}>btlr.info@gmail.com</a></P>
         </Section>
 
       </main>
