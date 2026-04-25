@@ -1264,7 +1264,7 @@ export default function Dashboard() {
   const [hvacYear, setHvacYear] = useState("");
   const [year, setYear]         = useState<number | null>(null);
   const [nav, setNav]           = useState("Dashboard");
-  const [toast, setToast]       = useState<{ msg: string; type: "success" | "error" } | null>(null);
+  const [toast, setToast]       = useState<{ msg: string; type: "success" | "error" | "info" } | null>(null);
   const toastTimerRef           = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
@@ -1391,6 +1391,8 @@ export default function Dashboard() {
     claimPhone?: string; claimUrl?: string; claimEmail?: string; claimHours?: string;
     // legacy fields from old parser / properties table
     premium?: number;
+    // stacked additional policies (CA FAIR Plan + DIC, etc.)
+    additionalPolicies?: Array<{ provider?: string; policyType?: string; policyNumber?: string; premium?: number; annualPremium?: number; renewalDate?: string; expirationDate?: string; claimPhone?: string; claimUrl?: string; claimEmail?: string }>;
   } | null>(null);
   const [parsingInsurance, setParsingInsurance] = useState(false);
   const [insuranceError, setInsuranceError] = useState<string | null>(null);
@@ -1577,7 +1579,7 @@ export default function Dashboard() {
     setFetchingProperty(false);
   }
 
-  function showToast(msg: string, type: "success" | "error" = "success") {
+  function showToast(msg: string, type: "success" | "error" | "info" = "success") {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ msg, type });
     toastTimerRef.current = setTimeout(() => setToast(null), 5000);
@@ -5046,171 +5048,6 @@ export default function Dashboard() {
                 </div>
               </div>
               )} {/* end repairFundExpanded */}
-            </div>
-              <label style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 16px", borderRadius: 12, cursor: inspecting ? "default" : "pointer", transition: "all 0.2s",
-                border: `2px dashed ${inspecting ? C.accent : inspectDone ? C.green : inspectErr ? C.red : C.border}`,
-                background: inspecting ? "#eff6ff" : inspectDone ? C.greenBg : inspectErr ? C.redBg : "#fafbfc" }}>
-                {inspecting ? <><Loader2 size={18} color={C.accent} className="animate-spin"/><span style={{ fontSize: 14, color: C.accent, fontWeight: 500 }}>Analyzing report… (up to 60s)</span></>
-                : inspectDone ? <><CheckCircle2 size={18} color={C.green}/><span style={{ fontSize: 14, color: C.green, fontWeight: 600 }}>Analysis complete — click to upload another</span></>
-                : inspectErr ? <><AlertTriangle size={18} color={C.red}/><div><span style={{ fontSize: 14, color: C.red, fontWeight: 600, display: "block" }}>Upload failed</span><span style={{ fontSize: 12, color: C.text3 }}>{inspectErr}</span></div></>
-                : <><CloudUpload size={18} color={C.text3}/><div><span style={{ fontSize: 14, color: C.text, fontWeight: 500, display: "block" }}>Click to upload inspection PDF</span><span style={{ fontSize: 12, color: C.text3 }}>Pest, home, roof, HVAC — AI extracts all findings automatically</span></div></>}
-                <input ref={inspRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
-              </label>
-              {inspectionResult && (
-                <div style={{ marginTop: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                    <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{inspectionResult.inspection_type ?? "Inspection Report"}</span>
-                    {inspectionResult.total_estimated_cost != null && (
-                      <span style={{ fontSize: 13, fontWeight: 700, color: C.red, background: C.redBg, padding: "3px 10px", borderRadius: 20 }}>
-                        Est. ${inspectionResult.total_estimated_cost.toLocaleString()} total
-                      </span>
-                    )}
-                  </div>
-                  {inspectionResult.summary && (
-                    <p style={{ fontSize: 13, color: C.text2, lineHeight: 1.6, margin: "0 0 10px", background: C.bg, borderRadius: 8, padding: "9px 11px" }}>
-                      {inspectionResult.summary.replace(/^\[Extracted[\s\S]*?\]\s*/, "")}
-                    </p>
-                  )}
-                  {inspectionResult.findings && inspectionResult.findings.length > 0 && (() => {
-                    // Build groups for the compact accordion inside the upload card
-                    const grpMap = new Map<string, { label: string; items: { f: Finding; globalIdx: number }[] }>();
-                    for (let gi = 0; gi < inspectionResult.findings.length; gi++) {
-                      const f   = inspectionResult.findings[gi];
-                      const gk  = toGroupKey(f.category);
-                      const meta = GROUP_META[gk] ?? GROUP_META.general;
-                      if (!grpMap.has(gk)) grpMap.set(gk, { label: meta.label, items: [] });
-                      grpMap.get(gk)!.items.push({ f, globalIdx: gi });
-                    }
-                    const grps = [...grpMap.entries()].map(([gk, v]) => ({ gk, ...v }));
-                    return (
-                      <div style={{ borderRadius: 10, border: `1px solid ${C.border}`, overflow: "hidden" }}>
-                        {grps.map(({ gk, label, items }, gi) => {
-                          const isOpen      = expandedGroups.has("upload_" + gk);
-                          const hasCritical = items.some(({ f }) => f.severity === "critical");
-                          const hasWarning  = items.some(({ f }) => f.severity === "warning");
-                          const meta        = GROUP_META[gk] ?? GROUP_META.general;
-                          const worstColor  = hasCritical ? C.red : hasWarning ? C.amber : C.green;
-                          const worstBg     = hasCritical ? C.redBg : hasWarning ? C.amberBg : C.greenBg;
-                          const worstLabel  = hasCritical ? "Critical" : hasWarning ? "Warning" : "Good";
-                          return (
-                            <div key={gk} style={{ borderBottom: gi < grps.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                              {/* Group row */}
-                              <button
-                                onClick={() => setExpandedGroups(prev => {
-                                  const next = new Set(prev);
-                                  const key  = "upload_" + gk;
-                                  if (next.has(key)) next.delete(key); else next.add(key);
-                                  return next;
-                                })}
-                                style={{
-                                  width: "100%", display: "flex", alignItems: "center", gap: 10,
-                                  padding: "11px 14px", background: isOpen ? C.bg : "white",
-                                  border: "none", cursor: "pointer", textAlign: "left",
-                                }}>
-                                {/* Icon */}
-                                <div style={{
-                                  width: 30, height: 30, borderRadius: 8, flexShrink: 0,
-                                  background: worstBg, display: "flex", alignItems: "center", justifyContent: "center",
-                                }}>
-                                  {meta.iconFn(worstColor)}
-                                </div>
-                                {/* Label */}
-                                <div style={{ flex: 1, minWidth: 0 }}>
-                                  <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{label}</span>
-                                  <span style={{ fontSize: 11, color: C.text3, marginLeft: 6 }}>
-                                    {items.length} {items.length === 1 ? "finding" : "findings"}
-                                  </span>
-                                </div>
-                                {/* Severity badge */}
-                                <span style={{
-                                  fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20,
-                                  background: worstBg, color: worstColor, flexShrink: 0,
-                                }}>
-                                  {worstLabel}
-                                </span>
-                                {/* Chevron */}
-                                <div style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0)", transition: "transform 0.2s", flexShrink: 0 }}>
-                                  <ChevronDown size={14} color={C.text3}/>
-                                </div>
-                              </button>
-
-                              {/* Expanded findings */}
-                              {isOpen && (
-                                <div style={{ borderTop: `1px solid ${C.border}`, background: C.bg }}>
-                                  {items.map(({ f, globalIdx }, fi) => {
-                                    const dotColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
-                                    return (
-                                      <div key={fi}
-                                        onClick={() => openCostModal({ label: f.category, horizon: f.severity === "critical" ? "Immediate" : "Within 1–2 yrs", amount: f.estimated_cost ?? 0, severity: f.severity, finding: f, tradeCategory: f.category })}
-                                        style={{
-                                          display: "flex", gap: 10, padding: "9px 14px 9px 54px",
-                                          borderBottom: fi < items.length - 1 ? `1px solid ${C.border}` : "none",
-                                          alignItems: "flex-start", cursor: "pointer",
-                                          transition: "background 0.1s",
-                                        }}
-                                        onMouseEnter={e => e.currentTarget.style.background = "#f1f5f9"}
-                                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                        <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flexShrink: 0, marginTop: 5 }}/>
-                                        <div style={{ flex: 1, minWidth: 0 }}>
-                                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{f.category}</span>
-                                          <span style={{ fontSize: 11, color: C.text2, display: "block", marginTop: 1, lineHeight: 1.4 }}>{f.description}</span>
-                                        </div>
-                                        {f.estimated_cost != null && (
-                                          <span style={{ fontSize: 12, fontWeight: 700, color: dotColor, flexShrink: 0 }}>${f.estimated_cost.toLocaleString()}</span>
-                                        )}
-                                      </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* Debug/QA Panel — hidden toggle */}
-              {parseDebug && (
-                <div style={{ marginTop: 14, borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-                  <button onClick={() => setShowDebug(d => !d)}
-                    style={{ fontSize: 11, color: C.text3, background: "none", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, fontWeight: 500 }}>
-                    <Eye size={11}/> {showDebug ? "Hide" : "Show"} Parser Debug
-                  </button>
-                  {showDebug && (
-                    <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
-                      {[
-                        { label: "Extraction Method", value: String((parseDebug).extraction_method ?? "—") },
-                        { label: "Raw Chars Extracted", value: String((parseDebug).raw_chars_extracted ?? "—") },
-                        { label: "Chars Sent to AI", value: String((parseDebug).chars_sent_to_ai ?? "—") },
-                      ].map(({ label, value }) => (
-                        <div key={label} style={{ display: "flex", gap: 12, fontSize: 12 }}>
-                          <span style={{ color: C.text3, minWidth: 160, flexShrink: 0 }}>{label}:</span>
-                          <span style={{ color: C.text2, fontWeight: 600 }}>{value}</span>
-                        </div>
-                      ))}
-                      {parseDebug.text_preview && (
-                        <div>
-                          <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "4px 0 4px" }}>PDF Text Preview (first 500 chars)</p>
-                          <pre style={{ fontSize: 11, color: C.text2, background: C.bg, borderRadius: 8, padding: "10px 12px", overflow: "auto", maxHeight: 140, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, border: `1px solid ${C.border}` }}>
-                            {String((parseDebug).text_preview)}
-                          </pre>
-                        </div>
-                      )}
-                      {(parseDebug).raw_ai_output && (
-                        <div>
-                          <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "4px 0 4px" }}>Raw AI Output</p>
-                          <pre style={{ fontSize: 11, color: C.text2, background: C.bg, borderRadius: 8, padding: "10px 12px", overflow: "auto", maxHeight: 200, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, border: `1px solid ${C.border}` }}>
-                            {String((parseDebug).raw_ai_output)}
-                          </pre>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
 
 

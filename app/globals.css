@@ -16,6 +16,10 @@
   --red:       #dc2626;
 }
 
+html {
+  overflow-x: hidden;
+}
+
 body {
   background: var(--bg);
   color: var(--text);
@@ -23,7 +27,13 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   font-size: 16px;
+  overflow-x: hidden;
+  max-width: 100%;
 }
+
+/* Prevent flex children from overflowing their containers */
+* { box-sizing: border-box; }
+img, video, iframe, table { max-width: 100%; }
 
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }

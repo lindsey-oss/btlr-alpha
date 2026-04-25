@@ -383,11 +383,15 @@ export default function LandingPage() {
           .dh-video-wrap video{max-height:52vh !important;width:auto !important;max-width:96vw !important}
           /* Section padding tighter */
           .section-pad{padding:56px 20px !important}
-          .hero-pad{padding:100px 20px 60px !important}
+          .hero-pad{padding:100px 20px 80px !important}
           /* Reality section */
           #reality{padding:60px 20px !important}
           /* Features section */
           #features{padding:60px 20px !important}
+          /* Hide scroll hint — overlaps hero content on small screens */
+          .hero-scroll-hint{display:none !important}
+          /* Prevent any element from creating horizontal overflow */
+          section,div{max-width:100%;word-break:break-word}
         }
       `}</style>
 
@@ -467,8 +471,8 @@ export default function LandingPage() {
             </Link>
           </p>
         </div>
-        {/* Scroll hint */}
-        <div style={{ position: "absolute", bottom: 36, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, opacity: 0, animation: "fadeIn 1s 1.4s forwards", zIndex: 1 }}>
+        {/* Scroll hint — hidden on mobile so it doesn't overlap content */}
+        <div className="hero-scroll-hint" style={{ position: "absolute", bottom: 36, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, opacity: 0, animation: "fadeIn 1s 1.4s forwards", zIndex: 1 }}>
           <span style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.dim }}>Scroll</span>
           <div style={{ width: 1, height: 52, background: `linear-gradient(${C.gold},transparent)`, animation: "pulse 2s infinite" }}/>
         </div>
