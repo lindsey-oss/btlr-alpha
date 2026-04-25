@@ -129,7 +129,7 @@ function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; locati
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const g = (window as unknown as { google: any }).google;
         const geocoder = new g.maps.Geocoder();
-        geocoder.geocode({ address: location }, (results, status) => {
+        geocoder.geocode({ address: location }, (results: any, status: any) => {
           if (cancelled) return;
           if (status !== "OK" || !results || !results[0]) {
             setError("Couldn't locate your area."); setLoading(false); return;
@@ -150,7 +150,7 @@ function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; locati
           const service = new g.maps.places.PlacesService(map);
           service.textSearch(
             { query: `${searchTerm} contractor`, location: center, radius: 24000 },
-            (places, pStatus) => {
+            (places: any, pStatus: any) => {
               if (cancelled) return;
               if (pStatus !== g.maps.places.PlacesServiceStatus.OK || !places) {
                 setError("No results found nearby."); setLoading(false); return;
@@ -191,7 +191,7 @@ function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; locati
                 if (!place.place_id) { done++; if (done === top3.length) { setVendors(results2); setLoading(false); } return; }
                 service.getDetails(
                   { placeId: place.place_id, fields: ["formatted_phone_number", "website", "url"] },
-                  (det, dStatus) => {
+                  (det: any, dStatus: any) => {
                     if (cancelled) return;
                     if (dStatus === g.maps.places.PlacesServiceStatus.OK && det) {
                       results2[i].phone   = det.formatted_phone_number ?? undefined;
