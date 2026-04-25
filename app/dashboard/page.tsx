@@ -1328,6 +1328,13 @@ export default function Dashboard() {
   const [plaidConnected, setPlaidConnected]   = useState(false);
   const [connectingPlaid, setConnectingPlaid] = useState(false);
 
+  // Repair Fund — connected savings balance (Plaid or manual)
+  const [repairSavingsBalance, setRepairSavingsBalance]   = useState<number | null>(null);
+  const [repairSavingsName, setRepairSavingsName]         = useState<string>("Savings Account");
+  const [repairSavingsSource, setRepairSavingsSource]     = useState<"plaid" | "manual" | null>(null);
+  const [editingManualSavings, setEditingManualSavings]   = useState(false);
+  const [manualSavingsInput, setManualSavingsInput]       = useState("");
+
   // Property data
   const [homeValue, setHomeValue]     = useState<number | null>(null);
   const [propertyTax, setPropertyTax] = useState<number | null>(null);
@@ -1412,6 +1419,26 @@ export default function Dashboard() {
   useEffect(() => {
     try { localStorage.setItem("btlr_repair_fund", JSON.stringify({ monthlyContribution, smartSaveMode })); } catch { /* ignore */ }
   }, [monthlyContribution, smartSaveMode]);
+
+  // Repair Fund savings balance persistence (manual entries survive refresh)
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem("btlr_repair_savings");
+      if (saved) {
+        const s = JSON.parse(saved);
+        if (s.source === "manual" && typeof s.balance === "number") {
+          setRepairSavingsBalance(s.balance);
+          setRepairSavingsName(s.name ?? "Savings Account");
+          setRepairSavingsSource("manual");
+        }
+      }
+    } catch { /* ignore */ }
+  }, []);
+  useEffect(() => {
+    if (repairSavingsSource === "manual" && repairSavingsBalance !== null) {
+      try { localStorage.setItem("btlr_repair_savings", JSON.stringify({ source: "manual", balance: repairSavingsBalance, name: repairSavingsName })); } catch { /* ignore */ }
+    }
+  }, [repairSavingsBalance, repairSavingsSource, repairSavingsName]);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -1606,6 +1633,13 @@ export default function Dashboard() {
           payment: m.payment?.toString() ?? "", due_day: m.due_day?.toString() ?? "1",
           rate: m.rate ? (m.rate * 100).toFixed(3) : "",
         });
+      }
+      // Use highest-balance savings / investment account for Repair Fund display
+      if (data.savingsAccounts?.length > 0) {
+        const top = data.savingsAccounts[0];
+        setRepairSavingsBalance(top.balance ?? 0);
+        setRepairSavingsName(top.name ?? "Connected Account");
+        setRepairSavingsSource("plaid");
       }
     } catch { /* silent */ }
   }
@@ -3365,6 +3399,180 @@ export default function Dashboard() {
                   </div>
                 </div>
               )}
+
+              {/* ── Connected Repair Fund Balance ─────────────────── */}
+              <div style={{ borderTop: `1px solid ${C.border}`, padding: "16px 24px" }}>
+                {repairSavingsBalance !== null ? (
+                  /* Connected state — show balance breakdown */
+                  <div>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        <div style={{ width: 22, height: 22, borderRadius: 6, background: `${C.green}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <CheckCircle2 size={12} color={C.green}/>
+                        </div>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: C.text2, textTransform: "uppercase", letterSpacing: "0.06em" }}>Connected Repair Fund Balance</span>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 10, fontWeight: 600, color: repairSavingsSource === "plaid" ? C.green : C.accent, background: repairSavingsSource === "plaid" ? C.greenBg : "#eff6ff", padding: "2px 8px", borderRadius: 10, border: `1px solid ${repairSavingsSource === "plaid" ? C.green : C.accent}30` }}>
+                          {repairSavingsSource === "plaid" ? "Plaid ✓" : "Manual"}
+                        </span>
+                        <button onClick={() => { setEditingManualSavings(true); setManualSavingsInput(String(repairSavingsBalance)); }}
+                          style={{ fontSize: 11, color: C.text3, background: "none", border: "none", cursor: "pointer", padding: 0, textDecoration: "underline" }}>
+                          Edit
+                        </button>
+                        <button onClick={() => { setRepairSavingsBalance(null); setRepairSavingsSource(null); try { localStorage.removeItem("btlr_repair_savings"); } catch {} }}
+                          style={{ fontSize: 11, color: C.text3, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+                          <X size={12}/>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Account name */}
+                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 12px", display: "flex", alignItems: "center", gap: 5 }}>
+                      <LinkIcon size={11}/> {repairSavingsName}
+                    </p>
+
+                    {/* 4-row breakdown */}
+                    {(() => {
+                      const target    = repairFundNeeded > 0 ? repairFundNeeded : repairFundAllTime;
+                      const balance   = repairSavingsBalance ?? 0;
+                      const gap       = Math.max(0, target - balance);
+                      const suggested = target > 0 && gap > 0 ? Math.ceil(gap / 12) : 0;
+                      const covered   = target > 0 ? Math.min(100, Math.round((balance / target) * 100)) : 0;
+                      return (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                          {[
+                            { label: "Repair Fund Target",        value: `$${target.toLocaleString()}`,   color: C.text   },
+                            { label: `${repairSavingsName} Balance`, value: `$${balance.toLocaleString()}`, color: balance >= target ? C.green : C.accent },
+                            { label: "Remaining Reserve Gap",     value: gap > 0 ? `$${gap.toLocaleString()}` : "✓ Fully covered", color: gap > 0 ? C.amber : C.green },
+                            { label: "Suggested Monthly Set-Aside", value: suggested > 0 ? `$${suggested.toLocaleString()}/mo` : "—", color: C.text2 },
+                          ].map(({ label, value, color }) => (
+                            <div key={label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
+                              <span style={{ fontSize: 13, color: C.text2 }}>{label}</span>
+                              <span style={{ fontSize: 14, fontWeight: 700, color }}>{value}</span>
+                            </div>
+                          ))}
+                          {/* Mini progress bar */}
+                          {target > 0 && (
+                            <div style={{ marginTop: 4 }}>
+                              <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 4 }}>
+                                <span style={{ fontSize: 11, color: C.text3 }}>Coverage</span>
+                                <span style={{ fontSize: 11, fontWeight: 700, color: covered >= 100 ? C.green : C.amber }}>{covered}%</span>
+                              </div>
+                              <div style={{ height: 6, borderRadius: 3, background: C.border }}>
+                                <div style={{ height: "100%", width: `${Math.max(2, covered)}%`, borderRadius: 3, background: covered >= 100 ? C.green : `linear-gradient(90deg, ${C.accent}, #40916C)`, transition: "width 0.8s ease" }}/>
+                              </div>
+                            </div>
+                          )}
+                          <p style={{ fontSize: 10, color: C.text3, margin: "4px 0 0", fontStyle: "italic" }}>
+                            BTLR displays your balance only. No money is moved.
+                          </p>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Manual edit inline */}
+                    {editingManualSavings && (
+                      <div style={{ marginTop: 14, display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 13, color: C.text3 }}>$</span>
+                        <input
+                          type="number"
+                          value={manualSavingsInput}
+                          onChange={e => setManualSavingsInput(e.target.value)}
+                          onKeyDown={e => {
+                            if (e.key === "Enter") {
+                              const val = parseFloat(manualSavingsInput);
+                              if (!isNaN(val) && val >= 0) { setRepairSavingsBalance(val); setRepairSavingsSource("manual"); }
+                              setEditingManualSavings(false);
+                            }
+                            if (e.key === "Escape") setEditingManualSavings(false);
+                          }}
+                          placeholder="1250"
+                          style={{ width: 110, padding: "6px 10px", borderRadius: 8, border: `1.5px solid ${C.accent}`, fontSize: 14, outline: "none" }}
+                          autoFocus
+                        />
+                        <button onClick={() => {
+                          const val = parseFloat(manualSavingsInput);
+                          if (!isNaN(val) && val >= 0) { setRepairSavingsBalance(val); setRepairSavingsSource("manual"); }
+                          setEditingManualSavings(false);
+                        }} style={{ padding: "6px 14px", borderRadius: 8, background: C.green, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                          Save
+                        </button>
+                        <button onClick={() => setEditingManualSavings(false)} style={{ padding: "6px 10px", borderRadius: 8, background: C.bg, border: `1px solid ${C.border}`, color: C.text3, fontSize: 12, cursor: "pointer" }}>
+                          Cancel
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  /* Disconnected state — CTA to connect or enter manually */
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: "0 0 3px" }}>Connect a Savings Account</p>
+                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 12px", lineHeight: 1.5 }}>
+                      See how your Acorns, savings, or investment balance covers your repair fund.
+                    </p>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      <button
+                        onClick={connectPlaid}
+                        disabled={connectingPlaid}
+                        style={{
+                          padding: "8px 14px", borderRadius: 9, border: "none", cursor: "pointer",
+                          background: C.navy, color: "white", fontSize: 12, fontWeight: 700,
+                          display: "flex", alignItems: "center", gap: 5,
+                          opacity: connectingPlaid ? 0.6 : 1,
+                        }}>
+                        {connectingPlaid ? <Loader2 size={12} className="animate-spin"/> : <LinkIcon size={12}/>}
+                        {connectingPlaid ? "Connecting…" : "Connect via Plaid"}
+                      </button>
+                      <button
+                        onClick={() => { setEditingManualSavings(true); setManualSavingsInput(""); }}
+                        style={{ padding: "8px 14px", borderRadius: 9, border: `1.5px solid ${C.border}`, background: "white", color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                        <DollarSign size={12}/> Enter Manually
+                      </button>
+                    </div>
+
+                    {/* Manual entry form */}
+                    {editingManualSavings && (
+                      <div style={{ marginTop: 12, padding: "12px 14px", background: C.bg, borderRadius: 10, border: `1px solid ${C.border}` }}>
+                        <p style={{ fontSize: 12, color: C.text2, margin: "0 0 8px", fontWeight: 600 }}>Current savings balance</p>
+                        <div style={{ display: "flex", gap: 7, alignItems: "center", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: 13, color: C.text3 }}>$</span>
+                          <input
+                            type="number"
+                            value={manualSavingsInput}
+                            onChange={e => setManualSavingsInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") {
+                                const val = parseFloat(manualSavingsInput);
+                                if (!isNaN(val) && val >= 0) { setRepairSavingsBalance(val); setRepairSavingsSource("manual"); }
+                                setEditingManualSavings(false);
+                              }
+                              if (e.key === "Escape") setEditingManualSavings(false);
+                            }}
+                            placeholder="1,250"
+                            style={{ width: 120, padding: "7px 10px", borderRadius: 8, border: `1.5px solid ${C.accent}`, fontSize: 14, outline: "none" }}
+                            autoFocus
+                          />
+                          <button onClick={() => {
+                            const val = parseFloat(manualSavingsInput);
+                            if (!isNaN(val) && val >= 0) { setRepairSavingsBalance(val); setRepairSavingsSource("manual"); }
+                            setEditingManualSavings(false);
+                          }} style={{ padding: "7px 16px", borderRadius: 8, background: C.green, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                            Save
+                          </button>
+                          <button onClick={() => setEditingManualSavings(false)} style={{ padding: "7px 10px", borderRadius: 8, background: C.bg, border: `1px solid ${C.border}`, color: C.text3, fontSize: 12, cursor: "pointer" }}>
+                            Cancel
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    <p style={{ fontSize: 10, color: C.text3, margin: "10px 0 0", fontStyle: "italic" }}>
+                      BTLR never moves money or initiates transfers. Display only.
+                    </p>
+                  </div>
+                )}
+              </div>
 
               {/* Smart Save toggle */}
               <div style={{ borderTop: `1px solid ${C.border}`, padding: "14px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>

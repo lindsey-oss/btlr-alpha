@@ -99,7 +99,29 @@ export async function GET(req) {
       }));
     } catch { /* Non-fatal */ }
 
-    return Response.json({ connected: true, mortgage, recentTransactions });
+    // ── Pull savings / investment accounts (for Repair Fund display) ────────
+    let savingsAccounts = [];
+    try {
+      const acctRes = await plaid.accountsGet({ access_token: accessToken });
+      savingsAccounts = (acctRes.data.accounts ?? [])
+        .filter(a =>
+          // depository savings, money market, cd, cash management
+          (a.type === "depository" && ["savings", "money market", "cd", "cash management"].includes(a.subtype)) ||
+          // investment / brokerage accounts (Acorns, Robinhood, etc.)
+          a.type === "investment"
+        )
+        .map(a => ({
+          name:    a.official_name ?? a.name ?? "Savings Account",
+          balance: a.balances?.current ?? a.balances?.available ?? 0,
+          type:    a.type,
+          subtype: a.subtype ?? null,
+        }))
+        .sort((a, b) => (b.balance ?? 0) - (a.balance ?? 0)); // highest balance first
+    } catch (acctErr) {
+      console.error("[plaid-data] accounts fetch error:", acctErr?.response?.data?.error_code || acctErr.message);
+    }
+
+    return Response.json({ connected: true, mortgage, recentTransactions, savingsAccounts });
   } catch (err) {
     console.error("Plaid data error:", err?.response?.data || err.message);
     return Response.json({ error: "Failed to fetch financial data." }, { status: 500 });
