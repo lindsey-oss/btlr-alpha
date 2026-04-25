@@ -17,6 +17,7 @@ export async function POST(req) {
       insurance,
       repairs,
       humorMode = false,
+      repairFund = null,
     } = await req.json();
 
     if (!question?.trim()) {
@@ -87,6 +88,18 @@ export async function POST(req) {
       ].filter(Boolean).join("\n");
     }
 
+    let repairFundContext = "No repair fund data available.";
+    if (repairFund) {
+      repairFundContext = [
+        repairFund.totalNeededIn12Months ? `Total needed in 12 months: $${repairFund.totalNeededIn12Months.toLocaleString()}` : null,
+        repairFund.totalAllCosts ? `All upcoming repairs: $${repairFund.totalAllCosts.toLocaleString()}` : null,
+        repairFund.recommendedMonthly ? `Recommended monthly contribution: $${repairFund.recommendedMonthly.toLocaleString()}` : null,
+        repairFund.monthlyContribution ? `User's current monthly contribution: $${repairFund.monthlyContribution.toLocaleString()}` : "User has not set a monthly contribution yet",
+        repairFund.fundProgressPct ? `Savings progress: ${repairFund.fundProgressPct}% of recommended amount` : null,
+        repairFund.upcomingItems?.length ? `Upcoming repairs: ${repairFund.upcomingItems.map(i => `${i.label} ($${i.amount.toLocaleString()}, ${i.horizon})`).join(", ")}` : null,
+      ].filter(Boolean).join("\n");
+    }
+
     // ── Humor rules ─────────────────────────────────────────────────────────
     const humorRules = humorMode
       ? `HUMOR (mode is ON):
@@ -149,13 +162,19 @@ BEHAVIORAL RULES
    - Always confirm: "Shall I find you a vetted local [trade]?" before routing.
    - Never auto-route. User confirms first.
 
-5. QUICK REPLIES:
+5. REPAIR FUND AWARENESS:
+   - When discussing repair costs, reference the fund. E.g.: "This repair is estimated at $X. Based on your current plan, you're [on track / $Y short] to cover this."
+   - If user has no contribution set: "You can set a monthly target in your Repair Fund to stay ahead of this cost."
+   - If repair > $3,000: mention financing option exists. "For repairs this size, financing is worth exploring."
+   - Use fundProgressPct to inform your tone: ≥ 100% = reassuring, < 50% = gently flag, 0% = prompt to set contribution.
+
+6. QUICK REPLIES:
    - After asking a clarifying question, always include quickReplies — short tap-to-answer options (2-5 words each).
    - Examples: ["Under a sink", "From the ceiling", "Roof area", "Near appliance", "Not sure"]
    - Max 5 quick replies. They must directly answer the question you just asked.
    - Do not include quick replies when giving a final diagnosis or action list.
 
-6. RESPONSE LENGTH:
+7. RESPONSE LENGTH:
    - Clarifying questions: 1-2 sentences max. Brief. Direct.
    - Diagnoses: 3-5 sentences. Clear structure.
    - Coverage explanations: concise numbered list when multiple options exist.
@@ -183,6 +202,11 @@ ${warrantyContext}
 HOMEOWNERS INSURANCE ON FILE
 ═══════════════════════════════
 ${insuranceContext}
+
+═══════════════════════════════
+REPAIR FUND STATUS
+═══════════════════════════════
+${repairFundContext}
 
 ═══════════════════════════════
 JSON RESPONSE FORMAT (REQUIRED)

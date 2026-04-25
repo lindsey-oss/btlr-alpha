@@ -6,6 +6,7 @@ import {
   Home, Droplets, Zap, Wind, Bug, Layers, Wrench,
   DollarSign, HelpCircle, MessageSquare, AlertOctagon,
   Thermometer, Paintbrush, AlignLeft, Clock,
+  Phone, Mail, Copy, ChevronDown, Pencil,
 } from "lucide-react";
 
 const C = {
@@ -79,6 +80,187 @@ const URGENCY_STYLE: Record<string, { color: string; bg: string; label: string; 
   low:       { color: C.green,  bg: C.greenBg, label: "Low Priority",icon: <CheckCircle2  size={13}/> },
 };
 
+// ── Vendor contact message generator ─────────────────────────────────────────
+function generateContactMessage(
+  vendorName: string,
+  result: ClassifyResult | null,
+  address: string,
+): string {
+  const issueDesc = result?.what_to_tell_contractor ?? result?.issue_summary ?? "a home repair issue";
+  const location  = address && address !== "My Home" ? `\nProperty address: ${address}` : "";
+  const urgency   = result?.urgency === "emergency"
+    ? "\n\n⚠ This is an emergency — I need help as soon as possible."
+    : result?.urgency === "urgent"
+      ? "\n\nThis is time-sensitive — I'd appreciate a prompt response."
+      : "";
+  const costRange = result?.avg_cost_low && result?.avg_cost_high
+    ? `\n\nBased on my research, the typical range for this work is $${result.avg_cost_low.toLocaleString()}–$${result.avg_cost_high.toLocaleString()}.`
+    : "";
+  const questions = result?.questions_to_ask?.length
+    ? `\n\nA few questions:\n${result.questions_to_ask.slice(0, 3).map(q => `• ${q}`).join("\n")}`
+    : "";
+
+  return `Hi ${vendorName},
+
+I found your business and I'm looking for help with a home repair.
+
+Issue: ${issueDesc}${location}${urgency}${costRange}${questions}
+
+Could you let me know your availability and provide a quote?
+
+Thank you`;
+}
+
+// ── VendorContactPanel ────────────────────────────────────────────────────────
+// Inline panel shown below a vendor card when user taps "Contact"
+function VendorContactPanel({
+  vendor,
+  message,
+  onMessageChange,
+  onClose,
+}: {
+  vendor: VendorResult;
+  message: string;
+  onMessageChange: (msg: string) => void;
+  onClose: () => void;
+}) {
+  const [editing, setEditing]   = useState(false);
+  const [copied, setCopied]     = useState(false);
+  const [contacted, setContacted] = useState<"email" | "call" | null>(null);
+
+  function handleCopy() {
+    navigator.clipboard?.writeText(message).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    }).catch(() => {
+      // Fallback for browsers without clipboard API
+      const el = document.createElement("textarea");
+      el.value = message;
+      document.body.appendChild(el);
+      el.select();
+      document.execCommand("copy");
+      document.body.removeChild(el);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    });
+  }
+
+  const mailtoHref = `mailto:?subject=${encodeURIComponent(`Repair Quote Request — ${vendor.name}`)}&body=${encodeURIComponent(message)}`;
+  const telHref    = vendor.phone ? `tel:${vendor.phone.replace(/\D/g, "")}` : null;
+
+  return (
+    <div style={{
+      background: "#f8faff",
+      border: `1.5px solid ${C.accent}25`,
+      borderRadius: 12,
+      padding: "16px 18px",
+      marginTop: 8,
+      marginBottom: 4,
+    }}>
+      {/* Header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+          <MessageSquare size={14} color={C.accent}/>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+            Contact {vendor.name}
+          </span>
+        </div>
+        <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, padding: 2 }}>
+          <X size={14}/>
+        </button>
+      </div>
+
+      {/* Contacted confirmation */}
+      {contacted && (
+        <div style={{ background: C.greenBg, border: `1px solid ${C.green}40`, borderRadius: 9, padding: "10px 14px", marginBottom: 12, display: "flex", alignItems: "center", gap: 7 }}>
+          <CheckCircle2 size={14} color={C.green}/>
+          <span style={{ fontSize: 13, fontWeight: 600, color: C.green }}>
+            {contacted === "call" ? "Opening your phone dialer…" : "Opening your email app — message is pre-filled."}
+          </span>
+        </div>
+      )}
+
+      {/* Message preview / edit */}
+      <div style={{ marginBottom: 14 }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+          <span style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+            Message Preview
+          </span>
+          <button
+            onClick={() => setEditing(e => !e)}
+            style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, fontWeight: 700, color: C.accent, background: "none", border: "none", cursor: "pointer", padding: 0 }}>
+            <Pencil size={10}/>{editing ? "Done" : "Edit"}
+          </button>
+        </div>
+
+        {editing ? (
+          <textarea
+            value={message}
+            onChange={e => onMessageChange(e.target.value)}
+            rows={10}
+            style={{
+              width: "100%", padding: "12px 14px", borderRadius: 9, fontSize: 13, lineHeight: 1.65,
+              border: `1.5px solid ${C.accent}`,
+              background: "white", color: C.text, outline: "none", resize: "vertical",
+              fontFamily: "inherit", boxSizing: "border-box",
+            }}
+          />
+        ) : (
+          <div style={{
+            background: "white", border: `1px solid ${C.border}`, borderRadius: 9,
+            padding: "12px 14px", fontSize: 13, lineHeight: 1.65, color: C.text,
+            whiteSpace: "pre-wrap", maxHeight: 200, overflowY: "auto",
+          }}>
+            {message}
+          </div>
+        )}
+      </div>
+
+      {/* Action buttons */}
+      <div style={{ display: "flex", gap: 9, flexWrap: "wrap" }}>
+        {telHref && (
+          <a href={telHref} onClick={() => setContacted("call")}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "9px 16px", borderRadius: 9,
+              background: C.navy, color: "white",
+              fontSize: 13, fontWeight: 700, textDecoration: "none",
+              boxShadow: "0 2px 8px rgba(15,31,61,0.18)",
+            }}>
+            <Phone size={13}/> Call Vendor
+          </a>
+        )}
+
+        <a href={mailtoHref} onClick={() => setContacted("email")}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "9px 16px", borderRadius: 9,
+            background: C.accent, color: "white",
+            fontSize: 13, fontWeight: 700, textDecoration: "none",
+          }}>
+          <Mail size={13}/> Send Request
+        </a>
+
+        <button onClick={handleCopy}
+          style={{
+            display: "inline-flex", alignItems: "center", gap: 5,
+            padding: "9px 14px", borderRadius: 9,
+            background: copied ? C.greenBg : "white",
+            border: `1.5px solid ${copied ? C.green : C.border}`,
+            color: copied ? C.green : C.text3,
+            fontSize: 13, fontWeight: 600, cursor: "pointer",
+          }}>
+          <Copy size={12}/> {copied ? "Copied!" : "Copy"}
+        </button>
+      </div>
+
+      <p style={{ fontSize: 11, color: C.text3, margin: "10px 0 0", fontStyle: "italic" }}>
+        BTLR never sends messages without your approval. Review the message above before sending.
+      </p>
+    </div>
+  );
+}
+
 // ── Google Maps singleton loader ──────────────────────────────────────────────
 let _mapsPromise: Promise<void> | null = null;
 function loadGoogleMaps(): Promise<void> {
@@ -113,7 +295,19 @@ interface VendorResult {
   placeId?: string;
 }
 
-function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; location: string }) {
+function NearbyVendorsMap({
+  searchTerm,
+  location,
+  result: classifyResult,
+  address: vendorAddress,
+  onContact,
+}: {
+  searchTerm: string;
+  location: string;
+  result?: ClassifyResult | null;
+  address?: string;
+  onContact?: (vendor: VendorResult) => void;
+}) {
   const mapRef   = useRef<HTMLDivElement>(null);
   const [vendors,  setVendors]  = useState<VendorResult[]>([]);
   const [loading,  setLoading]  = useState(false);
@@ -311,18 +505,32 @@ function NearbyVendorsMap({ searchTerm, location }: { searchTerm: string; locati
             )}
           </div>
 
-          {/* View link */}
-          {v.mapsUrl && (
-            <a href={v.mapsUrl} target="_blank" rel="noopener noreferrer"
-              style={{
-                padding: "6px 12px", borderRadius: 8,
-                background: C.navy, color: "white",
-                fontSize: 12, fontWeight: 600, textDecoration: "none",
-                display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
-              }}>
-              View <ExternalLink size={11}/>
-            </a>
-          )}
+          {/* Action buttons */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, flexShrink: 0 }}>
+            {v.mapsUrl && (
+              <a href={v.mapsUrl} target="_blank" rel="noopener noreferrer"
+                style={{
+                  padding: "6px 12px", borderRadius: 8,
+                  background: C.navy, color: "white",
+                  fontSize: 12, fontWeight: 600, textDecoration: "none",
+                  display: "flex", alignItems: "center", gap: 5,
+                }}>
+                View <ExternalLink size={11}/>
+              </a>
+            )}
+            {onContact && (
+              <button
+                onClick={() => onContact(v)}
+                style={{
+                  padding: "6px 12px", borderRadius: 8, border: "none", cursor: "pointer",
+                  background: C.accent, color: "white",
+                  fontSize: 12, fontWeight: 600,
+                  display: "flex", alignItems: "center", gap: 5,
+                }}>
+                <MessageSquare size={11}/> Contact
+              </button>
+            )}
+          </div>
         </div>
       ))}
     </div>
@@ -371,6 +579,8 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   const [sendingBrief, setSendingBrief] = useState(false);
   const [briefUrl, setBriefUrl]       = useState<string | null>(null);
   const [isMobile, setIsMobile]       = useState(false);
+  const [contactingVendor, setContactingVendor] = useState<VendorResult | null>(null);
+  const [contactMessage, setContactMessage]     = useState("");
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -780,7 +990,26 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
           </div>
 
           {/* Embedded Google Map — top 3 nearby */}
-          <NearbyVendorsMap searchTerm={searchTerm} location={zip || city} />
+          <NearbyVendorsMap
+            searchTerm={searchTerm}
+            location={zip || city}
+            result={result}
+            address={address}
+            onContact={(v) => {
+              setContactingVendor(v);
+              setContactMessage(generateContactMessage(v.name, result, address));
+            }}
+          />
+
+          {/* Vendor contact panel — shown when user taps "Contact" on a vendor card */}
+          {contactingVendor && (
+            <VendorContactPanel
+              vendor={contactingVendor}
+              message={contactMessage}
+              onMessageChange={setContactMessage}
+              onClose={() => setContactingVendor(null)}
+            />
+          )}
 
           {/* Yelp link */}
           <a href={yelpLink(searchTerm)} target="_blank" rel="noopener noreferrer"
