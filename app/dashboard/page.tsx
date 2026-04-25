@@ -255,6 +255,9 @@ interface CostItem {
   finding?: Finding;
   systemAge?: number;
   tradeCategory?: string;
+  bucket?: "known" | "risk" | "maintenance"; // which of the 3 calculation buckets
+  probability?: number;                       // 0–1, for risk bucket items
+  isEstimate?: boolean;                       // true = probability-weighted, not a firm cost
 }
 
 // ── Design tokens ─────────────────────────────────────────────────────────
@@ -2446,39 +2449,122 @@ export default function Dashboard() {
   const criticalCount = breakdown.deductions.filter(d => d.severity === "critical").length;
   const warningCount  = breakdown.deductions.filter(d => d.severity === "warning").length;
 
-  // Build upcoming costs list (shared between Dashboard and Repairs views)
-  // Only includes ACTIVE (open/not_sure) findings — completed repairs are excluded
+  // ── BUCKET 1: KNOWN ISSUES (from active inspection findings) ───────────────
+  // High confidence — real findings, not resolved, deduplicated by category
   const costs: CostItem[] = [];
+  const usedCategories = new Set<string>();
+
+  // Severity-based fallback costs when inspection doesn't provide a dollar estimate
+  const FALLBACK_COST: Record<string, number> = { critical: 2500, warning: 900, info: 300 };
+
+  activeFindings.forEach(f => {
+    const catKey = f.category.toLowerCase().trim();
+    if (usedCategories.has(catKey)) return; // deduplicate
+    usedCategories.add(catKey);
+    const amount = (f.estimated_cost && f.estimated_cost > 0)
+      ? f.estimated_cost
+      : (FALLBACK_COST[f.severity] ?? 400);
+    costs.push({
+      label:         f.category,
+      horizon:       f.severity === "critical" ? "Immediate" : f.severity === "warning" ? "Within 1–2 yrs" : "Ongoing",
+      amount,
+      severity:      f.severity,
+      finding:       f,
+      tradeCategory: f.category,
+      bucket:        "known",
+    });
+  });
+
+  // ── BUCKET 2: SYSTEM RISK (probability-weighted by age vs. lifespan) ───────
+  // Expected cost = P(failure in 12 months) × replacement cost
+  // Only added when NOT already covered by an inspection finding above
   const roofKey = toCategoryKey("Roof");
   const hvacKey = toCategoryKey("HVAC");
   const roofResolved = findingStatuses[roofKey] === "completed" || findingStatuses[roofKey] === "dismissed";
   const hvacResolved = findingStatuses[hvacKey] === "completed" || findingStatuses[hvacKey] === "dismissed";
+  const roofAlreadyKnown = usedCategories.has("roof");
+  const hvacAlreadyKnown = usedCategories.has("hvac") || usedCategories.has("hvac/heating") || usedCategories.has("hvac/cooling");
 
-  if (roofAge !== null && roofAge >= 15 && !roofResolved) {
-    costs.push({ label: "Roof Replacement", horizon: roofAge >= 22 ? "Urgent — within 1–2 yrs" : "Within 3–5 yrs", amount: 12000 + roofAge * 100, severity: roofAge >= 22 ? "critical" : "warning", systemAge: roofAge, tradeCategory: "Roof" });
-  }
-  if (hvacAge !== null && hvacAge >= 8 && !hvacResolved) {
-    costs.push({ label: hvacAge >= 13 ? "HVAC Replacement" : "HVAC Service", horizon: hvacAge >= 13 ? "Within 2–3 yrs" : "Annual", amount: hvacAge >= 13 ? 8500 : 400, severity: hvacAge >= 13 ? "warning" : "info", systemAge: hvacAge, tradeCategory: "HVAC" });
-  }
-  // Only add costs for ACTIVE findings (not completed/dismissed ones)
-  // When the inspection didn't provide a cost estimate, use a severity-based fallback
-  // so the Repair Fund reflects all real findings, not just the ones with exact numbers
-  const FALLBACK_COST: Record<string, number> = { critical: 3000, warning: 1200, info: 400 };
-  activeFindings.forEach(f => {
-    if (!costs.find(c => c.label.toLowerCase().includes(f.category.toLowerCase()))) {
-      const amount = (f.estimated_cost && f.estimated_cost > 0)
-        ? f.estimated_cost
-        : (FALLBACK_COST[f.severity] ?? 500);
-      costs.push({ label: f.category, horizon: f.severity === "critical" ? "Immediate" : f.severity === "warning" ? "Within 1–2 yrs" : "Ongoing", amount, severity: f.severity, finding: f, tradeCategory: f.category });
+  // Roof: expected lifespan 20–25 yrs, replacement ~$14k
+  if (roofAge !== null && !roofResolved && !roofAlreadyKnown) {
+    const roofReplaceCost = 14000;
+    let prob = 0;
+    if      (roofAge < 10) prob = 0.03;
+    else if (roofAge < 15) prob = 0.10;
+    else if (roofAge < 20) prob = 0.25;
+    else if (roofAge < 25) prob = 0.50;
+    else                   prob = 0.75;
+    const expectedCost = Math.round(roofReplaceCost * prob);
+    if (expectedCost > 0) {
+      costs.push({
+        label:        "Roof — Age Risk",
+        horizon:      roofAge >= 20 ? "Urgent — within 1–2 yrs" : roofAge >= 15 ? "Within 3–5 yrs" : "Monitor",
+        amount:       expectedCost,
+        severity:     roofAge >= 20 ? "critical" : roofAge >= 15 ? "warning" : "info",
+        systemAge:    roofAge,
+        tradeCategory:"Roof",
+        bucket:       "risk",
+        probability:  prob,
+        isEstimate:   true,
+      });
     }
+  }
+
+  // HVAC: expected lifespan 10–15 yrs, replacement ~$9k, service ~$500
+  if (hvacAge !== null && !hvacResolved && !hvacAlreadyKnown) {
+    const hvacReplaceCost = 9000;
+    const hvacServiceCost = 500;
+    let prob = 0;
+    if      (hvacAge < 5)  prob = 0.03;
+    else if (hvacAge < 8)  prob = 0.08;
+    else if (hvacAge < 12) prob = 0.20;
+    else if (hvacAge < 15) prob = 0.45;
+    else                   prob = 0.70;
+    const baseCost = hvacAge >= 12 ? hvacReplaceCost : hvacServiceCost;
+    const expectedCost = Math.round(baseCost * prob);
+    if (expectedCost > 0) {
+      costs.push({
+        label:        hvacAge >= 12 ? "HVAC — Age Risk" : "HVAC Service — Age Risk",
+        horizon:      hvacAge >= 13 ? "Within 2–3 yrs" : "Annual",
+        amount:       expectedCost,
+        severity:     hvacAge >= 13 ? "warning" : "info",
+        systemAge:    hvacAge,
+        tradeCategory:"HVAC",
+        bucket:       "risk",
+        probability:  prob,
+        isEstimate:   true,
+      });
+    }
+  }
+
+  // ── BUCKET 3: MAINTENANCE BASELINE ─────────────────────────────────────────
+  // 1% of home value annually (capped at $4k, floor $1k) OR flat $1,500 fallback
+  const maintenanceBaseline = homeValue
+    ? Math.min(4000, Math.max(1000, Math.round(homeValue * 0.01)))
+    : 1500;
+  costs.push({
+    label:      "Annual Maintenance",
+    horizon:    "Ongoing",
+    amount:     maintenanceBaseline,
+    severity:   "info",
+    bucket:     "maintenance",
+    isEstimate: true,
   });
 
-  // ── Repair Fund calculations ──────────────────────────────────────────────
-  // "In 12 months" = anything urgent, annual, or within 1-3 years
-  const URGENT_H = ["immediate", "urgent", "annual", "within 1", "within 2", "within 3", "6 month", "3 month"];
+  // ── REPAIR FUND CALCULATIONS ────────────────────────────────────────────────
+  const knownCosts       = costs.filter(c => c.bucket === "known");
+  const riskCosts        = costs.filter(c => c.bucket === "risk");
+  const maintenanceCosts = costs.filter(c => c.bucket === "maintenance");
+
+  const URGENT_H = ["immediate", "urgent", "annual", "within 1", "within 2", "within 3", "6 month", "3 month", "ongoing"];
   const costsIn12Months = costs.filter(c => URGENT_H.some(h => c.horizon.toLowerCase().includes(h)));
-  const repairFundNeeded  = costsIn12Months.reduce((s, c) => s + c.amount, 0);
-  const repairFundAllTime = costs.reduce((s, c) => s + c.amount, 0);
+
+  const knownTotal       = knownCosts.reduce((s, c) => s + c.amount, 0);
+  const riskTotal        = riskCosts.reduce((s, c) => s + c.amount, 0);
+  const maintenanceTotal = maintenanceCosts.reduce((s, c) => s + c.amount, 0);
+
+  const repairFundNeeded  = knownTotal + riskTotal + maintenanceTotal;
+  const repairFundAllTime = repairFundNeeded; // all buckets are 12-month scoped now
   const recommendedMonthly = repairFundNeeded > 0 ? Math.max(50, Math.ceil(repairFundNeeded / 12)) : 0;
   const weeklySmartSave = recommendedMonthly > 0 ? Math.round(recommendedMonthly / 4.33) : 0;
   const fundProgressPct = recommendedMonthly > 0 && monthlyContribution > 0
@@ -3950,28 +4036,39 @@ export default function Dashboard() {
             </div>
 
             {/* ── REPAIR FUND CARD ─────────────────────────────────── */}
-            {(costs.length > 0 || repairFundAllTime > 0) ? (
             <div style={{ ...card({ padding: 0, overflow: "hidden" }), border: `1px solid ${C.border}` }}>
 
               {/* Dark header strip */}
-              <div style={{
-                background: `linear-gradient(135deg, #1a3a2a 0%, #2D6A4F 100%)`,
-                padding: "20px 24px",
-              }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Your Home Repair Fund</p>
+              <div style={{ background: `linear-gradient(135deg, #1a3a2a 0%, #2D6A4F 100%)`, padding: "20px 24px" }}>
+                <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Projected 12-Month Costs</p>
                 <p style={{ fontSize: 32, fontWeight: 800, color: "white", margin: "4px 0 2px", letterSpacing: "-0.02em" }}>
-                  ${(repairFundNeeded > 0 ? repairFundNeeded : repairFundAllTime).toLocaleString()}
+                  ~${repairFundNeeded.toLocaleString()}
                 </p>
                 <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", margin: 0 }}>
-                  {repairFundNeeded > 0 ? "estimated repairs in the next 12 months" : "total projected repair costs"}
+                  estimated — not a guarantee · ${recommendedMonthly.toLocaleString()}/mo recommended
                 </p>
+              </div>
+
+              {/* Three-bucket breakdown */}
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", borderBottom: `1px solid ${C.border}` }}>
+                {[
+                  { label: "Immediate Repairs", value: knownTotal, color: knownTotal > 0 ? C.red : C.text3, sub: `${knownCosts.length} issue${knownCosts.length !== 1 ? "s" : ""}` },
+                  { label: "System Risk",        value: riskTotal, color: riskTotal > 0 ? C.amber : C.text3, sub: "probability-weighted" },
+                  { label: "Maintenance",        value: maintenanceTotal, color: C.text2, sub: homeValue ? "1% of home value" : "estimated baseline" },
+                ].map((b, i) => (
+                  <div key={b.label} style={{ padding: "12px 14px", borderRight: i < 2 ? `1px solid ${C.border}` : "none", textAlign: "center" }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 4px", lineHeight: 1.3 }}>{b.label}</p>
+                    <p style={{ fontSize: 17, fontWeight: 800, color: b.color, margin: "0 0 2px" }}>${b.value.toLocaleString()}</p>
+                    <p style={{ fontSize: 10, color: C.text3, margin: 0 }}>{b.sub}</p>
+                  </div>
+                ))}
               </div>
 
               <div style={{ padding: "18px 20px", display: "flex", flexDirection: "column", gap: 14 }}>
 
                 {/* ── Connected Repair Fund Balance ─────────────────── */}
                 {(() => {
-                  const target    = repairFundNeeded > 0 ? repairFundNeeded : repairFundAllTime;
+                  const target    = repairFundNeeded;
                   const balance   = repairSavingsBalance ?? 0;
                   const gap       = Math.max(0, target - balance);
                   const suggested = target > 0 && gap > 0 ? Math.ceil(gap / 12) : 0;
@@ -4150,34 +4247,53 @@ export default function Dashboard() {
                   )}
                 </div>
 
-                {/* Cost breakdown rows */}
-                {repairFundAllTime > 0 && (
-                  <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Cost Breakdown</p>
-                    {costs.slice(0, 4).map((c, i) => (
-                      <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: i < Math.min(3, costs.length - 1) ? `1px solid ${C.border}` : "none" }}>
-                        <span style={{ fontSize: 12, color: C.text3 }}>{c.label}</span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: c.severity === "critical" ? C.red : c.severity === "warning" ? C.amber : C.text2 }}>${c.amount.toLocaleString()}</span>
-                      </div>
-                    ))}
-                    {costs.length > 4 && (
-                      <p style={{ fontSize: 11, color: C.text3, margin: "6px 0 0", textAlign: "right" }}>+{costs.length - 4} more in Repairs tab</p>
-                    )}
-                  </div>
-                )}
+                {/* Cost breakdown rows by bucket */}
+                <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
+                  {knownCosts.length > 0 && (
+                    <>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Immediate Repairs</p>
+                      {knownCosts.map((c, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+                          <span style={{ fontSize: 12, color: C.text3, flex: 1, paddingRight: 8 }}>{c.label}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: c.severity === "critical" ? C.red : C.amber, flexShrink: 0 }}>${c.amount.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </>
+                  )}
+                  {riskCosts.length > 0 && (
+                    <div style={{ marginTop: knownCosts.length > 0 ? 10 : 0 }}>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: C.amber, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>System Risk (Probability-Weighted)</p>
+                      {riskCosts.map((c, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+                          <div style={{ flex: 1, paddingRight: 8 }}>
+                            <span style={{ fontSize: 12, color: C.text3, display: "block" }}>{c.label}</span>
+                            {c.probability !== undefined && (
+                              <span style={{ fontSize: 10, color: C.text3 }}>{Math.round(c.probability * 100)}% chance of failure</span>
+                            )}
+                          </div>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: C.amber, flexShrink: 0 }}>~${c.amount.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {maintenanceCosts.length > 0 && (
+                    <div style={{ marginTop: (knownCosts.length > 0 || riskCosts.length > 0) ? 10 : 0 }}>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Maintenance Baseline</p>
+                      {maintenanceCosts.map((c, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+                          <span style={{ fontSize: 12, color: C.text3 }}>{c.label}</span>
+                          <span style={{ fontSize: 12, fontWeight: 700, color: C.text2 }}>~${c.amount.toLocaleString()}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <p style={{ fontSize: 10, color: C.text3, margin: "10px 0 0", lineHeight: 1.5 }}>
+                    Estimates only. Actual costs vary. System risk figures reflect probability-weighted averages, not guaranteed expenses.
+                  </p>
+                </div>
               </div>
             </div>
-            ) : (
-            <div style={{ ...card(), textAlign: "center", padding: "32px 24px" }}>
-              <div style={{ width: 48, height: 48, borderRadius: 14, background: "#16a34a18", display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 14px" }}>
-                <DollarSign size={22} color="#16a34a"/>
-              </div>
-              <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 6px" }}>Your Home Repair Fund</p>
-              <p style={{ fontSize: 13, color: C.text3, margin: 0, lineHeight: 1.5 }}>
-                Upload an inspection report or enter your system ages to generate cost projections.
-              </p>
-            </div>
-            )}
+
             {/* Inspection Upload — full width */}
             <div style={card()}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
