@@ -1879,7 +1879,35 @@ export default function Dashboard() {
     await loadRepairDocs();
   }
 
-  // ── Save a new property ───────────────────────────────────────────────
+  // ── Create a blank property and jump straight to its empty dashboard ────
+  // Address defaults to "New Property" — the inspection upload will auto-fill
+  // it from the report. The user can also rename it any time in Settings.
+  async function createBlankProperty() {
+    setAddingProp(true);
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) throw new Error("Not signed in");
+      const { data, error } = await supabase.from("properties").insert({
+        user_id:  u.id,
+        address:  "New Property",
+      }).select("id, address, nickname, home_type, year_built").single();
+      if (error) throw new Error(error.message);
+      setAllProperties(prev => [...prev, data]);
+      setShowPropDropdown(false);
+      clearPropertyState();
+      setAddress("New Property");
+      setNav("Documents"); // open Documents tab so inspection upload is front-and-center
+      setActivePropertyId(data.id);
+      activePropertyIdRef.current = data.id;
+      localStorage.setItem("btlr_active_property_id", String(data.id));
+      showToast("New property created — upload an inspection report to get started", "success");
+    } catch (err: unknown) {
+      showToast(err instanceof Error ? err.message : "Failed to create property.", "error");
+    }
+    setAddingProp(false);
+  }
+
+  // ── Save a new property (legacy — kept for drawer if re-enabled) ─────────
   async function saveNewProperty() {
     if (!newPropForm.address.trim()) { setNewPropError("Address is required."); return; }
     setAddingProp(true); setNewPropError(null);
@@ -1897,8 +1925,7 @@ export default function Dashboard() {
       setAllProperties(prev => [...prev, data]);
       setShowAddPropDrawer(false);
       setNewPropForm({ address: "", nickname: "", home_type: "single_family", year_built: "" });
-      setShowAddPropDrawer(false);
-      setNav("Home"); // switch to blank Home tab for the new property
+      setNav("Documents");
       await switchProperty(data.id);
       showToast(`✓ Property added: ${data.address}`, "success");
     } catch (err: unknown) {
@@ -2960,10 +2987,10 @@ export default function Dashboard() {
                   </button>
                 </div>
               ))}
-              <button onClick={() => { setShowPropDropdown(false); setShowAddPropDrawer(true); }}
-                style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
+              <button onClick={createBlankProperty} disabled={addingProp}
+                style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "transparent", border: "none", cursor: addingProp ? "wait" : "pointer", textAlign: "left", opacity: addingProp ? 0.6 : 1 }}>
                 <Plus size={12} color={C.accentLt}/>
-                <span style={{ fontSize: 12, fontWeight: 600, color: C.accentLt }}>+ Add Property</span>
+                <span style={{ fontSize: 12, fontWeight: 600, color: C.accentLt }}>{addingProp ? "Creating…" : "+ Add Property"}</span>
               </button>
             </div>
           )}
@@ -3045,10 +3072,10 @@ export default function Dashboard() {
                       </button>
                     </div>
                   ))}
-                  <button onClick={() => { setShowPropDropdown(false); setShowAddPropDrawer(true); }}
-                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}>
+                  <button onClick={createBlankProperty} disabled={addingProp}
+                    style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: "transparent", border: "none", cursor: addingProp ? "wait" : "pointer", textAlign: "left", opacity: addingProp ? 0.6 : 1 }}>
                     <Plus size={12} color={C.accent}/>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: C.accent }}>+ Add Property</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.accent }}>{addingProp ? "Creating…" : "+ Add Property"}</span>
                   </button>
                 </div>
               )}
