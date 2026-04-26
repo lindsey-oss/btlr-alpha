@@ -3933,28 +3933,19 @@ export default function Dashboard() {
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                  {/* Legend */}
-                  <div style={{ padding: "10px 16px", background: "#f8fafc", borderBottom: `1px solid ${C.border}` }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 7px" }}>
-                      Highlighted repairs affect your Home Health Score
-                    </p>
-                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                      {[
-                        { color: "#ef4444", bg: "rgba(239,68,68,0.10)",  label: "High Impact (Critical)" },
-                        { color: "#f97316", bg: "rgba(249,115,22,0.10)", label: "Medium Impact" },
-                        { color: "#eab308", bg: "rgba(234,179,8,0.12)",  label: "Low Impact" },
-                        { color: "#94a3b8", bg: "rgba(148,163,184,0.12)", label: "Informational (no score effect)" },
-                      ].map(({ color, bg, label }) => (
-                        <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          <span style={{ width: 10, height: 10, borderRadius: 3, background: bg, border: `1.5px solid ${color}`, display: "inline-block", flexShrink: 0 }}/>
-                          <span style={{ fontSize: 11, color: C.text3 }}>{label}</span>
-                        </div>
-                      ))}
-                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                        <span style={{ fontSize: 12, fontWeight: 800, color: C.accent }}>✦</span>
-                        <span style={{ fontSize: 11, color: C.text3 }}>Impacts score</span>
+                  {/* Color key strip */}
+                  <div style={{ padding: "10px 16px", background: "#f8fafc", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                    {[
+                      { color: C.red,    label: "High Impact" },
+                      { color: C.amber,  label: "Medium Impact" },
+                      { color: "#eab308", label: "Low Impact" },
+                      { color: C.text3,  label: "Informational" },
+                    ].map(({ color, label }) => (
+                      <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ width: 3, height: 14, borderRadius: 2, background: color, display: "inline-block", flexShrink: 0 }}/>
+                        <span style={{ fontSize: 11, color: C.text3 }}>{label}</span>
                       </div>
-                    </div>
+                    ))}
                   </div>
                   {/* Summary bar */}
                   <div style={{ display: "flex", gap: 16, padding: "10px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, justifyContent: "space-between", alignItems: "center" }}>
@@ -4003,64 +3994,78 @@ export default function Dashboard() {
                                 const cardBorder = isResolved ? C.border : `${impact.color}40`;
                                 const cardBg = isResolved ? C.surface : impact.bg;
                                 return (
-                                  <div key={fi} style={{ background: cardBg, borderRadius: 10, padding: "12px 14px", border: `1px solid ${cardBorder}`, borderLeft: `3px solid ${isResolved ? C.border : impact.color}`, display: "flex", flexDirection: "column", gap: 9 }}>
-                                    {/* Card header row */}
-                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
-                                      <div style={{ flex: 1 }}>
-                                        {/* Title + severity + score badges */}
-                                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
-                                          {impact.affects && (
-                                            <span style={{ fontSize: 11, fontWeight: 800, color: impact.color }}>✦</span>
-                                          )}
-                                          <span style={{ fontSize: 13, fontWeight: 700, color: isResolved ? C.text3 : C.text, textDecoration: status === "completed" ? "line-through" : "none" }}>{categoryLabel(f.category)}</span>
-                                          {f.severity && f.severity !== "info" && (
-                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: impact.color + "18", color: impact.color, textTransform: "capitalize" }}>
-                                              {f.severity === "critical" ? "High" : "Medium"}
-                                            </span>
-                                          )}
-                                          {impact.affects && !isResolved && (
-                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: impact.bg, color: impact.color, border: `1px solid ${impact.color}40` }}>
-                                              {impact.label} · Affects Health Score
-                                            </span>
-                                          )}
-                                          {isResolved && status === "completed" && impact.affects && (
-                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
-                                              ✓ Completed — Score Updated
-                                            </span>
-                                          )}
-                                          {f.needs_review && !isResolved && (
-                                            <span title={f.classification_reason} style={{ fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: C.amberBg, color: C.amber, border: `1px solid ${C.amber}40`, letterSpacing: "0.04em" }}>
-                                              Needs Review
-                                            </span>
-                                          )}
+                                  <div key={fi} style={{
+                                    background: C.surface,
+                                    borderRadius: 12,
+                                    padding: "16px 18px",
+                                    border: `1px solid ${C.border}`,
+                                    borderLeft: `4px solid ${isResolved ? C.green : impact.color}`,
+                                    display: "flex",
+                                    flexDirection: "column",
+                                    gap: 7,
+                                    opacity: isResolved ? 0.72 : 1,
+                                  }}>
+                                    {/* Category label (small, muted) */}
+                                    <span style={{ fontSize: 11, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                                      {categoryLabel(f.category)}
+                                    </span>
+                                    {/* Issue title (bold, human-readable) */}
+                                    <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0, lineHeight: 1.4 }}>
+                                      {f.title || f.issue_type || f.description?.slice(0, 90) || "Issue"}
+                                    </p>
+                                    {/* Description */}
+                                    {f.description && (
+                                      <p style={{ fontSize: 13, color: C.text3, margin: 0, lineHeight: 1.55 }}>{f.description}</p>
+                                    )}
+                                    {/* Bottom row: cost + single impact indicator + action buttons */}
+                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
+                                      {/* Cost */}
+                                      {f.estimated_cost != null && (
+                                        <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>
+                                          Est. ${f.estimated_cost.toLocaleString()}
+                                        </span>
+                                      )}
+                                      {/* Single impact indicator — active repairs only */}
+                                      {!isResolved && impact.affects && (
+                                        <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: impact.color + "14", color: impact.color }}>
+                                          {impact.label} · Affects Home Health Score
+                                        </span>
+                                      )}
+                                      {/* Completed state badge */}
+                                      {isResolved && status === "completed" && (
+                                        <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: C.greenBg, color: C.green }}>
+                                          ✓ Completed{impact.affects ? " · Score Updated" : ""}
+                                        </span>
+                                      )}
+                                      {isResolved && status === "dismissed" && (
+                                        <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: C.bg, color: C.text3 }}>
+                                          Dismissed
+                                        </span>
+                                      )}
+                                      {/* Action buttons — open repairs only */}
+                                      {!isResolved && (
+                                        <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                          <select value={status} onChange={e => toggleFindingStatus(f, globalIdx, e.target.value as FindingStatus)}
+                                            style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text2, cursor: "pointer", outline: "none" }}>
+                                            <option value="open">Open</option>
+                                            <option value="monitored">Monitoring</option>
+                                            <option value="not_sure">Not Sure</option>
+                                            <option value="dismissed">Dismissed</option>
+                                          </select>
+                                          <button onClick={() => { setChatMessages([{ role: "user", content: f.description ?? f.category }]); askAI(f.description ?? f.category); setNav("Dashboard"); }}
+                                            style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: "#eff6ff", border: `1px solid ${C.accent}30`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                                            <Shield size={10}/> Check Coverage
+                                          </button>
+                                          <button onClick={() => handleFindVendors(f.category, f.category, f.description)}
+                                            style={{ fontSize: 11, fontWeight: 600, color: "white", background: C.accent, border: "none", borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                                            <Users size={10}/> Find Vendors
+                                          </button>
+                                          <button onClick={() => openCompleteModal(f, globalIdx)}
+                                            style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.greenBg, border: `1px solid ${C.green}40`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                                            <CheckCircle2 size={10}/> Mark Complete
+                                          </button>
                                         </div>
-                                        {/* Description */}
-                                        <p style={{ fontSize: 12, color: isResolved ? C.text3 : C.text2, margin: 0, lineHeight: 1.55 }}>{f.description}</p>
-                                        {/* Cost + score reason row */}
-                                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 5, flexWrap: "wrap" }}>
-                                          {f.estimated_cost != null && (
-                                            <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>Est. ${f.estimated_cost.toLocaleString()}</span>
-                                          )}
-                                          {impact.affects && (
-                                            <span style={{ fontSize: 11, color: impact.color, opacity: 0.85 }}>{impact.reason}</span>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    {/* Action row */}
-                                    <div style={{ display: "flex", alignItems: "center", gap: 7, paddingTop: 2, flexWrap: "wrap" }}>
-                                      <select value={status} onChange={e => toggleFindingStatus(f, globalIdx, e.target.value as FindingStatus)} style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, border: `1px solid ${cfg.color}40`, background: cfg.bg, color: cfg.color, cursor: "pointer", outline: "none" }}>
-                                        <option value="open">Open</option>
-                                        <option value="completed">Completed</option>
-                                        <option value="monitored">Monitoring</option>
-                                        <option value="not_sure">Not Sure</option>
-                                        <option value="dismissed">Dismissed</option>
-                                      </select>
-                                      {!isResolved && (<>
-                                        <button onClick={() => { setChatMessages([{ role: "user", content: f.description ?? f.category }]); askAI(f.description ?? f.category); setNav("Dashboard"); }} style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: "white", background: C.accentLt, border: "none", borderRadius: 20, padding: "3px 11px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}><Shield size={9}/> Check Coverage</button>
-                                        <button onClick={() => handleFindVendors(f.category, f.category, f.description)} style={{ fontSize: 11, fontWeight: 600, color: "white", background: C.accent, border: "none", borderRadius: 20, padding: "3px 11px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}><Users size={9}/> Find Vendors</button>
-                                        <button onClick={() => openCompleteModal(f, globalIdx)} style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.greenBg, border: `1px solid ${C.green}`, borderRadius: 20, padding: "3px 11px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}><CheckCircle2 size={9}/> Mark Complete</button>
-                                      </>)}
+                                      )}
                                     </div>
                                   </div>
                                 );
@@ -4095,23 +4100,26 @@ export default function Dashboard() {
                             ? new Date(meta.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                             : null;
                           return (
-                            <div key={fk + idx} style={{ padding: "13px 16px", borderBottom: idx < repArchivedItems.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", flexDirection: "column", gap: 5 }}>
-                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: C.greenBg, color: C.green }}>✓ Done</span>
-                                <span style={{ fontSize: 13, fontWeight: 700, color: C.text, textDecoration: "line-through", opacity: 0.7 }}>{categoryLabel(f.category)}</span>
-                                <span style={{ fontSize: 11, color: C.text3, background: C.surface, borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>{severityLabel(f.severity)}</span>
-                                {meta?.was_scorable && (
-                                  <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: "#dcfce7", color: "#16a34a" }}>Score Updated</span>
-                                )}
-                              </div>
-                              <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.5 }}>{f.description}</p>
-                              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 2 }}>
+                            <div key={fk + idx} style={{ padding: "14px 18px", borderBottom: idx < repArchivedItems.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", flexDirection: "column", gap: 5, borderLeft: "4px solid transparent", borderLeftColor: C.green, opacity: 0.75 }}>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                                {categoryLabel(f.category)}
+                              </span>
+                              <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0, lineHeight: 1.4 }}>
+                                {f.title || f.issue_type || f.description?.slice(0, 90) || "Issue"}
+                              </p>
+                              {f.description && (
+                                <p style={{ fontSize: 13, color: C.text3, margin: 0, lineHeight: 1.5 }}>{f.description}</p>
+                              )}
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
+                                <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: C.greenBg, color: C.green }}>
+                                  ✓ Completed{meta?.was_scorable ? " · Score Updated" : ""}
+                                </span>
                                 {completedDate && (
                                   <span style={{ fontSize: 11, color: C.text3 }}>📅 {completedDate}</span>
                                 )}
-                                <span style={{ fontSize: 11, color: meta?.receipt_url ? C.green : C.text3 }}>
-                                  {meta?.receipt_url ? "📎 Receipt attached" : "No receipt"}
-                                </span>
+                                {meta?.receipt_url && (
+                                  <span style={{ fontSize: 11, color: C.green }}>📎 Receipt attached</span>
+                                )}
                                 {meta?.notes && (
                                   <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic" }}>"{meta.notes.length > 60 ? meta.notes.slice(0, 60) + "…" : meta.notes}"</span>
                                 )}
@@ -4162,7 +4170,7 @@ export default function Dashboard() {
             const docSections = [
               {
                 id: "inspection",
-                label: "Inspection Report",
+                label: "Home Inspection",
                 icon: <FileText size={15} color={C.accent}/>,
                 iconBg: "#eff6ff",
                 accentColor: C.accent,
