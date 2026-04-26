@@ -25,6 +25,8 @@ type FindingStatus = "open" | "completed" | "monitored" | "not_sure" | "dismisse
 interface Finding {
   category: string;
   description: string;
+  is_scorable?: boolean;   // set by parser — mirrors isScoredFinding()
+  score_impact?: "high" | "medium" | "low" | "none";
   severity: string;
   estimated_cost: number | null;
   source?: "photo" | "inspection" | string; // "photo" = from image analysis
@@ -1128,6 +1130,119 @@ function isLikelyCovered(category: string, coverageItems: string[]): boolean {
   });
 }
 
+// ── Repair Complete Modal ─────────────────────────────────────────────────
+// Opens when the user clicks "Mark Complete" on a repair card.
+// Captures: completion date, notes, optional receipt/photo.
+// On confirm, the parent saves to Postgres + Storage and updates score.
+function RepairCompleteModal({
+  finding,
+  onConfirm,
+  onCancel,
+  saving,
+}: {
+  finding: Finding;
+  onConfirm: (data: { notes: string; completedAt: string; receiptFile?: File }) => void;
+  onCancel: () => void;
+  saving: boolean;
+}) {
+  const [notes, setNotes]           = useState("");
+  const [completedAt, setCompletedAt] = useState(() => new Date().toISOString().split("T")[0]);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const impact = getScoreImpact(finding.category, finding.severity, finding.description);
+  const isScoreable = finding.is_scorable ?? impact.affects;
+
+  return (
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 2000,
+      background: "rgba(15,31,61,0.75)", backdropFilter: "blur(6px)",
+      display: "flex", alignItems: "center", justifyContent: "center", padding: "20px 16px",
+    }}>
+      <div style={{
+        background: C.surface, borderRadius: 20, maxWidth: 480, width: "100%",
+        boxShadow: "0 24px 64px rgba(15,31,61,0.35)", overflow: "hidden",
+      }}>
+        {/* Header */}
+        <div style={{ padding: "20px 24px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "flex-start", gap: 12 }}>
+          <div style={{ width: 38, height: 38, borderRadius: 10, background: C.greenBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <CheckCircle2 size={18} color={C.green}/>
+          </div>
+          <div>
+            <h2 style={{ fontSize: 16, fontWeight: 700, color: C.text, margin: 0 }}>Mark Repair Complete</h2>
+            <p style={{ fontSize: 13, color: C.text3, margin: "3px 0 0" }}>{finding.category}</p>
+          </div>
+        </div>
+
+        {/* Body */}
+        <div style={{ padding: "20px 24px", display: "flex", flexDirection: "column", gap: 16 }}>
+          {/* Score impact notice */}
+          {isScoreable && (
+            <div style={{ background: C.greenBg, border: `1px solid ${C.green}30`, borderRadius: 10, padding: "10px 14px" }}>
+              <p style={{ fontSize: 12, color: C.green, margin: 0, fontWeight: 600 }}>
+                ✓ This repair affects your Home Health Score — marking it complete will improve your score.
+              </p>
+            </div>
+          )}
+
+          {/* Completion date */}
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: 6 }}>Completion Date</label>
+            <input
+              type="date" value={completedAt}
+              onChange={e => setCompletedAt(e.target.value)}
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 14, color: C.text, background: C.bg, boxSizing: "border-box" }}
+            />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: 6 }}>Notes <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
+            <textarea
+              value={notes} onChange={e => setNotes(e.target.value)}
+              placeholder="Vendor name, work performed, warranty info…"
+              style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.border}`, fontSize: 13, color: C.text, background: C.bg, resize: "vertical", minHeight: 68, boxSizing: "border-box", fontFamily: "inherit" }}
+            />
+          </div>
+
+          {/* Receipt upload */}
+          <div>
+            <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: 6 }}>Receipt / Invoice <span style={{ fontWeight: 400, textTransform: "none", letterSpacing: 0 }}>(optional)</span></label>
+            {receiptFile ? (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "9px 12px", borderRadius: 8, border: `1px solid ${C.green}40`, background: C.greenBg }}>
+                <FileText size={13} color={C.green}/>
+                <span style={{ fontSize: 13, color: C.green, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{receiptFile.name}</span>
+                <button onClick={() => { setReceiptFile(null); if (fileRef.current) fileRef.current.value = ""; }} style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, padding: 0, lineHeight: 1, flexShrink: 0 }}>✕</button>
+              </div>
+            ) : (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 8, border: `1px dashed ${C.border}`, cursor: "pointer", background: C.bg }}>
+                <CloudUpload size={14} color={C.text3}/>
+                <span style={{ fontSize: 13, color: C.text3 }}>Upload receipt or invoice</span>
+                <input ref={fileRef} type="file" style={{ display: "none" }} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" onChange={e => { const f = e.target.files?.[0]; if (f) setReceiptFile(f); }}/>
+              </label>
+            )}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 24px 20px", borderTop: `1px solid ${C.border}`, display: "flex", gap: 10 }}>
+          <button onClick={onCancel} disabled={saving} style={{ flex: 1, padding: "10px", borderRadius: 10, border: `1px solid ${C.border}`, background: "transparent", color: C.text3, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+            Cancel
+          </button>
+          <button
+            onClick={() => onConfirm({ notes, completedAt, receiptFile: receiptFile ?? undefined })}
+            disabled={saving}
+            style={{ flex: 2, padding: "10px", borderRadius: 10, border: "none", background: C.green, color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}
+          >
+            {saving ? <Loader2 size={14} className="animate-spin"/> : <CheckCircle2 size={14}/>}
+            {saving ? "Saving…" : "Confirm Complete"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Cost Detail Modal ─────────────────────────────────────────────────────
 function CostDetailModal({
   item, findings, onClose, onFindVendors, warranty, insurance,
@@ -1436,6 +1551,16 @@ export default function Dashboard() {
   const [uploadingRepair, setUploadingRepair] = useState(false);
   const repairRef = useRef<HTMLInputElement>(null);
 
+  // ── Repair Complete Modal ─────────────────────────────────────────────────
+  const [showCompleteModal, setShowCompleteModal]       = useState(false);
+  const [completeModalTarget, setCompleteModalTarget]   = useState<{ finding: Finding; globalIdx: number } | null>(null);
+  const [savingComplete, setSavingComplete]             = useState(false);
+  const [archivesExpanded, setArchivesExpanded]         = useState(false);
+
+  // Keyed by findingKey — loaded from repair_completions table on mount
+  type RepairCompletion = { completed_at: string; notes: string; receipt_url?: string; was_scorable: boolean; score_before?: number };
+  const [repairCompletions, setRepairCompletions] = useState<Record<string, RepairCompletion>>({});
+
   // Feedback
   const [showFeedback, setShowFeedback]       = useState(false);
   const [feedbackWhat, setFeedbackWhat]       = useState("");
@@ -1612,6 +1737,7 @@ export default function Dashboard() {
         if (propId) {
           loadProperty(propId);
           loadRepairDocs();
+          loadRepairCompletions(propId);
         }
         loadPlaidData();
       }
@@ -2067,6 +2193,7 @@ export default function Dashboard() {
     await loadProperty(id);
     await loadDocs();
     await loadRepairDocs();
+    await loadRepairCompletions(id);
   }
 
   // ── Create a blank property and jump straight to its empty dashboard ────
@@ -2475,40 +2602,42 @@ export default function Dashboard() {
   // documents vanish after every refresh even though files exist in storage.
   async function loadDocs() {
     try {
-      // refreshSession() ensures a fresh JWT — avoids "exp claim" errors on storage ops.
       const { data: refreshed } = await supabase.auth.refreshSession();
       const session = refreshed?.session ?? (await supabase.auth.getSession()).data.session;
       if (!session?.user?.id) return;
-      const userId = session.user.id;
 
-      // Store docs in a user-scoped subfolder: {userId}/docs-{ts}-{name}
-      // list() on the subfolder only returns that user's files — no RLS owner issues.
-      const { data, error } = await supabase.storage
+      // Read from Postgres documents table — persists across logout/login
+      const { data, error } = await supabase
         .from("documents")
-        .list(userId, { limit: 200, sortBy: { column: "created_at", order: "desc" } });
+        .select("id, file_name, storage_path, document_type, created_at")
+        .eq("document_type", "other")
+        .order("created_at", { ascending: false })
+        .limit(200);
 
       if (error) {
-        console.error("[loadDocs] storage.list error:", error.message);
+        console.error("[loadDocs] db error:", error.message);
         return;
       }
       if (!data) return;
 
-      const items = data.filter(item => item.id !== null && item.name.startsWith("docs-"));
-
-      // Also restore insurance doc count from storage (so it survives logout/login)
-      const insCount = data.filter(item => item.id !== null && item.name.startsWith("insurance-")).length;
-      if (insCount > 0) setInsuranceDocCount(insCount);
+      // Also count insurance docs so the badge survives logout/login
+      const { count: insCount } = await supabase
+        .from("documents")
+        .select("id", { count: "exact", head: true })
+        .eq("document_type", "insurance");
+      if (insCount && insCount > 0) setInsuranceDocCount(insCount);
 
       const files: Doc[] = await Promise.all(
-        items.map(async (item) => {
-          const fullPath = `${userId}/${item.name}`;
+        data.map(async (row) => {
           const { data: signed } = await supabase.storage
             .from("documents")
-            .createSignedUrl(fullPath, 3600);
+            .createSignedUrl(row.storage_path, 3600);
           return {
-            name: item.name.replace(/^docs-\d+-/, ""),
-            path: fullPath,
-            url: signed?.signedUrl ?? undefined,
+            id:            row.id,
+            name:          row.file_name,
+            path:          row.storage_path,
+            document_type: row.document_type,
+            url:           signed?.signedUrl ?? undefined,
           };
         })
       );
@@ -2522,8 +2651,6 @@ export default function Dashboard() {
   async function uploadDoc(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setDocLoading(true);
-    // Always refresh the session to get a fresh JWT — getSession() can return an
-    // expired token if the background refresh timer missed, causing "exp claim" errors.
     const { data: refreshed, error: refreshErr } = await supabase.auth.refreshSession();
     const session = refreshed?.session ?? (await supabase.auth.getSession()).data.session;
     if (refreshErr && !session) { alert("Session expired — please log out and back in."); setDocLoading(false); return; }
@@ -2531,19 +2658,37 @@ export default function Dashboard() {
     if (!userId) { alert("Not logged in — please refresh and try again."); setDocLoading(false); return; }
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
     const fullPath = `${userId}/docs-${Date.now()}-${safeName}`;
-    const { error } = await supabase.storage.from("documents").upload(fullPath, file, { upsert: true });
-    if (error) { alert("Upload failed: " + error.message); setDocLoading(false); return; }
+
+    // 1. Upload to Storage
+    const { error: storageErr } = await supabase.storage.from("documents").upload(fullPath, file, { upsert: true });
+    if (storageErr) { alert("Upload failed: " + storageErr.message); setDocLoading(false); return; }
+
+    // 2. Write metadata row to Postgres (so it persists across logout/login)
+    const { data: propRow } = await supabase.from("properties").select("id").eq("user_id", userId).maybeSingle();
+    const { data: insertedDoc, error: dbErr } = await supabase.from("documents").insert({
+      user_id:       userId,
+      property_id:   propRow?.id ?? null,
+      file_name:     file.name,
+      storage_path:  fullPath,
+      document_type: "other",
+    }).select("id").maybeSingle();
+    if (dbErr) console.error("[uploadDoc] db insert error:", dbErr.message);
+
     addEvent(`Document uploaded: ${file.name}`);
     const { data: signed } = await supabase.storage.from("documents").createSignedUrl(fullPath, 3600);
-    setDocs(prev => [{ name: file.name, path: fullPath, url: signed?.signedUrl ?? undefined }, ...prev]);
+    setDocs(prev => [{ id: insertedDoc?.id ?? "", name: file.name, path: fullPath, document_type: "other", url: signed?.signedUrl ?? undefined }, ...prev]);
     setDocLoading(false);
     if (docRef.current) docRef.current.value = "";
   }
 
   async function deleteDoc(doc: Doc) {
     if (!confirm(`Delete "${doc.name}"? This cannot be undone.`)) return;
-    const { error } = await supabase.storage.from("documents").remove([doc.path]);
-    if (error) { showToast("Delete failed: " + error.message, "error"); return; }
+    // Remove from Storage
+    const { error: storageErr } = await supabase.storage.from("documents").remove([doc.path]);
+    if (storageErr) { showToast("Delete failed: " + storageErr.message, "error"); return; }
+    // Remove from Postgres documents table
+    const { error: dbErr } = await supabase.from("documents").delete().eq("storage_path", doc.path);
+    if (dbErr) console.error("[deleteDoc] db delete error:", dbErr.message);
     setDocs(prev => prev.filter(d => d.path !== doc.path));
     showToast(`Deleted ${doc.name}`, "success");
   }
@@ -2717,12 +2862,124 @@ export default function Dashboard() {
     addEvent("Inspection findings reviewed and status updated");
   }
 
-  // ── Toggle a single finding status (inline in findings list) ────────────
+  // ── Toggle a single finding status (inline select dropdown) ─────────────
   async function toggleFindingStatus(category: string, index: number, status: FindingStatus) {
     const key = findingKey(category, index);
     const newStatuses = { ...findingStatuses, [key]: status };
     setFindingStatuses(newStatuses);
     await persistFindingStatuses(newStatuses);
+  }
+
+  // ── Open the Mark Complete modal ─────────────────────────────────────────
+  function openCompleteModal(finding: Finding, globalIdx: number) {
+    setCompleteModalTarget({ finding, globalIdx });
+    setShowCompleteModal(true);
+  }
+
+  // ── Handle repair completion confirmation ─────────────────────────────────
+  async function confirmRepairComplete(data: { notes: string; completedAt: string; receiptFile?: File }) {
+    if (!completeModalTarget) return;
+    const { finding, globalIdx } = completeModalTarget;
+    const propId = activePropertyIdRef.current;
+    const { data: { session } } = await supabase.auth.getSession();
+    const uid = session?.user?.id;
+
+    setSavingComplete(true);
+    try {
+      // 1. Mark finding status as completed
+      const key = findingKey(finding.category, globalIdx);
+      const newStatuses = { ...findingStatuses, [key]: "completed" as FindingStatus };
+      setFindingStatuses(newStatuses);
+      await persistFindingStatuses(newStatuses);
+
+      // 2. Upload receipt to Storage if provided
+      let receiptPath: string | null = null;
+      let receiptSignedUrl: string | null = null;
+      if (data.receiptFile && uid) {
+        const ts = Date.now();
+        const safeName = data.receiptFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+        receiptPath = `${uid}/repair-receipt-${ts}-${safeName}`;
+        const { error: storageErr } = await supabase.storage.from("documents").upload(receiptPath, data.receiptFile, { upsert: true });
+        if (storageErr) {
+          showToast("Receipt upload failed: " + storageErr.message, "error");
+        } else {
+          const { data: signed } = await supabase.storage.from("documents").createSignedUrl(receiptPath, 3600 * 24 * 30);
+          receiptSignedUrl = signed?.signedUrl ?? null;
+        }
+      }
+
+      // 3. Scorability — prefer parser-stamped value, fall back to client check
+      const impact = getScoreImpact(finding.category, finding.severity, finding.description);
+      const wasScoreable = finding.is_scorable ?? impact.affects;
+      const scoreBefore = breakdown.score;
+
+      // 4. Persist to repair_completions table
+      if (uid) {
+        const { error: dbErr } = await supabase.from("repair_completions").insert({
+          user_id:              uid,
+          property_id:          propId ?? null,
+          finding_key:          key,
+          category:             finding.category,
+          title:                finding.category,
+          completed_at:         new Date(data.completedAt + "T12:00:00").toISOString(),
+          notes:                data.notes || null,
+          receipt_storage_path: receiptPath,
+          receipt_url:          receiptSignedUrl,
+          was_scorable:         wasScoreable,
+          score_before:         scoreBefore,
+        });
+        if (dbErr) showToast("Saved locally — DB error: " + dbErr.message, "info");
+      }
+
+      // 5. Update local repairCompletions map (instant UI update)
+      setRepairCompletions(prev => ({
+        ...prev,
+        [key]: {
+          completed_at:  data.completedAt,
+          notes:         data.notes,
+          receipt_url:   receiptSignedUrl ?? undefined,
+          was_scorable:  wasScoreable,
+          score_before:  scoreBefore,
+        }
+      }));
+
+      // 6. Timeline event + toast
+      addEvent(`Repair completed: ${finding.category}${data.receiptFile ? " (receipt uploaded)" : ""}`);
+      showToast(`✓ ${finding.category} marked complete${wasScoreable ? " — score updated" : ""}`, "success");
+
+      setShowCompleteModal(false);
+      setCompleteModalTarget(null);
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : "Could not save — try again", "error");
+    }
+    setSavingComplete(false);
+  }
+
+  // ── Load repair completions from DB ──────────────────────────────────────
+  async function loadRepairCompletions(propId?: string | number) {
+    try {
+      const query = supabase
+        .from("repair_completions")
+        .select("finding_key, category, completed_at, notes, receipt_url, was_scorable, score_before")
+        .order("completed_at", { ascending: false })
+        .limit(200);
+      if (propId) query.eq("property_id", propId);
+      const { data, error } = await query;
+      if (error || !data) return;
+      const map: Record<string, RepairCompletion> = {};
+      data.forEach((r: { finding_key: string; completed_at: string; notes: string | null; receipt_url: string | null; was_scorable: boolean; score_before: number | null }) => {
+        map[r.finding_key] = {
+          completed_at: r.completed_at,
+          notes:        r.notes ?? "",
+          receipt_url:  r.receipt_url ?? undefined,
+          was_scorable: r.was_scorable,
+          score_before: r.score_before ?? undefined,
+        };
+      });
+      setRepairCompletions(map);
+    } catch (err) {
+      console.error("loadRepairCompletions error:", err);
+    }
   }
 
   // ── Text-to-speech — streaming OpenAI TTS (echo) with interruption ───
@@ -3185,6 +3442,14 @@ export default function Dashboard() {
           homeHealthReport={homeHealthReport}
           onClose={() => setShowHealthModal(false)}
           onFindVendors={handleFindVendors}
+        />
+      )}
+      {showCompleteModal && completeModalTarget && (
+        <RepairCompleteModal
+          finding={completeModalTarget.finding}
+          saving={savingComplete}
+          onConfirm={confirmRepairComplete}
+          onCancel={() => { setShowCompleteModal(false); setCompleteModalTarget(null); }}
         />
       )}
       {showCostModal && selectedCost && (
@@ -3896,7 +4161,7 @@ export default function Dashboard() {
                                                     {!isResolved && (<>
                                                       <button onClick={() => handleFindVendors(f.category, f.category, f.description)} style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: "white", background: C.navy, border: "none", borderRadius: 20, padding: "3px 11px", cursor: "pointer" }}>🔧 Fix This</button>
                                                       <button onClick={() => handleFindVendors(f.category, f.category, f.description)} style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: "white", border: `1px solid ${C.accent}`, borderRadius: 20, padding: "3px 11px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}><Users size={9}/> Vendor</button>
-                                                      <button onClick={() => toggleFindingStatus(f.category, globalIdx, "completed")} style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.greenBg, border: `1px solid ${C.green}`, borderRadius: 20, padding: "3px 11px", cursor: "pointer" }}>✓ Done</button>
+                                                      <button onClick={() => openCompleteModal(f, globalIdx)} style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.greenBg, border: `1px solid ${C.green}`, borderRadius: 20, padding: "3px 11px", cursor: "pointer" }}>✓ Mark Complete</button>
                                                     </>)}
                                                   </div>
                                                 </div>
@@ -3908,6 +4173,72 @@ export default function Dashboard() {
                                     </div>
                                   );
                                 })}
+                              </div>
+                            );
+                          })()}
+
+                          {/* ── Repair Archives ── */}
+                          {sec.id === "inspection" && (() => {
+                            // Build a list of completed findings with their metadata
+                            const archivedItems: Array<{ f: Finding; globalIdx: number; fk: string }> = [];
+                            allFindings.forEach((f, i) => {
+                              const fk = findingKey(f.category, i);
+                              const s = findingStatuses[fk] ?? "open";
+                              if (s === "completed") archivedItems.push({ f, globalIdx: i, fk });
+                            });
+                            if (archivedItems.length === 0) return null;
+                            return (
+                              <div style={{ marginTop: 18, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+                                {/* Header / toggle */}
+                                <button
+                                  onClick={() => setArchivesExpanded(p => !p)}
+                                  style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: C.surface, border: "none", cursor: "pointer", gap: 8 }}
+                                >
+                                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Repair Archives</span>
+                                    <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 9px", borderRadius: 20, background: C.greenBg, color: C.green }}>{archivedItems.length}</span>
+                                  </div>
+                                  <span style={{ fontSize: 11, color: C.text3, transform: archivesExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s", display: "inline-block" }}>▼</span>
+                                </button>
+
+                                {archivesExpanded && (
+                                  <div style={{ borderTop: `1px solid ${C.border}`, background: C.bg }}>
+                                    {archivedItems.map(({ f, globalIdx, fk }, idx) => {
+                                      const meta = repairCompletions[fk];
+                                      const impact = getScoreImpact(f.category, f.severity, f.description);
+                                      const completedDate = meta?.completed_at
+                                        ? new Date(meta.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                                        : null;
+                                      return (
+                                        <div key={fk + idx} style={{ padding: "13px 16px", borderBottom: idx < archivedItems.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", flexDirection: "column", gap: 5 }}>
+                                          {/* Title row */}
+                                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: C.greenBg, color: C.green }}>✓ Done</span>
+                                            <span style={{ fontSize: 13, fontWeight: 700, color: C.text, textDecoration: "line-through", opacity: 0.7 }}>{f.category}</span>
+                                            <span style={{ fontSize: 11, color: C.text3, background: C.surface, borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>{(f.severity ?? "info").charAt(0).toUpperCase() + (f.severity ?? "info").slice(1)}</span>
+                                            {meta?.was_scorable && (
+                                              <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: "#dcfce7", color: "#16a34a" }}>Score Updated</span>
+                                            )}
+                                          </div>
+                                          {/* Description */}
+                                          <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.5 }}>{f.description}</p>
+                                          {/* Meta row */}
+                                          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 2 }}>
+                                            {completedDate && (
+                                              <span style={{ fontSize: 11, color: C.text3 }}>📅 {completedDate}</span>
+                                            )}
+                                            <span style={{ fontSize: 11, color: meta?.receipt_url ? C.green : C.text3 }}>
+                                              {meta?.receipt_url ? "📎 Receipt attached" : "No receipt"}
+                                            </span>
+                                            {meta?.notes && (
+                                              <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic" }}>"{meta.notes.length > 60 ? meta.notes.slice(0, 60) + "…" : meta.notes}"</span>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                )}
                               </div>
                             );
                           })()}

@@ -384,12 +384,12 @@ Return ALL findings you see across all systems. The merger will deduplicate agai
 function mergeFindings(pass1, pass2) {
   const SEVERITY_RANK = { critical: 3, warning: 2, info: 1 };
 
-  // Normalise a description for fuzzy comparison
+  // Normalise a string for fuzzy comparison
   function norm(s) {
     return (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
   }
 
-  // Word-overlap ratio between two strings (Jaccard on word sets)
+  // Word-overlap ratio between two strings (Jaccard on word sets, words > 3 chars)
   function similarity(a, b) {
     const wa = new Set(norm(a).split(" ").filter(w => w.length > 3));
     const wb = new Set(norm(b).split(" ").filter(w => w.length > 3));
@@ -400,33 +400,56 @@ function mergeFindings(pass1, pass2) {
     return inter / Math.max(wa.size, wb.size);
   }
 
+  // Two categories are considered the same topic when:
+  //  - one string contains the other ("Pool" ⊂ "Pool, Spa, Equipment & Safety"), OR
+  //  - their word-overlap is ≥ 50% ("Electrical Panel" ~ "Electrical Panel & Wiring")
+  function categoriesMatch(c1, c2) {
+    const a = norm(c1);
+    const b = norm(c2);
+    if (a === b) return true;
+    if (a.includes(b) || b.includes(a)) return true;
+    return similarity(a, b) >= 0.50;
+  }
+
   const merged = [...pass1];
 
   for (const f2 of pass2) {
-    // Check if a similar finding already exists in the same category
+    // Find a duplicate: same-topic category AND similar description
     const dupIdx = merged.findIndex(f1 =>
-      (f1.category || "").toLowerCase() === (f2.category || "").toLowerCase()
-      && similarity(f1.description, f2.description) >= 0.45
+      categoriesMatch(f1.category, f2.category) &&
+      similarity(f1.description, f2.description) >= 0.40
     );
 
     if (dupIdx === -1) {
-      // New finding — add it
-      merged.push(f2);
+      // Also check: same-topic category with very short / empty descriptions
+      // (parser sometimes returns a header-only finding the second time)
+      const catOnlyDup = merged.findIndex(f1 =>
+        categoriesMatch(f1.category, f2.category) &&
+        (!f2.description || f2.description.trim().length < 20)
+      );
+      if (catOnlyDup === -1) {
+        merged.push(f2);
+      }
+      // else: second pass added a thin duplicate of an existing category — skip it
     } else {
-      // Duplicate — keep the higher-severity version
+      // Duplicate — keep the higher-severity version, prefer the longer category name
       const existing = merged[dupIdx];
       const existRank = SEVERITY_RANK[existing.severity] ?? 0;
       const newRank   = SEVERITY_RANK[f2.severity] ?? 0;
+      const betterCategory =
+        (f2.category || "").length > (existing.category || "").length
+          ? f2.category
+          : existing.category;
       if (newRank > existRank) {
-        merged[dupIdx] = { ...existing, ...f2 }; // upgrade severity + any new fields
+        merged[dupIdx] = { ...existing, ...f2, category: betterCategory };
       } else {
-        // Keep existing but fill in any null fields from the second pass
         merged[dupIdx] = {
-          estimated_cost:      existing.estimated_cost      ?? f2.estimated_cost,
-          age_years:           existing.age_years           ?? f2.age_years,
-          remaining_life_years:existing.remaining_life_years?? f2.remaining_life_years,
-          lifespan_years:      existing.lifespan_years      ?? f2.lifespan_years,
+          estimated_cost:       existing.estimated_cost       ?? f2.estimated_cost,
+          age_years:            existing.age_years            ?? f2.age_years,
+          remaining_life_years: existing.remaining_life_years ?? f2.remaining_life_years,
+          lifespan_years:       existing.lifespan_years       ?? f2.lifespan_years,
           ...existing,
+          category: betterCategory,
         };
       }
     }
@@ -667,6 +690,63 @@ export async function POST(req) {
       console.error("[parse-inspection] Scoring engine error:", engineErr?.message);
     }
 
+    // ── Enrich findings with scorability metadata ─────────────────────────
+    // Mirrors the isScoredFinding logic in the dashboard so both sides agree.
+    const SUPPLEMENTAL_KEYS = [
+      "fireplace", "chimney", "flue",
+      "pool", "spa", "hot tub", "skimmer",
+      "deck", "patio", "pergola",
+      "fence", "gate",
+      "driveway", "walkway", "sidewalk", "pavement",
+      "sprinkler", "irrigation",
+      "shed", "outbuilding",
+      "attic fan", "ceiling fan", "exhaust fan",
+      "security system", "security camera", "surveillance", "alarm system",
+    ];
+
+    function isScorable(category, description) {
+      const t = (category || "").toLowerCase();
+      const d = (description || "").toLowerCase();
+      if (SUPPLEMENTAL_KEYS.some(s => t.includes(s) || d.includes(s))) return false;
+      return (
+        t.includes("roof") || t.includes("gutter") || t.includes("exterior") ||
+        t.includes("siding") || t.includes("fascia") || t.includes("soffit") ||
+        t.includes("drain") || t.includes("grading") ||
+        t.includes("foundation") || t.includes("structural") || t.includes("structure") ||
+        t.includes("basement") || t.includes("crawl") || t.includes("settling") ||
+        t.includes("plumb") || t.includes("pipe") || t.includes("water heater") ||
+        t.includes("sewer") || t.includes("hose") || t.includes("toilet") || t.includes("sink") ||
+        t.includes("electr") || t.includes("panel") || t.includes("wiring") ||
+        t.includes("outlet") || t.includes("gfci") || t.includes("circuit") ||
+        t.includes("hvac") || t.includes("heat") || t.includes("cool") ||
+        t.includes("furnace") || t.includes("duct") || t.includes("air handler") ||
+        t.includes("thermostat") || t.includes("ventilat") ||
+        t.includes("safety") || t.includes("smoke") || t.includes("carbon") ||
+        t.includes("detector") ||
+        t.includes("mold") || t.includes("pest") || t.includes("termite") ||
+        t.includes("radon") || t.includes("asbestos") || t.includes("lead") ||
+        t.includes("window") || t.includes("door") || t.includes("floor") ||
+        t.includes("ceiling") || t.includes("wall") || t.includes("stair") ||
+        t.includes("interior") || t.includes("handrail") ||
+        t.includes("appliance") || t.includes("washer") || t.includes("dryer") ||
+        t.includes("dishwasher") || t.includes("oven") || t.includes("range") ||
+        t.includes("refrigerator") || t.includes("stove")
+      );
+    }
+
+    const enrichedFindings = findings.map(f => {
+      const scorable = isScorable(f.category, f.description);
+      const sev = (f.severity || "").toLowerCase();
+      return {
+        ...f,
+        is_scorable: scorable,
+        score_impact: scorable
+          ? (sev === "critical" ? "high" : sev === "warning" ? "medium" : "low")
+          : "none",
+        status: "open",
+      };
+    });
+
     const finalResult = {
       property_address:  parsed.property_address  ?? null,
       inspection_date:   parsed.inspection_date   ?? null,
@@ -675,7 +755,7 @@ export async function POST(req) {
       summary:           parsed.summary           ?? null,
       roof_year:         safeRoofYear,
       hvac_year:         safeHvacYear,
-      findings,
+      findings:          enrichedFindings,
       home_health_report,
     };
 
