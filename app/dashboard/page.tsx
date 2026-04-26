@@ -2413,11 +2413,19 @@ export default function Dashboard() {
         const findingCount = newFindings.length;
         addEvent(`${result.inspection_type ?? "Inspection"} analyzed: ${findingCount} finding${findingCount !== 1 ? "s" : ""} detected`);
         setInspectDone(true);
-        // Show post-inspection review modal — only scored findings (impact Home Health Score)
-        // All findings (including pool, deck, fireplace, etc.) remain in the Repairs tab
+        // Show post-inspection review modal — only scored findings that are critical or warning.
+        // Info-level items (noisy fan, sticky door, minor cosmetic issues) stay in the Repairs tab
+        // but are too minor to surface in the initial popup.
+        // All findings remain visible in the Repairs tab regardless.
         if (newFindings.length > 0) {
-          const scoredOnly = newFindings.filter(f => isScoredFinding(f.category));
-          setReviewFindings(scoredOnly.length > 0 ? scoredOnly : newFindings);
+          const scoredOnly = newFindings.filter(f =>
+            isScoredFinding(f.category) &&
+            (f.severity === "critical" || f.severity === "warning")
+          );
+          // Fall back to all scored findings if nothing meets the severity threshold,
+          // then fall back to all findings so the modal is never empty.
+          const fallback = newFindings.filter(f => isScoredFinding(f.category));
+          setReviewFindings(scoredOnly.length > 0 ? scoredOnly : fallback.length > 0 ? fallback : newFindings);
           setShowReviewModal(true);
         } else {
           // No findings — tell the user so they know something may be wrong
@@ -3767,7 +3775,7 @@ export default function Dashboard() {
                                     <span style={{ fontSize: 12, color: C.amber, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "warning").length} warnings</span>
                                     <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>{completedFindings.length} resolved</span>
                                   </div>
-                                  <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category)); setReviewFindings(scored.length > 0 ? scored : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
+                                  <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category) && (f.severity === "critical" || f.severity === "warning")); const fallback = all.filter(f => isScoredFinding(f.category)); setReviewFindings(scored.length > 0 ? scored : fallback.length > 0 ? fallback : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
                                 </div>
                                 {groups.map(({ gk, label, items }, gi) => {
                                   const isGrpOpen = expandedGroups.has(gk);
