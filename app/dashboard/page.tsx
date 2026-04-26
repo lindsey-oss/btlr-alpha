@@ -19,7 +19,7 @@ import { normalizeLegacyFindings, computeHomeHealthReport } from "../../lib/scor
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface TimelineEvent { date: string; event: string }
-interface Doc { name: string; path: string; url?: string }
+interface Doc { id: string; name: string; path: string; url?: string; document_type: string }
 type FindingStatus = "open" | "completed" | "monitored" | "not_sure" | "dismissed";
 
 interface Finding {
@@ -48,24 +48,34 @@ function findingKey(category: string, index: number): string {
 // that actually drive the Home Health Score. Supplemental findings (pool, spa,
 // deck, fireplace, chimney, attic, etc.) are still stored and shown in the
 // Repairs tab but are excluded from the post-upload review modal.
-function isScoredFinding(category: string): boolean {
+// description is optional but should always be passed — it catches cases where the
+// parser uses a generic category (e.g. "Exterior") but the description reveals the
+// actual system (e.g. "uneven deck boards" or "pool skimmer missing").
+function isScoredFinding(category: string, description?: string): boolean {
   const t = (category || "").toLowerCase();
+  const d = (description || "").toLowerCase();
 
-  // Supplemental systems — always excluded from scoring regardless of keyword overlap.
-  // These still appear in the Repairs tab but never affect the Home Health Score.
+  // Supplemental systems — excluded from scoring regardless of keyword overlap.
+  // We check BOTH the category name AND the description so a finding labelled
+  // "Exterior — uneven deck" or "Equipment — pool skimmer missing" is correctly
+  // excluded even when the category alone would match a scored keyword.
   const SUPPLEMENTAL = [
     "fireplace", "chimney", "flue",
-    "pool", "spa", "hot tub",
+    "pool", "spa", "hot tub", "skimmer",
     "deck", "patio", "pergola",
     "fence", "gate",
     "driveway", "walkway", "sidewalk", "pavement",
     "sprinkler", "irrigation",
     "shed", "outbuilding",
-    "attic fan",          // attic ventilation fans — cosmetic, not HVAC
-    "ceiling fan",        // cosmetic
-    "exhaust fan",        // bathroom exhaust fan — cosmetic
+    "attic fan",           // cosmetic ventilation fan, not HVAC system
+    "ceiling fan",         // cosmetic
+    "exhaust fan",         // bathroom exhaust fan — cosmetic
+    "security system",     // alarm/camera systems don't affect home health score
+    "security camera",
+    "surveillance",
+    "alarm system",
   ];
-  if (SUPPLEMENTAL.some(s => t.includes(s))) return false;
+  if (SUPPLEMENTAL.some(s => t.includes(s) || d.includes(s))) return false;
 
   return (
     t.includes("roof") || t.includes("gutter") || t.includes("exterior") ||
@@ -81,6 +91,7 @@ function isScoredFinding(category: string): boolean {
     t.includes("furnace") || t.includes("duct") || t.includes("air handler") ||
     t.includes("thermostat") || t.includes("ventilat") ||
     t.includes("safety") || t.includes("smoke") || t.includes("carbon") ||
+    t.includes("detector") ||
     t.includes("mold") || t.includes("pest") || t.includes("termite") ||
     t.includes("radon") || t.includes("asbestos") || t.includes("lead") ||
     t.includes("window") || t.includes("door") || t.includes("floor") ||
@@ -98,8 +109,8 @@ type ScoreImpact =
   | { affects: true;  level: "high" | "medium" | "low"; color: string; bg: string; label: string; reason: string }
   | { affects: false; color: string; bg: string; label: string };
 
-function getScoreImpact(category: string, severity?: string): ScoreImpact {
-  const scored = isScoredFinding(category);
+function getScoreImpact(category: string, severity?: string, description?: string): ScoreImpact {
+  const scored = isScoredFinding(category, description);
   if (!scored) {
     return { affects: false, color: "#94a3b8", bg: "rgba(148,163,184,0.12)", label: "Informational" };
   }
@@ -2436,12 +2447,12 @@ export default function Dashboard() {
         // All findings remain visible in the Repairs tab regardless.
         if (newFindings.length > 0) {
           const scoredOnly = newFindings.filter(f =>
-            isScoredFinding(f.category) &&
+            isScoredFinding(f.category, f.description) &&
             (f.severity === "critical" || f.severity === "warning")
           );
           // Fall back to all scored findings if nothing meets the severity threshold,
           // then fall back to all findings so the modal is never empty.
-          const fallback = newFindings.filter(f => isScoredFinding(f.category));
+          const fallback = newFindings.filter(f => isScoredFinding(f.category, f.description));
           setReviewFindings(scoredOnly.length > 0 ? scoredOnly : fallback.length > 0 ? fallback : newFindings);
           setShowReviewModal(true);
         } else {
@@ -3792,7 +3803,7 @@ export default function Dashboard() {
                                     <span style={{ fontSize: 12, color: C.amber, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "warning").length} warnings</span>
                                     <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>{completedFindings.length} resolved</span>
                                   </div>
-                                  <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category) && (f.severity === "critical" || f.severity === "warning")); const fallback = all.filter(f => isScoredFinding(f.category)); setReviewFindings(scored.length > 0 ? scored : fallback.length > 0 ? fallback : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
+                                  <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category, f.description) && (f.severity === "critical" || f.severity === "warning")); const fallback = all.filter(f => isScoredFinding(f.category, f.description)); setReviewFindings(scored.length > 0 ? scored : fallback.length > 0 ? fallback : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
                                 </div>
                                 {groups.map(({ gk, label, items }, gi) => {
                                   const isGrpOpen = expandedGroups.has(gk);
@@ -3827,7 +3838,7 @@ export default function Dashboard() {
                                               const status = findingStatuses[fk] ?? "open";
                                               const cfg = statusConfig[status];
                                               const isResolved = status === "completed" || status === "dismissed";
-                                              const impact = getScoreImpact(f.category, f.severity);
+                                              const impact = getScoreImpact(f.category, f.severity, f.description);
                                               const cardBorder = isResolved ? C.border : `${impact.color}40`;
                                               const cardBg = isResolved ? C.surface : impact.bg;
                                               return (
