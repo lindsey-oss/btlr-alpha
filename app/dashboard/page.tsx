@@ -3755,62 +3755,229 @@ export default function Dashboard() {
           {nav === "My Jobs" && <MyJobsView />}
 
           {/* ── Repairs full page ─────────────────────────────────────── */}
-          {nav === "Repairs" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {costs.length === 0 ? (
+          {nav === "Repairs" && (() => {
+            if (allFindings.length === 0) {
+              return (
                 <div style={{ ...card(), textAlign: "center", padding: "48px 24px" }}>
                   <CheckCircle2 size={36} color={C.green} style={{ margin: "0 auto 14px" }}/>
-                  <p style={{ fontSize: 16, fontWeight: 600, color: C.text, margin: "0 0 6px" }}>No upcoming repairs</p>
-                  <p style={{ fontSize: 14, color: C.text3 }}>Upload an inspection report or enter your system ages to generate cost projections.</p>
+                  <p style={{ fontSize: 16, fontWeight: 600, color: C.text, margin: "0 0 6px" }}>No inspection findings yet</p>
+                  <p style={{ fontSize: 14, color: C.text3 }}>Upload an inspection report in the Home Health section to track and manage repairs.</p>
                 </div>
-              ) : (
-                costs.map((c, i) => {
-                  const col = c.severity === "critical" ? C.red : c.severity === "warning" ? C.amber : C.text3;
-                  const bg  = c.severity === "critical" ? C.redBg : c.severity === "warning" ? C.amberBg : C.bg;
-                  return (
-                    <div key={i} onClick={() => openCostModal(c)} style={{
-                      ...card({ padding: "18px 20px" }),
-                      background: bg, border: `1px solid ${col}30`,
-                      cursor: "pointer", transition: "all 0.15s",
-                    }}
-                      onMouseEnter={e => (e.currentTarget.style.transform = "translateY(-1px)")}
-                      onMouseLeave={e => (e.currentTarget.style.transform = "")}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-                        <span style={{ width: 10, height: 10, borderRadius: "50%", background: col, flexShrink: 0 }}/>
-                        <div style={{ flex: 1 }}>
-                          <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>{c.label}</p>
-                          <p style={{ fontSize: 13, color: C.text3, margin: "3px 0 0" }}>{c.horizon}</p>
+              );
+            }
+            const repGroupMap = new Map<string, { label: string; items: { f: Finding; globalIdx: number }[] }>();
+            for (let gi = 0; gi < allFindings.length; gi++) {
+              const f = allFindings[gi];
+              const gk = toGroupKey(f.category);
+              const meta = GROUP_META[gk] ?? GROUP_META.general;
+              if (!repGroupMap.has(gk)) repGroupMap.set(gk, { label: meta.label, items: [] });
+              repGroupMap.get(gk)!.items.push({ f, globalIdx: gi });
+            }
+            const repGroups = [...repGroupMap.entries()].map(([gk, v]) => ({ gk, ...v }));
+            const repStatusConfig: Record<FindingStatus, { label: string; color: string; bg: string }> = {
+              open:      { label: "Open",       color: C.red,    bg: C.redBg   },
+              completed: { label: "Completed",  color: C.green,  bg: C.greenBg },
+              monitored: { label: "Monitoring", color: C.accent, bg: "#eff6ff" },
+              not_sure:  { label: "Not Sure",   color: C.amber,  bg: C.amberBg },
+              dismissed: { label: "Dismissed",  color: C.text3,  bg: C.bg      },
+            };
+            const repArchivedItems: Array<{ f: Finding; globalIdx: number; fk: string }> = [];
+            allFindings.forEach((f, i) => {
+              const fk = findingKey(f, i);
+              const s = findingStatuses[fk] ?? "open";
+              if (s === "completed") repArchivedItems.push({ f, globalIdx: i, fk });
+            });
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
+                  {/* Legend */}
+                  <div style={{ padding: "10px 16px", background: "#f8fafc", borderBottom: `1px solid ${C.border}` }}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 7px" }}>
+                      Highlighted repairs affect your Home Health Score
+                    </p>
+                    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                      {[
+                        { color: "#ef4444", bg: "rgba(239,68,68,0.10)",  label: "High Impact (Critical)" },
+                        { color: "#f97316", bg: "rgba(249,115,22,0.10)", label: "Medium Impact" },
+                        { color: "#eab308", bg: "rgba(234,179,8,0.12)",  label: "Low Impact" },
+                        { color: "#94a3b8", bg: "rgba(148,163,184,0.12)", label: "Informational (no score effect)" },
+                      ].map(({ color, bg, label }) => (
+                        <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <span style={{ width: 10, height: 10, borderRadius: 3, background: bg, border: `1.5px solid ${color}`, display: "inline-block", flexShrink: 0 }}/>
+                          <span style={{ fontSize: 11, color: C.text3 }}>{label}</span>
                         </div>
-                        <span style={{ fontSize: 16, fontWeight: 800, color: col }}>${c.amount.toLocaleString()}</span>
-                        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                          <button onClick={e => { e.stopPropagation(); setChatMessages([{ role: "user", content: c.finding?.description ?? c.label }]); askAI(c.finding?.description ?? c.label); setNav("Dashboard"); }}
-                            style={{ padding: "6px 12px", borderRadius: 8, background: C.accentLt, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                            <Shield size={12}/> Check Coverage
-                          </button>
-                          <button onClick={e => { e.stopPropagation(); handleFindVendors(c.tradeCategory ?? c.label, c.label, c.finding?.description ?? c.label); }}
-                            style={{ padding: "6px 12px", borderRadius: 8, background: C.accent, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                            <Users size={12}/> Find Vendors
-                          </button>
-                          <button onClick={e => { e.stopPropagation(); setMarkCompleteTarget(c); }}
-                            style={{ padding: "6px 12px", borderRadius: 8, background: C.green, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
-                            <CheckCircle2 size={12}/> Mark Complete
-                          </button>
-                          <ChevronRight size={16} color={C.text3}/>
-                        </div>
+                      ))}
+                      <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                        <span style={{ fontSize: 12, fontWeight: 800, color: C.accent }}>✦</span>
+                        <span style={{ fontSize: 11, color: C.text3 }}>Impacts score</span>
                       </div>
                     </div>
-                  );
-                })
-              )}
-              {costs.length > 0 && (
-                <div style={{ textAlign: "right" }}>
-                  <span style={{ fontSize: 14, fontWeight: 700, color: C.red, background: C.redBg, padding: "6px 16px", borderRadius: 20 }}>
-                    Total projected: ${costs.reduce((s, c) => s + c.amount, 0).toLocaleString()}
-                  </span>
+                  </div>
+                  {/* Summary bar */}
+                  <div style={{ display: "flex", gap: 16, padding: "10px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, justifyContent: "space-between", alignItems: "center" }}>
+                    <div style={{ display: "flex", gap: 14 }}>
+                      <span style={{ fontSize: 12, color: C.red, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "critical").length} critical</span>
+                      <span style={{ fontSize: 12, color: C.amber, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "warning").length} warnings</span>
+                      <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>{completedFindings.length} resolved</span>
+                    </div>
+                    <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category, f.description) && (f.severity === "critical" || f.severity === "warning")); const fallback = all.filter(f => isScoredFinding(f.category, f.description)); setReviewFindings(scored.length > 0 ? scored : fallback.length > 0 ? fallback : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
+                  </div>
+                  {/* Category groups */}
+                  {repGroups.map(({ gk, label, items }, gi) => {
+                    const isGrpOpen = expandedGroups.has(gk);
+                    const meta = GROUP_META[gk] ?? GROUP_META.general;
+                    const hasCritical = items.some(({ f }) => f.severity === "critical");
+                    const hasWarning  = items.some(({ f }) => f.severity === "warning");
+                    const allResolved = items.every(({ f, globalIdx }) => { const s = findingStatuses[findingKey(f, globalIdx)] ?? "open"; return s === "completed" || s === "dismissed"; });
+                    const worstColor = hasCritical ? C.red : hasWarning ? C.amber : allResolved ? C.green : C.text3;
+                    const worstLabel = hasCritical ? "Critical" : hasWarning ? "Warning" : allResolved ? "Resolved" : "Good";
+                    const worstBg    = hasCritical ? C.redBg   : hasWarning ? C.amberBg : allResolved ? C.greenBg : C.bg;
+                    return (
+                      <div key={gk} style={{ borderBottom: gi < repGroups.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                        <button onClick={() => setExpandedGroups(prev => { const next = new Set(prev); if (next.has(gk)) next.delete(gk); else next.add(gk); return next; })}
+                          style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}
+                          onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = C.bg; }}
+                          onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
+                          <div style={{ width: 32, height: 32, borderRadius: 8, background: worstBg, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${worstColor}25`, flexShrink: 0 }}>{meta.iconFn(worstColor)}</div>
+                          <div style={{ flex: 1 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{label}</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: worstBg, color: worstColor }}>{worstLabel}</span>
+                            </div>
+                            <span style={{ fontSize: 11, color: C.text3 }}>{items.length} finding{items.length !== 1 ? "s" : ""}{allResolved ? " — all resolved" : hasCritical ? " — needs attention" : ""}</span>
+                          </div>
+                          <div style={{ transition: "transform 0.2s", transform: isGrpOpen ? "rotate(180deg)" : "rotate(0deg)" }}><ChevronDown size={14} color={C.text3}/></div>
+                        </button>
+                        {isGrpOpen && (
+                          <div style={{ padding: "0 16px 14px", background: "#fafbfc" }}>
+                            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                              {items.map(({ f, globalIdx }, fi) => {
+                                const fk = findingKey(f, globalIdx);
+                                const status = findingStatuses[fk] ?? "open";
+                                const cfg = repStatusConfig[status];
+                                const isResolved = status === "completed" || status === "dismissed";
+                                const impact = getScoreImpact(f.category, f.severity, f.description);
+                                const cardBorder = isResolved ? C.border : `${impact.color}40`;
+                                const cardBg = isResolved ? C.surface : impact.bg;
+                                return (
+                                  <div key={fi} style={{ background: cardBg, borderRadius: 10, padding: "12px 14px", border: `1px solid ${cardBorder}`, borderLeft: `3px solid ${isResolved ? C.border : impact.color}`, display: "flex", flexDirection: "column", gap: 9 }}>
+                                    {/* Card header row */}
+                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+                                      <div style={{ flex: 1 }}>
+                                        {/* Title + severity + score badges */}
+                                        <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
+                                          {impact.affects && (
+                                            <span style={{ fontSize: 11, fontWeight: 800, color: impact.color }}>✦</span>
+                                          )}
+                                          <span style={{ fontSize: 13, fontWeight: 700, color: isResolved ? C.text3 : C.text, textDecoration: status === "completed" ? "line-through" : "none" }}>{f.category}</span>
+                                          {f.severity && f.severity !== "info" && (
+                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: impact.color + "18", color: impact.color, textTransform: "capitalize" }}>
+                                              {f.severity === "critical" ? "High" : "Medium"}
+                                            </span>
+                                          )}
+                                          {impact.affects && !isResolved && (
+                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: impact.bg, color: impact.color, border: `1px solid ${impact.color}40` }}>
+                                              {impact.label} · Affects Health Score
+                                            </span>
+                                          )}
+                                          {isResolved && status === "completed" && impact.affects && (
+                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
+                                              ✓ Completed — Score Updated
+                                            </span>
+                                          )}
+                                        </div>
+                                        {/* Description */}
+                                        <p style={{ fontSize: 12, color: isResolved ? C.text3 : C.text2, margin: 0, lineHeight: 1.55 }}>{f.description}</p>
+                                        {/* Cost + score reason row */}
+                                        <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 5, flexWrap: "wrap" }}>
+                                          {f.estimated_cost != null && (
+                                            <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>Est. ${f.estimated_cost.toLocaleString()}</span>
+                                          )}
+                                          {impact.affects && (
+                                            <span style={{ fontSize: 11, color: impact.color, opacity: 0.85 }}>{impact.reason}</span>
+                                          )}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {/* Action row */}
+                                    <div style={{ display: "flex", alignItems: "center", gap: 7, paddingTop: 2, flexWrap: "wrap" }}>
+                                      <select value={status} onChange={e => toggleFindingStatus(f, globalIdx, e.target.value as FindingStatus)} style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, border: `1px solid ${cfg.color}40`, background: cfg.bg, color: cfg.color, cursor: "pointer", outline: "none" }}>
+                                        <option value="open">Open</option>
+                                        <option value="completed">Completed</option>
+                                        <option value="monitored">Monitoring</option>
+                                        <option value="not_sure">Not Sure</option>
+                                        <option value="dismissed">Dismissed</option>
+                                      </select>
+                                      {!isResolved && (<>
+                                        <button onClick={() => { setChatMessages([{ role: "user", content: f.description ?? f.category }]); askAI(f.description ?? f.category); setNav("Dashboard"); }} style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: "white", background: C.accentLt, border: "none", borderRadius: 20, padding: "3px 11px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}><Shield size={9}/> Check Coverage</button>
+                                        <button onClick={() => handleFindVendors(f.category, f.category, f.description)} style={{ fontSize: 11, fontWeight: 600, color: "white", background: C.accent, border: "none", borderRadius: 20, padding: "3px 11px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}><Users size={9}/> Find Vendors</button>
+                                        <button onClick={() => openCompleteModal(f, globalIdx)} style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.greenBg, border: `1px solid ${C.green}`, borderRadius: 20, padding: "3px 11px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}><CheckCircle2 size={9}/> Mark Complete</button>
+                                      </>)}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
-              )}
-            </div>
-          )}
+
+                {/* Repair Archives */}
+                {repArchivedItems.length > 0 && (
+                  <div style={{ border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+                    <button
+                      onClick={() => setArchivesExpanded(p => !p)}
+                      style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: C.surface, border: "none", cursor: "pointer", gap: 8 }}
+                    >
+                      <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
+                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Repair Archives</span>
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 9px", borderRadius: 20, background: C.greenBg, color: C.green }}>{repArchivedItems.length}</span>
+                      </div>
+                      <span style={{ fontSize: 11, color: C.text3, transform: archivesExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s", display: "inline-block" }}>▼</span>
+                    </button>
+                    {archivesExpanded && (
+                      <div style={{ borderTop: `1px solid ${C.border}`, background: C.bg }}>
+                        {repArchivedItems.map(({ f, globalIdx, fk }, idx) => {
+                          const meta = repairCompletions[fk];
+                          const impact = getScoreImpact(f.category, f.severity, f.description);
+                          const completedDate = meta?.completed_at
+                            ? new Date(meta.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                            : null;
+                          return (
+                            <div key={fk + idx} style={{ padding: "13px 16px", borderBottom: idx < repArchivedItems.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", flexDirection: "column", gap: 5 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: C.greenBg, color: C.green }}>✓ Done</span>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: C.text, textDecoration: "line-through", opacity: 0.7 }}>{f.category}</span>
+                                <span style={{ fontSize: 11, color: C.text3, background: C.surface, borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>{(f.severity ?? "info").charAt(0).toUpperCase() + (f.severity ?? "info").slice(1)}</span>
+                                {meta?.was_scorable && (
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: "#dcfce7", color: "#16a34a" }}>Score Updated</span>
+                                )}
+                              </div>
+                              <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.5 }}>{f.description}</p>
+                              <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 2 }}>
+                                {completedDate && (
+                                  <span style={{ fontSize: 11, color: C.text3 }}>📅 {completedDate}</span>
+                                )}
+                                <span style={{ fontSize: 11, color: meta?.receipt_url ? C.green : C.text3 }}>
+                                  {meta?.receipt_url ? "📎 Receipt attached" : "No receipt"}
+                                </span>
+                                {meta?.notes && (
+                                  <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic" }}>"{meta.notes.length > 60 ? meta.notes.slice(0, 60) + "…" : meta.notes}"</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ── Maintenance ───────────────────────────────────────────── */}
           {nav === "Maintenance" && (
@@ -3875,17 +4042,6 @@ export default function Dashboard() {
                 accentColor: C.green,
                 status: repairDocs.length > 0 ? `${repairDocs.length} repair${repairDocs.length > 1 ? "s" : ""} on record` : "No receipts uploaded",
                 hasDoc: repairDocs.length > 0,
-              },
-              {
-                id: "inspection",
-                label: "Inspection Findings",
-                icon: <Eye size={15} color={C.amber}/>,
-                iconBg: C.amberBg,
-                accentColor: C.amber,
-                status: allFindings.length > 0
-                  ? `${allFindings.length} findings · ${completedFindings.length} resolved`
-                  : "No inspection uploaded",
-                hasDoc: allFindings.length > 0,
               },
               {
                 id: "other",
@@ -4124,234 +4280,6 @@ export default function Dashboard() {
                               </div>
                             )}
                           </>)}
-
-                          {/* ── Inspection Findings content ── */}
-                          {sec.id === "inspection" && (() => {
-                            if (allFindings.length === 0) {
-                              return <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>No inspection report uploaded yet. Upload one in the Home Health section to see findings here.</p>;
-                            }
-                            const groupMap = new Map<string, { label: string; items: { f: Finding; globalIdx: number }[] }>();
-                            for (let gi = 0; gi < allFindings.length; gi++) {
-                              const f = allFindings[gi];
-                              const gk = toGroupKey(f.category);
-                              const meta = GROUP_META[gk] ?? GROUP_META.general;
-                              if (!groupMap.has(gk)) groupMap.set(gk, { label: meta.label, items: [] });
-                              groupMap.get(gk)!.items.push({ f, globalIdx: gi });
-                            }
-                            const groups = [...groupMap.entries()].map(([gk, v]) => ({ gk, ...v }));
-                            const statusConfig: Record<FindingStatus, { label: string; color: string; bg: string }> = {
-                              open:      { label: "Open",       color: C.red,    bg: C.redBg   },
-                              completed: { label: "Completed",  color: C.green,  bg: C.greenBg },
-                              monitored: { label: "Monitoring", color: C.accent, bg: "#eff6ff" },
-                              not_sure:  { label: "Not Sure",   color: C.amber,  bg: C.amberBg },
-                              dismissed: { label: "Dismissed",  color: C.text3,  bg: C.bg      },
-                            };
-                            return (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 0, borderRadius: 12, overflow: "hidden", border: `1px solid ${C.border}` }}>
-                                {/* Legend */}
-                                <div style={{ padding: "10px 16px", background: "#f8fafc", borderBottom: `1px solid ${C.border}` }}>
-                                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 7px" }}>
-                                    Highlighted repairs affect your Home Health Score
-                                  </p>
-                                  <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                                    {[
-                                      { color: "#ef4444", bg: "rgba(239,68,68,0.10)",  label: "High Impact (Critical)" },
-                                      { color: "#f97316", bg: "rgba(249,115,22,0.10)", label: "Medium Impact" },
-                                      { color: "#eab308", bg: "rgba(234,179,8,0.12)",  label: "Low Impact" },
-                                      { color: "#94a3b8", bg: "rgba(148,163,184,0.12)", label: "Informational (no score effect)" },
-                                    ].map(({ color, bg, label }) => (
-                                      <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                        <span style={{ width: 10, height: 10, borderRadius: 3, background: bg, border: `1.5px solid ${color}`, display: "inline-block", flexShrink: 0 }}/>
-                                        <span style={{ fontSize: 11, color: C.text3 }}>{label}</span>
-                                      </div>
-                                    ))}
-                                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                                      <span style={{ fontSize: 12, fontWeight: 800, color: C.accent }}>✦</span>
-                                      <span style={{ fontSize: 11, color: C.text3 }}>Impacts score</span>
-                                    </div>
-                                  </div>
-                                </div>
-                                {/* Summary bar */}
-                                <div style={{ display: "flex", gap: 16, padding: "10px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, justifyContent: "space-between", alignItems: "center" }}>
-                                  <div style={{ display: "flex", gap: 14 }}>
-                                    <span style={{ fontSize: 12, color: C.red, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "critical").length} critical</span>
-                                    <span style={{ fontSize: 12, color: C.amber, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "warning").length} warnings</span>
-                                    <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>{completedFindings.length} resolved</span>
-                                  </div>
-                                  <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category, f.description) && (f.severity === "critical" || f.severity === "warning")); const fallback = all.filter(f => isScoredFinding(f.category, f.description)); setReviewFindings(scored.length > 0 ? scored : fallback.length > 0 ? fallback : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
-                                </div>
-                                {groups.map(({ gk, label, items }, gi) => {
-                                  const isGrpOpen = expandedGroups.has(gk);
-                                  const meta = GROUP_META[gk] ?? GROUP_META.general;
-                                  const hasCritical = items.some(({ f }) => f.severity === "critical");
-                                  const hasWarning  = items.some(({ f }) => f.severity === "warning");
-                                  const allResolved = items.every(({ f, globalIdx }) => { const s = findingStatuses[findingKey(f, globalIdx)] ?? "open"; return s === "completed" || s === "dismissed"; });
-                                  const worstColor = hasCritical ? C.red : hasWarning ? C.amber : allResolved ? C.green : C.text3;
-                                  const worstLabel = hasCritical ? "Critical" : hasWarning ? "Warning" : allResolved ? "Resolved" : "Good";
-                                  const worstBg    = hasCritical ? C.redBg   : hasWarning ? C.amberBg : allResolved ? C.greenBg : C.bg;
-                                  return (
-                                    <div key={gk} style={{ borderBottom: gi < groups.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                                      <button onClick={() => setExpandedGroups(prev => { const next = new Set(prev); if (next.has(gk)) next.delete(gk); else next.add(gk); return next; })}
-                                        style={{ width: "100%", display: "flex", alignItems: "center", gap: 12, padding: "12px 16px", background: "transparent", border: "none", cursor: "pointer", textAlign: "left" }}
-                                        onMouseEnter={e => { (e.currentTarget as HTMLButtonElement).style.background = C.bg; }}
-                                        onMouseLeave={e => { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}>
-                                        <div style={{ width: 32, height: 32, borderRadius: 8, background: worstBg, display: "flex", alignItems: "center", justifyContent: "center", border: `1px solid ${worstColor}25`, flexShrink: 0 }}>{meta.iconFn(worstColor)}</div>
-                                        <div style={{ flex: 1 }}>
-                                          <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
-                                            <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{label}</span>
-                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 20, background: worstBg, color: worstColor }}>{worstLabel}</span>
-                                          </div>
-                                          <span style={{ fontSize: 11, color: C.text3 }}>{items.length} finding{items.length !== 1 ? "s" : ""}{allResolved ? " — all resolved" : hasCritical ? " — needs attention" : ""}</span>
-                                        </div>
-                                        <div style={{ transition: "transform 0.2s", transform: isGrpOpen ? "rotate(180deg)" : "rotate(0deg)" }}><ChevronDown size={14} color={C.text3}/></div>
-                                      </button>
-                                      {isGrpOpen && (
-                                        <div style={{ padding: "0 16px 14px", background: "#fafbfc" }}>
-                                          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                            {items.map(({ f, globalIdx }, fi) => {
-                                              const fk = findingKey(f, globalIdx);
-                                              const status = findingStatuses[fk] ?? "open";
-                                              const cfg = statusConfig[status];
-                                              const isResolved = status === "completed" || status === "dismissed";
-                                              const impact = getScoreImpact(f.category, f.severity, f.description);
-                                              const cardBorder = isResolved ? C.border : `${impact.color}40`;
-                                              const cardBg = isResolved ? C.surface : impact.bg;
-                                              return (
-                                                <div key={fi} style={{ background: cardBg, borderRadius: 10, padding: "12px 14px", border: `1px solid ${cardBorder}`, borderLeft: `3px solid ${isResolved ? C.border : impact.color}`, display: "flex", flexDirection: "column", gap: 9 }}>
-                                                  {/* Card header row */}
-                                                  <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
-                                                    <div style={{ flex: 1 }}>
-                                                      {/* Title + severity + score badges */}
-                                                      <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap", marginBottom: 4 }}>
-                                                        {impact.affects && (
-                                                          <span style={{ fontSize: 11, fontWeight: 800, color: impact.color }}>✦</span>
-                                                        )}
-                                                        <span style={{ fontSize: 13, fontWeight: 700, color: isResolved ? C.text3 : C.text, textDecoration: status === "completed" ? "line-through" : "none" }}>{f.category}</span>
-                                                        {/* Severity badge */}
-                                                        {f.severity && f.severity !== "info" && (
-                                                          <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: impact.color + "18", color: impact.color, textTransform: "capitalize" }}>
-                                                            {f.severity === "critical" ? "High" : "Medium"}
-                                                          </span>
-                                                        )}
-                                                        {/* Score impact badge */}
-                                                        {impact.affects && !isResolved && (
-                                                          <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: impact.bg, color: impact.color, border: `1px solid ${impact.color}40` }}>
-                                                            {impact.label} · Affects Health Score
-                                                          </span>
-                                                        )}
-                                                        {/* Completed + was scored */}
-                                                        {isResolved && status === "completed" && impact.affects && (
-                                                          <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
-                                                            ✓ Completed — Score Updated
-                                                          </span>
-                                                        )}
-                                                      </div>
-                                                      {/* Description */}
-                                                      <p style={{ fontSize: 12, color: isResolved ? C.text3 : C.text2, margin: 0, lineHeight: 1.55 }}>{f.description}</p>
-                                                      {/* Cost + score reason row */}
-                                                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 5, flexWrap: "wrap" }}>
-                                                        {f.estimated_cost != null && (
-                                                          <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>Est. ${f.estimated_cost.toLocaleString()}</span>
-                                                        )}
-                                                        {impact.affects && (
-                                                          <span style={{ fontSize: 11, color: impact.color, opacity: 0.85 }}>{impact.reason}</span>
-                                                        )}
-                                                      </div>
-                                                    </div>
-                                                  </div>
-                                                  {/* Action row */}
-                                                  <div style={{ display: "flex", alignItems: "center", gap: 7, paddingTop: 2, flexWrap: "wrap" }}>
-                                                    <select value={status} onChange={e => toggleFindingStatus(f, globalIdx, e.target.value as FindingStatus)} style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, border: `1px solid ${cfg.color}40`, background: cfg.bg, color: cfg.color, cursor: "pointer", outline: "none" }}>
-                                                      <option value="open">Open</option>
-                                                      <option value="completed">Completed</option>
-                                                      <option value="monitored">Monitoring</option>
-                                                      <option value="not_sure">Not Sure</option>
-                                                      <option value="dismissed">Dismissed</option>
-                                                    </select>
-                                                    {!isResolved && (<>
-                                                      <button onClick={() => handleFindVendors(f.category, f.category, f.description)} style={{ marginLeft: "auto", fontSize: 11, fontWeight: 600, color: "white", background: C.navy, border: "none", borderRadius: 20, padding: "3px 11px", cursor: "pointer" }}>🔧 Fix This</button>
-                                                      <button onClick={() => handleFindVendors(f.category, f.category, f.description)} style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: "white", border: `1px solid ${C.accent}`, borderRadius: 20, padding: "3px 11px", cursor: "pointer", display: "flex", alignItems: "center", gap: 3 }}><Users size={9}/> Vendor</button>
-                                                      <button onClick={() => openCompleteModal(f, globalIdx)} style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.greenBg, border: `1px solid ${C.green}`, borderRadius: 20, padding: "3px 11px", cursor: "pointer" }}>✓ Mark Complete</button>
-                                                    </>)}
-                                                  </div>
-                                                </div>
-                                              );
-                                            })}
-                                          </div>
-                                        </div>
-                                      )}
-                                    </div>
-                                  );
-                                })}
-                              </div>
-                            );
-                          })()}
-
-                          {/* ── Repair Archives ── */}
-                          {sec.id === "inspection" && (() => {
-                            // Build a list of completed findings with their metadata
-                            const archivedItems: Array<{ f: Finding; globalIdx: number; fk: string }> = [];
-                            allFindings.forEach((f, i) => {
-                              const fk = findingKey(f, i);
-                              const s = findingStatuses[fk] ?? "open";
-                              if (s === "completed") archivedItems.push({ f, globalIdx: i, fk });
-                            });
-                            if (archivedItems.length === 0) return null;
-                            return (
-                              <div style={{ marginTop: 18, border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
-                                {/* Header / toggle */}
-                                <button
-                                  onClick={() => setArchivesExpanded(p => !p)}
-                                  style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px", background: C.surface, border: "none", cursor: "pointer", gap: 8 }}
-                                >
-                                  <div style={{ display: "flex", alignItems: "center", gap: 9 }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Repair Archives</span>
-                                    <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 9px", borderRadius: 20, background: C.greenBg, color: C.green }}>{archivedItems.length}</span>
-                                  </div>
-                                  <span style={{ fontSize: 11, color: C.text3, transform: archivesExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s", display: "inline-block" }}>▼</span>
-                                </button>
-
-                                {archivesExpanded && (
-                                  <div style={{ borderTop: `1px solid ${C.border}`, background: C.bg }}>
-                                    {archivedItems.map(({ f, globalIdx, fk }, idx) => {
-                                      const meta = repairCompletions[fk];
-                                      const impact = getScoreImpact(f.category, f.severity, f.description);
-                                      const completedDate = meta?.completed_at
-                                        ? new Date(meta.completed_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
-                                        : null;
-                                      return (
-                                        <div key={fk + idx} style={{ padding: "13px 16px", borderBottom: idx < archivedItems.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", flexDirection: "column", gap: 5 }}>
-                                          {/* Title row */}
-                                          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                                            <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: C.greenBg, color: C.green }}>✓ Done</span>
-                                            <span style={{ fontSize: 13, fontWeight: 700, color: C.text, textDecoration: "line-through", opacity: 0.7 }}>{f.category}</span>
-                                            <span style={{ fontSize: 11, color: C.text3, background: C.surface, borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>{(f.severity ?? "info").charAt(0).toUpperCase() + (f.severity ?? "info").slice(1)}</span>
-                                            {meta?.was_scorable && (
-                                              <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: "#dcfce7", color: "#16a34a" }}>Score Updated</span>
-                                            )}
-                                          </div>
-                                          {/* Description */}
-                                          <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.5 }}>{f.description}</p>
-                                          {/* Meta row */}
-                                          <div style={{ display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", marginTop: 2 }}>
-                                            {completedDate && (
-                                              <span style={{ fontSize: 11, color: C.text3 }}>📅 {completedDate}</span>
-                                            )}
-                                            <span style={{ fontSize: 11, color: meta?.receipt_url ? C.green : C.text3 }}>
-                                              {meta?.receipt_url ? "📎 Receipt attached" : "No receipt"}
-                                            </span>
-                                            {meta?.notes && (
-                                              <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic" }}>"{meta.notes.length > 60 ? meta.notes.slice(0, 60) + "…" : meta.notes}"</span>
-                                            )}
-                                          </div>
-                                        </div>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                            );
-                          })()}
 
                           {/* ── Other Documents content ── */}
                           {sec.id === "other" && (<>
