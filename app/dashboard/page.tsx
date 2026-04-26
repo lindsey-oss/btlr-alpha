@@ -2187,12 +2187,18 @@ export default function Dashboard() {
     try {
       const { data: { user: u } } = await supabase.auth.getUser();
       if (!u) return null;
+      // Select only the two columns guaranteed to exist in every schema version.
+      // Selecting nickname/home_type/year_built here would silently fail the whole
+      // query if those migrations haven't been run, causing loadProperty() to never
+      // fire and inspection data to disappear after every refresh.
+      // The full property detail (including optional columns) is loaded in loadProperty().
       const { data, error } = await supabase
         .from("properties")
-        .select("id, address, nickname, home_type, year_built")
+        .select("id, address")
         .eq("user_id", u.id)          // explicit filter — belt-and-suspenders on top of RLS
         .order("created_at", { ascending: true });
-      if (error || !data?.length) return null;
+      if (error) { console.error("[loadAllProperties] query failed:", error.message, error.code); return null; }
+      if (!data?.length) return null;
       setAllProperties(data);
       // Restore last active from localStorage, or default to first
       const stored = localStorage.getItem("btlr_active_property_id");
@@ -2229,7 +2235,7 @@ export default function Dashboard() {
       const { data, error } = await supabase.from("properties").insert({
         user_id:  u.id,
         address:  "New Property",
-      }).select("id, address, nickname, home_type, year_built").single();
+      }).select("id, address").single();
       if (error) throw new Error(error.message);
       setAllProperties(prev => [...prev, data]);
       setShowPropDropdown(false);
@@ -2259,7 +2265,7 @@ export default function Dashboard() {
         nickname:   newPropForm.nickname.trim() || null,
         home_type:  newPropForm.home_type || null,
         year_built: newPropForm.year_built ? parseInt(newPropForm.year_built) : null,
-      }).select("id, address, nickname, home_type, year_built").single();
+      }).select("id, address").single();
       if (error) throw new Error(error.message);
       setAllProperties(prev => [...prev, data]);
       setShowAddPropDrawer(false);
@@ -2802,11 +2808,8 @@ export default function Dashboard() {
         .limit(200);
 
       if (otherErr) {
-        // Surface real errors (auth failures, RLS issues) but not "table empty"
-        // PGRST116 = no rows, 42P01 = table doesn't exist (new install)
-        if (otherErr.code !== "PGRST116" && otherErr.code !== "42P01") {
-          showToast("Could not load your documents — try refreshing.", "error");
-        }
+        // Always silent — this runs on every mount including first-ever login
+        // (table may be empty or not yet created). Never show error toast here.
         console.warn("[loadDocs] documents query error:", otherErr.code, otherErr.message);
       } else if (otherData) {
         const files: Doc[] = await Promise.all(
@@ -4158,6 +4161,19 @@ export default function Dashboard() {
           {nav === "Documents" && (() => {
             const docSections = [
               {
+                id: "inspection",
+                label: "Inspection Report",
+                icon: <FileText size={15} color={C.accent}/>,
+                iconBg: "#eff6ff",
+                accentColor: C.accent,
+                status: inspectionDoc
+                  ? `${inspectionDoc.name} · Uploaded`
+                  : inspectDone
+                  ? "Report analyzed — original file not on record"
+                  : "No inspection report uploaded",
+                hasDoc: !!inspectionDoc || inspectDone,
+              },
+              {
                 id: "warranty",
                 label: "Home Warranty",
                 icon: <Shield size={15} color="#7c3aed"/>,
@@ -4238,6 +4254,52 @@ export default function Dashboard() {
                       {/* Expanded content */}
                       {isOpen && (
                         <div style={{ padding: "16px 18px 20px", background: "#fafbfc", borderTop: `1px solid ${C.border}` }}>
+
+                          {/* ── Inspection Report content ── */}
+                          {sec.id === "inspection" && (<>
+                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>
+                              Your home inspection report. Upload a new report to re-analyze and update your Home Health Score.
+                            </p>
+                            {inspectionDoc ? (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                <div style={{ background: "#eff6ff", border: "1.5px solid #bfdbfe", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+                                  <FileText size={18} color={C.accent} style={{ flexShrink: 0 }}/>
+                                  <div style={{ flex: 1, minWidth: 0 }}>
+                                    <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inspectionDoc.name}</p>
+                                    <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>Inspection Report</p>
+                                  </div>
+                                  {inspectionDoc.url && (
+                                    <a href={inspectionDoc.url} target="_blank" rel="noopener noreferrer"
+                                      style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, background: C.accent, color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none", flexShrink: 0 }}>
+                                      <ExternalLink size={11}/> View PDF
+                                    </a>
+                                  )}
+                                </div>
+                                <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", width: "fit-content" }}>
+                                  {inspecting ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Upload size={11}/> Upload New Report</>}
+                                  <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
+                                </label>
+                              </div>
+                            ) : inspectDone ? (
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                <div style={{ background: "#fefce8", border: "1.5px solid #fde68a", borderRadius: 10, padding: "12px 14px" }}>
+                                  <p style={{ fontSize: 13, color: "#92400e", margin: 0 }}>Report was analyzed but the original file is not on record. Re-upload to save a permanent copy.</p>
+                                </div>
+                                <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", width: "fit-content" }}>
+                                  {inspecting ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Upload size={11}/> Upload Report</>}
+                                  <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
+                                </label>
+                              </div>
+                            ) : (
+                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${inspecting ? C.accent : C.border}`, background: inspecting ? "#eff6ff" : "#fafbfc" }}>
+                                {inspecting
+                                  ? <><Loader2 size={20} color={C.accent} className="animate-spin"/><span style={{ fontSize: 14, color: C.accent }}>Analyzing report…</span></>
+                                  : <><FileText size={20} color={C.text3}/><span style={{ fontSize: 14, color: C.text }}>Upload inspection report PDF</span><span style={{ fontSize: 12, color: C.text3 }}>BTLR will extract all findings and score your home</span></>
+                                }
+                                <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
+                              </label>
+                            )}
+                          </>)}
 
                           {/* ── Warranty content ── */}
                           {sec.id === "warranty" && (<>
