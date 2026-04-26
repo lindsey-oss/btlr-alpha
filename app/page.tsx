@@ -442,9 +442,21 @@ export default function LandingPage() {
       </nav>
 
       {/* ── HERO ── */}
-      <section className="hero-pad" style={{ minHeight: "88vh", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", textAlign: "center", padding: "140px 64px 80px", position: "relative", overflow: "hidden" }}>
+      {/*
+        ── HERO ──
+        Layout: flex column, min-height 88vh
+        • bg gradient: absolute/inert (decorative only, never blocks content)
+        • content div: flex:1 so it fills remaining height, centers itself
+        • scroll hint: in normal flow as last child — NO position:absolute
+          This prevents the old bug where bottom:36px absolute
+          overlapped the "contractor" link when content grew tall.
+      */}
+      <section className="hero-pad" style={{ minHeight: "88vh", display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center", padding: "140px 64px 0", position: "relative", overflow: "hidden" }}>
+        {/* Decorative bg — pointer-events:none, purely visual */}
         <div style={{ position: "absolute", inset: 0, background: "radial-gradient(ellipse 75% 55% at 70% 55%,rgba(44,95,138,.05),transparent 68%)", pointerEvents: "none" }}/>
-        <div style={{ position: "relative", zIndex: 1, maxWidth: 760 }}>
+
+        {/* Main content — takes all available space, centers vertically */}
+        <div style={{ position: "relative", zIndex: 1, maxWidth: 760, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
           <p style={{ display: "inline-flex", alignItems: "center", gap: 10, fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.gold, marginBottom: 28, opacity: 0, animation: "fadeUp .7s .15s forwards" }}>
             <span style={{ width: 28, height: 1, background: C.gold, display: "inline-block" }}/>
             Now in Early Access
@@ -466,17 +478,18 @@ export default function LandingPage() {
               See your home <span style={{ transition: "transform .2s" }}>→</span>
             </a>
           </div>
-          {/* Vendor join link — visible on mobile where nav button is hidden */}
-          <p style={{ opacity: 0, animation: "fadeUp .7s .96s forwards", marginTop: 20 }}>
+          {/* Contractor link — below CTAs, stacked vertically */}
+          <p style={{ opacity: 0, animation: "fadeUp .7s .96s forwards", marginTop: 20, marginBottom: 0 }}>
             <Link href="/apply" style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: C.dim, textDecoration: "none", borderBottom: `1px solid ${C.borderGold}`, paddingBottom: 2 }}>
               Are you a contractor? Join our network →
             </Link>
           </p>
         </div>
-        {/* Scroll hint — hidden on mobile so it doesn't overlap content */}
-        <div className="hero-scroll-hint" style={{ position: "absolute", bottom: 36, left: "50%", transform: "translateX(-50%)", display: "flex", flexDirection: "column", alignItems: "center", gap: 8, opacity: 0, animation: "fadeIn 1s 1.4s forwards", zIndex: 1 }}>
-          <span style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.dim }}>Scroll</span>
-          <div style={{ width: 1, height: 52, background: `linear-gradient(${C.gold},transparent)`, animation: "pulse 2s infinite" }}/>
+
+        {/* Scroll hint — in normal document flow, BELOW all content, hidden on mobile via CSS */}
+        <div className="hero-scroll-hint" style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "28px 0 36px", opacity: 0, animation: "fadeIn 1s 1.4s forwards" }}>
+          <span style={{ fontFamily: SYNE, fontSize: 9, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.dim, opacity: 0.6 }}>Scroll</span>
+          <div style={{ width: 1, height: 44, background: `linear-gradient(${C.gold},transparent)`, animation: "pulse 2s infinite" }}/>
         </div>
       </section>
 

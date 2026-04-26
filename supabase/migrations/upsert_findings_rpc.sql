@@ -15,7 +15,8 @@
 --   title, category, system, component, issue_type,
 --   description, location, severity, scorable, score_impact,
 --   recommended_action, estimated_cost_min, estimated_cost_max,
---   raw_finding, updated_at
+--   raw_finding, confidence_score, classification_reason,
+--   needs_review, updated_at
 --
 -- Columns intentionally NOT updated on conflict:
 --   status       — user repair tracking, must survive re-upload
@@ -50,7 +51,10 @@ BEGIN
     recommended_action,
     estimated_cost_min,
     estimated_cost_max,
-    raw_finding
+    raw_finding,
+    confidence_score,
+    classification_reason,
+    needs_review
     -- status omitted → defaults to 'open' on first insert
     -- created_at omitted → defaults to now() on first insert
   )
@@ -74,7 +78,10 @@ BEGIN
     CASE
       WHEN elem->>'raw_finding' IS NOT NULL THEN (elem->>'raw_finding')::jsonb
       ELSE elem
-    END
+    END,
+    COALESCE(elem->>'confidence_score', 'medium'),
+    NULLIF(elem->>'classification_reason', ''),
+    COALESCE((elem->>'needs_review')::boolean, false)
   FROM jsonb_array_elements(p_findings) AS elem
   ON CONFLICT (property_id, normalized_finding_key)
   DO UPDATE SET
@@ -91,8 +98,11 @@ BEGIN
     recommended_action  = EXCLUDED.recommended_action,
     estimated_cost_min  = EXCLUDED.estimated_cost_min,
     estimated_cost_max  = EXCLUDED.estimated_cost_max,
-    raw_finding         = EXCLUDED.raw_finding,
-    updated_at          = now()
+    raw_finding             = EXCLUDED.raw_finding,
+    confidence_score        = EXCLUDED.confidence_score,
+    classification_reason   = EXCLUDED.classification_reason,
+    needs_review            = EXCLUDED.needs_review,
+    updated_at              = now()
     -- status:     intentionally omitted — preserves open/completed/dismissed/monitored
     -- created_at: intentionally omitted — immutable
   ;

@@ -46,6 +46,10 @@ interface Finding {
   recommended_action?: string;
   estimated_cost_min?: number | null;
   estimated_cost_max?: number | null;
+  // Pass 3 classification confidence
+  confidence_score?:       "high" | "medium" | "low" | "unconfirmed";
+  classification_reason?:  string;
+  needs_review?:           boolean;
 }
 
 // Normalize a finding category to a stable key for status lookup
@@ -154,6 +158,20 @@ const GROUP_META: Record<string, { label: string; iconFn: (color: string) => Rea
   interior:   { label: "Interior",        iconFn: c => <HomeIcon    size={16} color={c}/> },
   general:    { label: "General",         iconFn: c => <Wrench      size={16} color={c}/> },
 };
+
+/** Human-readable display label for any raw category key or free-form string. */
+function categoryLabel(category: string): string {
+  return GROUP_META[toGroupKey(category)]?.label ?? category;
+}
+
+/** Consistent, user-facing severity label. */
+function severityLabel(severity?: string | null): string {
+  switch (severity) {
+    case "critical": return "High Priority";
+    case "warning":  return "Medium Priority";
+    default:         return "Informational";
+  }
+}
 
 // Findings are "active" if status is open, not_sure, or not yet set
 // index = position in the global allFindings array
@@ -1134,7 +1152,7 @@ function RepairCompleteModal({
           </div>
           <div>
             <h2 style={{ fontSize: 16, fontWeight: 700, color: C.text, margin: 0 }}>Mark Repair Complete</h2>
-            <p style={{ fontSize: 13, color: C.text3, margin: "3px 0 0" }}>{finding.category}</p>
+            <p style={{ fontSize: 13, color: C.text3, margin: "3px 0 0" }}>{categoryLabel(finding.category)}</p>
           </div>
         </div>
 
@@ -1301,7 +1319,7 @@ function CostDetailModal({
                   <div key={i} style={{ background: C.bg, borderRadius: 10, padding: "10px 12px", border: `1px solid ${C.border}` }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
                       <span style={{ width: 7, height: 7, borderRadius: "50%", background: f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3, flexShrink: 0 }}/>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{f.category}</span>
+                      <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{categoryLabel(f.category)}</span>
                       {f.estimated_cost && (
                         <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: col }}>
                           ${f.estimated_cost.toLocaleString()}
@@ -2270,7 +2288,7 @@ export default function Dashboard() {
         .from("findings")
         .select("*")
         .eq("property_id", propId)
-        .order("severity", { ascending: true });   // critical first
+        .order("created_at", { ascending: true });  // stable insertion order; UI groups by category
       if (findingsErr) {
         console.warn("[loadProperty] findings table read failed:", findingsErr.message);
       }
@@ -2297,6 +2315,10 @@ export default function Dashboard() {
             is_scorable:            row.scorable,
             scorable:               row.scorable,
             score_impact:           row.score_impact,
+            // Pass 3 fields — present on pipeline-processed rows, absent on legacy rows
+            confidence_score:       row.confidence_score       ?? undefined,
+            classification_reason:  row.classification_reason  ?? undefined,
+            needs_review:           row.needs_review            ?? false,
           };
           if (row.normalized_finding_key) {
             statusesFromRows[row.normalized_finding_key] = row.status ?? "open";
@@ -2594,7 +2616,7 @@ export default function Dashboard() {
               property_id:            activePropId,
               user_id:                uploadUserId,
               normalized_finding_key: f.normalized_finding_key,
-              title:                  f.title ?? `${f.category} — ${validSev}`,
+              title:                  f.title ?? `${categoryLabel(f.category)} — ${validSev}`,
               category:               f.category,
               system:                 f.system    ?? f.category,
               component:              f.component ?? f.category,
@@ -2607,6 +2629,9 @@ export default function Dashboard() {
               recommended_action:     f.recommended_action ?? null,
               estimated_cost_min:     f.estimated_cost_min ?? null,
               estimated_cost_max:     f.estimated_cost_max ?? null,
+              confidence_score:       f.confidence_score       ?? "medium",
+              classification_reason:  f.classification_reason  ?? null,
+              needs_review:           f.needs_review           ?? false,
               raw_finding:            JSON.stringify(f),  // RPC reads this as jsonb string
             };
           });
@@ -2693,8 +2718,10 @@ export default function Dashboard() {
         .limit(200);
 
       if (error) {
-        console.error("[loadDocs] db error:", error.message, error.code);
-        showToast("Could not load your documents — try refreshing.", "error");
+        // Silent fail — background load errors (e.g. first login before any
+        // documents exist, RLS setup, transient network) should not surface a
+        // toast to users who haven't uploaded anything yet.
+        console.warn("[loadDocs] db error (silent):", error.code, error.message);
         return;
       }
       if (!data) return;
@@ -3054,8 +3081,8 @@ export default function Dashboard() {
       }));
 
       // 6. Timeline event + toast
-      addEvent(`Repair completed: ${finding.category}${data.receiptFile ? " (receipt uploaded)" : ""}`);
-      showToast(`✓ ${finding.category} marked complete${wasScoreable ? " — score updated" : ""}`, "success");
+      addEvent(`Repair completed: ${categoryLabel(finding.category)}${data.receiptFile ? " (receipt uploaded)" : ""}`);
+      showToast(`✓ ${categoryLabel(finding.category)} marked complete${wasScoreable ? " — score updated" : ""}`, "success");
 
       setShowCompleteModal(false);
       setCompleteModalTarget(null);
@@ -3394,7 +3421,7 @@ export default function Dashboard() {
       ? f.estimated_cost
       : getFallbackCost(f.category, f.severity);
     costs.push({
-      label:         f.category,
+      label:         categoryLabel(f.category),
       horizon:       f.severity === "critical" ? "Immediate" : f.severity === "warning" ? "Within 1–2 yrs" : "Ongoing",
       amount,
       severity:      f.severity,
@@ -3869,7 +3896,7 @@ export default function Dashboard() {
                                           {impact.affects && (
                                             <span style={{ fontSize: 11, fontWeight: 800, color: impact.color }}>✦</span>
                                           )}
-                                          <span style={{ fontSize: 13, fontWeight: 700, color: isResolved ? C.text3 : C.text, textDecoration: status === "completed" ? "line-through" : "none" }}>{f.category}</span>
+                                          <span style={{ fontSize: 13, fontWeight: 700, color: isResolved ? C.text3 : C.text, textDecoration: status === "completed" ? "line-through" : "none" }}>{categoryLabel(f.category)}</span>
                                           {f.severity && f.severity !== "info" && (
                                             <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: impact.color + "18", color: impact.color, textTransform: "capitalize" }}>
                                               {f.severity === "critical" ? "High" : "Medium"}
@@ -3883,6 +3910,11 @@ export default function Dashboard() {
                                           {isResolved && status === "completed" && impact.affects && (
                                             <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
                                               ✓ Completed — Score Updated
+                                            </span>
+                                          )}
+                                          {f.needs_review && !isResolved && (
+                                            <span title={f.classification_reason} style={{ fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: C.amberBg, color: C.amber, border: `1px solid ${C.amber}40`, letterSpacing: "0.04em" }}>
+                                              Needs Review
                                             </span>
                                           )}
                                         </div>
@@ -3950,8 +3982,8 @@ export default function Dashboard() {
                             <div key={fk + idx} style={{ padding: "13px 16px", borderBottom: idx < repArchivedItems.length - 1 ? `1px solid ${C.border}` : "none", display: "flex", flexDirection: "column", gap: 5 }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                                 <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 20, background: C.greenBg, color: C.green }}>✓ Done</span>
-                                <span style={{ fontSize: 13, fontWeight: 700, color: C.text, textDecoration: "line-through", opacity: 0.7 }}>{f.category}</span>
-                                <span style={{ fontSize: 11, color: C.text3, background: C.surface, borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>{(f.severity ?? "info").charAt(0).toUpperCase() + (f.severity ?? "info").slice(1)}</span>
+                                <span style={{ fontSize: 13, fontWeight: 700, color: C.text, textDecoration: "line-through", opacity: 0.7 }}>{categoryLabel(f.category)}</span>
+                                <span style={{ fontSize: 11, color: C.text3, background: C.surface, borderRadius: 20, padding: "1px 8px", fontWeight: 600 }}>{severityLabel(f.severity)}</span>
                                 {meta?.was_scorable && (
                                   <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 8px", borderRadius: 20, background: "#dcfce7", color: "#16a34a" }}>Score Updated</span>
                                 )}
