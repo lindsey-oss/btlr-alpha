@@ -12,7 +12,7 @@
  * Same input → same output, every time.
  */
 
-import { toCategoryKey, BtlrCategory } from "./categoryMap";
+import { toCategoryKey, classifyFinding, BtlrCategory } from "./categoryMap";
 import { isScorable } from "./scorableRules";
 
 // ─────────────────────────────────────────────────────────────────
@@ -360,6 +360,12 @@ export interface NormalizedFinding {
   estimated_cost_max:     number | null;
   raw_finding:            RawFinding;
 
+  // Pass 3 — classification confidence (added non-destructively)
+  confidence_score:       "high" | "medium" | "low" | "unconfirmed";
+  classification_reason:  string;
+  /** True when confidence is "unconfirmed" — no rules matched category or description. */
+  needs_review:           boolean;
+
   // Legacy compat — used by scoring engine and dashboard state
   is_scorable:            boolean;
   status:                 "open";
@@ -406,8 +412,11 @@ export function generateNormalizedFindingKey(
 // MAIN NORMALIZATION FUNCTION
 // ─────────────────────────────────────────────────────────────────
 export function normalizeFinding(raw: RawFinding): NormalizedFinding {
-  // 1. Map to canonical category
-  const canonicalCategory = toCategoryKey(raw.category);
+  // ── PASS 2: NORMALIZATION ─────────────────────────────────────────────────
+  // 1. Map to canonical category + run Pass 3 confidence scoring in one call.
+  //    classifyFinding() wraps toCategoryKey() so backward compat is maintained.
+  const classification    = classifyFinding(raw.category, raw.description || "");
+  const canonicalCategory = classification.category;
 
   // 2. Validate / coerce severity
   const rawSev = (raw.severity || "info").toLowerCase();
@@ -503,6 +512,11 @@ export function normalizeFinding(raw: RawFinding): NormalizedFinding {
     estimated_cost_max,
     raw_finding:       raw,
 
+    // ── PASS 3: CLASSIFICATION CONFIDENCE ──────────────────────────────────
+    confidence_score:       classification.confidence,
+    classification_reason:  classification.reason,
+    needs_review:           classification.confidence === "unconfirmed",
+
     // Legacy compat fields consumed by scoring engine + existing dashboard code
     is_scorable:          scorable,
     status:               "open",
@@ -515,10 +529,20 @@ export function normalizeFinding(raw: RawFinding): NormalizedFinding {
 
 /**
  * Normalize an array of raw findings.
- * Deduplicates by normalized_finding_key (keeps highest severity on collision).
+ *
+ * ── PASS 2: DEDUPLICATION ──────────────────────────────────────────────────
+ * Deduplicates by normalized_finding_key.
+ * Tie-breaking priority:
+ *   1. Higher severity wins (critical > warning > info)
+ *   2. On severity tie, higher classification confidence wins
+ *      (high > medium > low > unconfirmed)
+ *
+ * This means re-uploading the same inspection always produces the same output
+ * because the same key will always win with the same criteria.
  */
 export function normalizeFindings(raws: RawFinding[]): NormalizedFinding[] {
-  const SEVERITY_RANK: Record<string, number> = { critical: 3, warning: 2, info: 1 };
+  const SEVERITY_RANK:    Record<string, number> = { critical: 3, warning: 2, info: 1 };
+  const CONFIDENCE_RANK:  Record<string, number> = { high: 4, medium: 3, low: 2, unconfirmed: 1 };
   const seen = new Map<string, NormalizedFinding>();
 
   for (const raw of raws) {
@@ -527,9 +551,15 @@ export function normalizeFindings(raws: RawFinding[]): NormalizedFinding[] {
     if (!existing) {
       seen.set(nf.normalized_finding_key, nf);
     } else {
-      const existRank = SEVERITY_RANK[existing.severity] ?? 0;
-      const newRank   = SEVERITY_RANK[nf.severity]       ?? 0;
-      if (newRank > existRank) seen.set(nf.normalized_finding_key, nf);
+      const existSev  = SEVERITY_RANK[existing.severity]            ?? 0;
+      const newSev    = SEVERITY_RANK[nf.severity]                  ?? 0;
+      const existConf = CONFIDENCE_RANK[existing.confidence_score]  ?? 0;
+      const newConf   = CONFIDENCE_RANK[nf.confidence_score]        ?? 0;
+
+      // Higher severity always wins; on tie, higher confidence wins
+      if (newSev > existSev || (newSev === existSev && newConf > existConf)) {
+        seen.set(nf.normalized_finding_key, nf);
+      }
     }
   }
 

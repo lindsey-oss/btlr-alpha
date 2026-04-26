@@ -691,12 +691,30 @@ export async function POST(req) {
       console.error("[parse-inspection] Scoring engine error:", engineErr?.message);
     }
 
-    // ── Normalize findings — deterministic pipeline ───────────────────────
-    // Runs AI-extracted findings through categoryMap → issueType derivation →
-    // location extraction → normalized_finding_key generation → deduplication.
-    // isScorable and score_impact are computed inside normalizeFindings via
-    // the shared scorableRules.ts — single source of truth with the dashboard.
+    // ── PASS 2: NORMALIZATION + DEDUP ────────────────────────────────────────
+    // Each raw finding goes through:
+    //   categoryMap.toCategoryKey()          → canonical category
+    //   normalizeFinding.deriveIssueType()   → pattern-matched issue_type
+    //   normalizeFinding.deriveLocation()    → pattern-matched location
+    //   normalizeFinding.deriveComponentAndSystem() → component + system slugs
+    //   generateNormalizedFindingKey()       → stable 5-part identity key
+    // Deduplication: same key → keep highest severity, then highest confidence.
     const normalizedFindings = normalizeFindings(findings);
+
+    // ── PASS 3: VALIDATION + CONFIDENCE AUDIT ────────────────────────────────
+    // classifyFinding() (called inside normalizeFinding) has already computed
+    // confidence_score and classification_reason on each finding.
+    // Here we log the distribution and surface any unconfirmed findings.
+    const confidenceCounts = { high: 0, medium: 0, low: 0, unconfirmed: 0 };
+    const needsReviewItems = [];
+    for (const nf of normalizedFindings) {
+      confidenceCounts[nf.confidence_score] = (confidenceCounts[nf.confidence_score] ?? 0) + 1;
+      if (nf.needs_review) needsReviewItems.push({ category: nf.category, reason: nf.classification_reason, desc: nf.description.slice(0, 80) });
+    }
+    console.log(`[parse-inspection] Pass 3 confidence distribution:`, confidenceCounts);
+    if (needsReviewItems.length > 0) {
+      console.warn(`[parse-inspection] ${needsReviewItems.length} unconfirmed finding(s) flagged needs_review:`, needsReviewItems);
+    }
 
     const finalResult = {
       property_address:  parsed.property_address  ?? null,

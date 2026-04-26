@@ -142,3 +142,124 @@ export function toCategoryKey(raw: string): BtlrCategory {
 
   return "maintenance_upkeep";
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// CONFIDENCE-SCORED CLASSIFICATION (Pass 3)
+//
+// Builds on toCategoryKey() without replacing it.
+// Adds two corroboration signals to each classification:
+//
+//   Signal A — CATEGORY STRING matched a named rule in toCategoryKey()
+//   Signal B — DESCRIPTION independently contains keywords for that category
+//
+// Confidence:
+//   "high"        — both signals confirmed (AI label + description corroborate)
+//   "medium"      — only the AI category string matched a named rule
+//   "low"         — matched only via maintenance_upkeep fallback with
+//                   a recognized maintenance/general label
+//   "unconfirmed" — fell through to maintenance_upkeep with NO recognizable
+//                   keywords in either category OR description
+//
+// "unconfirmed" findings are flagged needs_review=true in NormalizedFinding.
+// They are NOT removed or reassigned — they stay in maintenance_upkeep so
+// the app continues to display them, but the flag is a signal for future
+// human review or a more targeted AI re-pass.
+//
+// toCategoryKey() is intentionally unchanged — all existing callers are safe.
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface ClassificationResult {
+  category:   BtlrCategory;
+  /** How confident the rule engine is in this classification. */
+  confidence: "high" | "medium" | "low" | "unconfirmed";
+  /** Human-readable explanation of what triggered the classification. */
+  reason:     string;
+}
+
+/**
+ * Per-category description keywords used to corroborate the AI's category label.
+ * These are intentionally broader than the category-string rules in toCategoryKey()
+ * so description text can independently confirm a classification.
+ */
+const DESC_KEYWORDS: Record<BtlrCategory, string[]> = {
+  structure_foundation:    ["crack", "settl", "heav", "foundation", "crawl", "basement", "pier", "slab", "struct", "beam", "joist", "framing"],
+  roof_drainage_exterior:  ["shingle", "roof", "gutter", "fascia", "soffit", "flashing", "downspout", "siding", "eave", "chimney", "exterior"],
+  plumbing:                ["pipe", "drain", "toilet", "sink", "faucet", "water heater", "sewer", "leak", "water supply", "hose", "shutoff", "valve"],
+  electrical:              ["electr", "panel", "wiring", "outlet", "breaker", "gfci", "afci", "romex", "circuit", "junction", "switch", "voltage"],
+  hvac:                    ["furnace", "hvac", "duct", "thermostat", "condenser", "heat pump", "air handler", "refrigerant", "compressor", "evaporator"],
+  interior_windows_doors:  ["window", "door", "floor", "stair", "ceiling", "wall", "handrail", "guardrail", "drywall", "insulation", "trim"],
+  appliances_water_heater: ["dishwasher", "oven", "range", "refriger", "dryer", "washer", "stove", "microwave", "disposal", "appliance"],
+  safety_environmental:    ["smoke detector", "carbon monoxide", "co detector", "mold", "mildew", "pest", "termite", "radon", "asbestos", "lead", "detector", "hazard"],
+  site_grading_drainage:   ["grading", "drainage", "retaining", "erosion", "slope", "lot", "landscap", "runoff"],
+  pool_spa:                ["pool", "spa", "skimmer", "hot tub", "jacuzzi", "whirlpool", "pool pump", "pool filter"],
+  maintenance_upkeep:      ["maintenance", "general", "upkeep", "repair", "service", "misc"],
+};
+
+/** Returns true if the description contains at least one keyword for the given category. */
+function descriptionCorroborates(category: BtlrCategory, description: string): boolean {
+  const d = description.toLowerCase();
+  return DESC_KEYWORDS[category]?.some(kw => d.includes(kw)) ?? false;
+}
+
+/** Returns true when the category string matched a NAMED rule (not the fallback). */
+function categoryStringMatchedNamedRule(rawCategory: string): boolean {
+  return toCategoryKey(rawCategory) !== "maintenance_upkeep";
+}
+
+/**
+ * Classify a finding with an explicit confidence score and reason string.
+ *
+ * Drop-in safe — does NOT change toCategoryKey() or any existing pipeline.
+ * Called inside normalizeFinding() to enrich NormalizedFinding with
+ * confidence_score, classification_reason, and needs_review.
+ */
+export function classifyFinding(rawCategory: string, description: string): ClassificationResult {
+  const category     = toCategoryKey(rawCategory);
+  const namedMatch   = categoryStringMatchedNamedRule(rawCategory);
+  const descMatch    = descriptionCorroborates(category, description);
+  const catLower     = (rawCategory || "").toLowerCase();
+
+  // ── Pool / spa: always deterministic — single source of truth ────────────
+  if (category === "pool_spa") {
+    const why = namedMatch
+      ? `category "${rawCategory}" matched pool/spa rule`
+      : `description contains pool/spa keyword`;
+    return { category, confidence: "high", reason: why };
+  }
+
+  // ── Named category matched ────────────────────────────────────────────────
+  if (namedMatch) {
+    if (descMatch) {
+      return {
+        category,
+        confidence: "high",
+        reason:     `category "${rawCategory}" + description both confirm ${category}`,
+      };
+    }
+    return {
+      category,
+      confidence: "medium",
+      reason:     `category "${rawCategory}" matched ${category} rule; description not independently verified`,
+    };
+  }
+
+  // ── Fell through to maintenance_upkeep ────────────────────────────────────
+  // Check whether description at least has maintenance-adjacent keywords.
+  if (descMatch) {
+    // Description had keywords that match maintenance_upkeep — low but not unconfirmed
+    return {
+      category,
+      confidence: "low",
+      reason:     `no named category match; description confirms maintenance_upkeep`,
+    };
+  }
+
+  // The AI's label had nothing recognizable and neither did the description.
+  // This is a genuinely ambiguous finding — flag for review.
+  const unknownLabel = catLower.length > 0 ? `"${rawCategory}"` : "(blank)";
+  return {
+    category,
+    confidence: "unconfirmed",
+    reason:     `category ${unknownLabel} and description did not match any classification rule — needs review`,
+  };
+}
