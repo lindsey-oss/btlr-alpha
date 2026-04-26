@@ -527,8 +527,8 @@ function InspectionReviewModal({
     return init;
   });
 
-  function setStatus(index: number, category: string, status: FindingStatus) {
-    setLocalStatuses(prev => ({ ...prev, [findingKey(category, index)]: status }));
+  function setStatus(index: number, finding: Finding, status: FindingStatus) {
+    setLocalStatuses(prev => ({ ...prev, [findingKey(finding, index)]: status }));
   }
 
   const completedCount = Object.values(localStatuses).filter(s => s === "completed" || s === "dismissed").length;
@@ -589,7 +589,7 @@ function InspectionReviewModal({
                   }}/>
                   <div style={{ flex: 1 }}>
                     <p style={{ fontWeight: 700, fontSize: 14, color: C.text, margin: "0 0 3px" }}>
-                      {finding.category}
+                      {GROUP_META[toGroupKey(finding.category)]?.label ?? finding.category}
                       {finding.estimated_cost ? (
                         <span style={{ fontWeight: 500, fontSize: 13, color: C.text3, marginLeft: 8 }}>
                           ~${finding.estimated_cost.toLocaleString()}
@@ -605,7 +605,7 @@ function InspectionReviewModal({
                   {statusOptions.map(opt => (
                     <button
                       key={opt.value}
-                      onClick={() => setStatus(i, finding.category, opt.value)}
+                      onClick={() => setStatus(i, finding, opt.value)}
                       style={{
                         padding: "5px 12px", borderRadius: 20, fontSize: 12, fontWeight: 600,
                         cursor: "pointer", border: `1.5px solid ${currentStatus === opt.value ? opt.color : C.border}`,
