@@ -16,6 +16,7 @@ import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
 import type { HomeHealthReport } from "../../lib/scoring-engine";
 import { normalizeLegacyFindings, computeHomeHealthReport } from "../../lib/scoring-engine";
+import { isScorable } from "../../lib/findings/scorableRules";
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface TimelineEvent { date: string; event: string }
@@ -25,7 +26,8 @@ type FindingStatus = "open" | "completed" | "monitored" | "not_sure" | "dismisse
 interface Finding {
   category: string;
   description: string;
-  is_scorable?: boolean;   // set by parser — mirrors isScoredFinding()
+  is_scorable?: boolean;   // set by parser — mirrors isScorable()
+  scorable?: boolean;      // alias from normalizeFinding output
   score_impact?: "high" | "medium" | "low" | "none";
   severity: string;
   estimated_cost: number | null;
@@ -34,6 +36,16 @@ interface Finding {
   remaining_life_years?: number | null; // inspector's stated remaining useful life
   lifespan_years?: number | null;       // typical total lifespan for this system
   status?: FindingStatus; // injected client-side from findingStatuses map
+  // Normalized pipeline fields (from normalizeFinding.ts)
+  normalized_finding_key?: string;
+  title?: string;
+  system?: string;
+  component?: string;
+  issue_type?: string;
+  location?: string;
+  recommended_action?: string;
+  estimated_cost_min?: number | null;
+  estimated_cost_max?: number | null;
 }
 
 // Normalize a finding category to a stable key for status lookup
@@ -41,69 +53,21 @@ function toCategoryKey(category: string): string {
   return (category || "general").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-// Per-finding status key: category + global index in allFindings array
-function findingKey(category: string, index: number): string {
-  return `${toCategoryKey(category)}_${index}`;
+/// Per-finding status key.
+// Uses normalized_finding_key when available (stable across re-uploads of same report).
+// Falls back to category+index for legacy / photo findings that predate the pipeline.
+function findingKey(findingOrCategory: Finding | string, index: number): string {
+  if (typeof findingOrCategory === "object" && findingOrCategory.normalized_finding_key) {
+    return findingOrCategory.normalized_finding_key;
+  }
+  const cat = typeof findingOrCategory === "string" ? findingOrCategory : findingOrCategory.category;
+  return `${toCategoryKey(cat)}_${index}`;
 }
 
-// Returns true if this finding's category maps to one of the 8 scored categories
-// that actually drive the Home Health Score. Supplemental findings (pool, spa,
-// deck, fireplace, chimney, attic, etc.) are still stored and shown in the
-// Repairs tab but are excluded from the post-upload review modal.
-// description is optional but should always be passed — it catches cases where the
-// parser uses a generic category (e.g. "Exterior") but the description reveals the
-// actual system (e.g. "uneven deck boards" or "pool skimmer missing").
-function isScoredFinding(category: string, description?: string): boolean {
-  const t = (category || "").toLowerCase();
-  const d = (description || "").toLowerCase();
-
-  // Supplemental systems — excluded from scoring regardless of keyword overlap.
-  // We check BOTH the category name AND the description so a finding labelled
-  // "Exterior — uneven deck" or "Equipment — pool skimmer missing" is correctly
-  // excluded even when the category alone would match a scored keyword.
-  const SUPPLEMENTAL = [
-    "fireplace", "chimney", "flue",
-    "pool", "spa", "hot tub", "skimmer",
-    "deck", "patio", "pergola",
-    "fence", "gate",
-    "driveway", "walkway", "sidewalk", "pavement",
-    "sprinkler", "irrigation",
-    "shed", "outbuilding",
-    "attic fan",           // cosmetic ventilation fan, not HVAC system
-    "ceiling fan",         // cosmetic
-    "exhaust fan",         // bathroom exhaust fan — cosmetic
-    "security system",     // alarm/camera systems don't affect home health score
-    "security camera",
-    "surveillance",
-    "alarm system",
-  ];
-  if (SUPPLEMENTAL.some(s => t.includes(s) || d.includes(s))) return false;
-
-  return (
-    t.includes("roof") || t.includes("gutter") || t.includes("exterior") ||
-    t.includes("siding") || t.includes("fascia") || t.includes("soffit") ||
-    t.includes("drain") || t.includes("grading") ||
-    t.includes("foundation") || t.includes("structural") || t.includes("structure") ||
-    t.includes("basement") || t.includes("crawl") || t.includes("settling") ||
-    t.includes("plumb") || t.includes("pipe") || t.includes("water heater") ||
-    t.includes("sewer") || t.includes("hose") || t.includes("toilet") || t.includes("sink") ||
-    t.includes("electr") || t.includes("panel") || t.includes("wiring") ||
-    t.includes("outlet") || t.includes("gfci") || t.includes("circuit") ||
-    t.includes("hvac") || t.includes("heat") || t.includes("cool") ||
-    t.includes("furnace") || t.includes("duct") || t.includes("air handler") ||
-    t.includes("thermostat") || t.includes("ventilat") ||
-    t.includes("safety") || t.includes("smoke") || t.includes("carbon") ||
-    t.includes("detector") ||
-    t.includes("mold") || t.includes("pest") || t.includes("termite") ||
-    t.includes("radon") || t.includes("asbestos") || t.includes("lead") ||
-    t.includes("window") || t.includes("door") || t.includes("floor") ||
-    t.includes("ceiling") || t.includes("wall") || t.includes("stair") ||
-    t.includes("interior") || t.includes("handrail") ||
-    t.includes("appliance") || t.includes("washer") || t.includes("dryer") ||
-    t.includes("dishwasher") || t.includes("oven") || t.includes("range") ||
-    t.includes("refrigerator") || t.includes("stove")
-  );
-}
+// isScoredFinding — thin alias for the shared isScorable from scorableRules.ts.
+// Single source of truth: route.js and dashboard now call the same function.
+// Supplemental systems (pool, spa, deck, fireplace, etc.) are excluded.
+const isScoredFinding = isScorable;
 
 // Returns score impact metadata for a finding — used in the Repairs tab
 // to badge, color-code, and explain why a repair affects the Home Health Score.
@@ -194,7 +158,7 @@ const GROUP_META: Record<string, { label: string; iconFn: (color: string) => Rea
 // Findings are "active" if status is open, not_sure, or not yet set
 // index = position in the global allFindings array
 function isActiveFinding(finding: Finding, index: number, statuses: Record<string, FindingStatus>): boolean {
-  const key = findingKey(finding.category, index);
+  const key = findingKey(finding, index);
   const status = statuses[key] ?? "open";
   return status === "open" || status === "not_sure";
 }
@@ -296,11 +260,11 @@ function computeHealthScore(
     // This way marking all the critical issues resolved removes the -8 even if
     // minor warnings remain, and vice versa.
     const criticalsResolved = criticalItems.length > 0 && criticalItems.every(it => {
-      const s = statuses[findingKey(it.f.category, it.idx)] ?? "open";
+      const s = statuses[findingKey(it.f, it.idx)] ?? "open";
       return s === "completed" || s === "dismissed";
     });
     const ncsResolved = ncItems.length > 0 && ncItems.every(it => {
-      const s = statuses[findingKey(it.f.category, it.idx)] ?? "open";
+      const s = statuses[findingKey(it.f, it.idx)] ?? "open";
       return s === "completed" || s === "dismissed";
     });
 
@@ -557,7 +521,7 @@ function InspectionReviewModal({
     const init: Record<string, FindingStatus> = {};
     for (let i = 0; i < findings.length; i++) {
       const f = findings[i];
-      const key = findingKey(f.category, i);
+      const key = findingKey(f, i);
       init[key] = initialStatuses[key] ?? "open";
     }
     return init;
@@ -606,7 +570,7 @@ function InspectionReviewModal({
         {/* Findings list */}
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
           {findings.map((finding, i) => {
-            const key = findingKey(finding.category, i);
+            const key = findingKey(finding, i);
             const currentStatus = localStatuses[key] ?? "open";
             const sevColor = finding.severity === "critical" ? C.red : finding.severity === "warning" ? C.amber : C.text3;
 
@@ -2292,14 +2256,63 @@ export default function Dashboard() {
       setAddress(data.address ?? "My Home");
       setRoofYear(data.roof_year?.toString() ?? "");
       setHvacYear(data.hvac_year?.toString() ?? "");
-      // Load finding statuses (persisted user-confirmed repair states)
-      if (data.finding_statuses && typeof data.finding_statuses === "object") {
-        setFindingStatuses(data.finding_statuses as Record<string, FindingStatus>);
-      }
 
       // Load photo findings
       if (data.photo_findings?.length > 0) {
         setPhotoFindings(data.photo_findings ?? []);
+      }
+
+      // ── Load findings — findings table first, JSONB fallback ─────────────
+      // The findings table is the source of truth for any upload that ran through
+      // the deterministic pipeline. Older uploads only have the JSONB blob.
+      let loadedFindings: Finding[] = [];
+      const { data: findingsRows, error: findingsErr } = await supabase
+        .from("findings")
+        .select("*")
+        .eq("property_id", propId)
+        .order("severity", { ascending: true });   // critical first
+      if (findingsErr) {
+        console.warn("[loadProperty] findings table read failed:", findingsErr.message);
+      }
+      if (findingsRows && findingsRows.length > 0) {
+        // Hydrate status from findings rows (source of truth) AND from the JSONB
+        // map so that legacy statuses set before the pipeline migration still work.
+        const statusesFromRows: Record<string, FindingStatus> = {};
+        loadedFindings = findingsRows.map(row => {
+          const f: Finding = {
+            ...(row.raw_finding ?? {}),
+            category:               row.category,
+            description:            row.description ?? "",
+            severity:               row.severity    ?? "info",
+            estimated_cost:         row.raw_finding?.estimated_cost ?? null,
+            normalized_finding_key: row.normalized_finding_key,
+            title:                  row.title,
+            system:                 row.system,
+            component:              row.component,
+            issue_type:             row.issue_type,
+            location:               row.location,
+            recommended_action:     row.recommended_action,
+            estimated_cost_min:     row.estimated_cost_min,
+            estimated_cost_max:     row.estimated_cost_max,
+            is_scorable:            row.scorable,
+            scorable:               row.scorable,
+            score_impact:           row.score_impact,
+          };
+          if (row.normalized_finding_key) {
+            statusesFromRows[row.normalized_finding_key] = row.status ?? "open";
+          }
+          return f;
+        });
+        console.log(`[loadProperty] Loaded ${loadedFindings.length} findings from findings table`);
+        // Merge: findings-table statuses take precedence over legacy JSONB statuses
+        const mergedStatuses: Record<string, FindingStatus> = {
+          ...(data.finding_statuses ?? {}),
+          ...statusesFromRows,
+        };
+        setFindingStatuses(mergedStatuses);
+      } else if (data.finding_statuses && typeof data.finding_statuses === "object") {
+        // No findings table rows yet — use legacy JSONB statuses
+        setFindingStatuses(data.finding_statuses as Record<string, FindingStatus>);
       }
 
       // Enter block when inspection_type is set — it is always written to DB by
@@ -2307,11 +2320,13 @@ export default function Dashboard() {
       // "an upload happened." Without this guard, a 0-findings upload leaves
       // inspection_findings=[] and inspection_summary=null, causing the score
       // card to be hidden after every refresh.
-      if (data.inspection_findings?.length > 0 || data.inspection_summary || data.inspection_type) {
+      // Prefer findings-table rows; fall back to JSONB blob for legacy data.
+      const finalFindings = loadedFindings.length > 0 ? loadedFindings : (data.inspection_findings ?? []);
+      if (finalFindings.length > 0 || data.inspection_summary || data.inspection_type) {
         setInspectionResult({
           inspection_type:      data.inspection_type     ?? "Home Inspection",
           summary:              data.inspection_summary  ?? undefined,
-          findings:             data.inspection_findings ?? [],
+          findings:             finalFindings,
           recommendations:      data.recommendations     ?? [],
           total_estimated_cost: data.total_estimated_cost ?? null,
           inspection_date:      data.inspection_date     ?? undefined,
@@ -2531,18 +2546,78 @@ export default function Dashboard() {
           ...(result.property_address ? { address: result.property_address }          : {}),
           updated_at:            new Date().toISOString(),
         };
-        const activePropId = activePropertyIdRef.current;
+        let activePropId = activePropertyIdRef.current;
         if (activePropId) {
           const { error: updateErr } = await supabase
             .from("properties").update(inspectionPayload).eq("id", activePropId);
           if (updateErr) console.error("[uploadInspection] update failed:", updateErr.message);
           else console.log(`[uploadInspection] ✓ Saved ${newFindings.length} findings to property ${activePropId}`);
         } else {
-          // No active property yet — create one
-          const { error: insertErr } = await supabase
-            .from("properties").insert({ ...inspectionPayload, address: address || "My Home", user_id: uploadUserId });
+          // No active property yet — create one; capture new row's ID for findings upsert
+          const { data: inserted, error: insertErr } = await supabase
+            .from("properties").insert({ ...inspectionPayload, address: address || "My Home", user_id: uploadUserId }).select("id").single();
           if (insertErr) console.error("[uploadInspection] insert failed:", insertErr.message);
-          else console.log(`[uploadInspection] ✓ Created property with ${newFindings.length} findings`);
+          else {
+            activePropId = inserted.id;
+            activePropertyIdRef.current = inserted.id;
+            setActivePropertyId(inserted.id);
+            localStorage.setItem("btlr_active_property_id", String(inserted.id));
+            console.log(`[uploadInspection] ✓ Created property ${inserted.id} with ${newFindings.length} findings`);
+          }
+        }
+
+        // ── Upsert findings rows via explicit RPC ─────────────────────────
+        // Uses upsert_findings_preserve_status() — a Postgres function with a
+        // hardcoded ON CONFLICT DO UPDATE SET list that intentionally excludes
+        // `status` and `created_at`. This is the only safe guarantee: client-side
+        // .upsert() generates "DO UPDATE SET *" and cannot be trusted to skip
+        // status without constructing raw SQL ourselves.
+        //
+        // Result: completed/dismissed/monitored repairs survive any re-upload.
+        const findingRows = newFindings
+          .filter(f => {
+            // Must have a normalized key (4-part slug, no free-form description text)
+            if (!f.normalized_finding_key) return false;
+            // Key must be 5-part slug: category__system__component__location__issue_type
+            // Exactly 4 __ separators, all slug characters (no spaces, no description text)
+            if (!/^[a-z0-9_]+(__[a-z0-9_]+){4}$/.test(f.normalized_finding_key)) return false;
+            return true;
+          })
+          .map(f => {
+            const sev = (f.severity || "").toLowerCase();
+            const validSev = (["critical", "warning", "info"] as const).includes(sev as "critical" | "warning" | "info")
+              ? (sev as "critical" | "warning" | "info")
+              : "info";
+            // pool_spa is always unscored regardless of what the parser returned
+            const isPool = f.category === "pool_spa";
+            return {
+              property_id:            activePropId,
+              user_id:                uploadUserId,
+              normalized_finding_key: f.normalized_finding_key,
+              title:                  f.title ?? `${f.category} — ${validSev}`,
+              category:               f.category,
+              system:                 f.system    ?? f.category,
+              component:              f.component ?? f.category,
+              issue_type:             f.issue_type ?? "general",
+              description:            f.description ?? "",
+              location:               f.location ?? "unknown",
+              severity:               validSev,
+              scorable:               isPool ? false : (f.is_scorable ?? f.scorable ?? false),
+              score_impact:           isPool ? "none" : (f.score_impact ?? "none"),
+              recommended_action:     f.recommended_action ?? null,
+              estimated_cost_min:     f.estimated_cost_min ?? null,
+              estimated_cost_max:     f.estimated_cost_max ?? null,
+              raw_finding:            JSON.stringify(f),  // RPC reads this as jsonb string
+            };
+          });
+
+        if (activePropId && findingRows.length > 0) {
+          const { error: upsertErr } = await supabase.rpc(
+            "upsert_findings_preserve_status",
+            { p_findings: JSON.stringify(findingRows) },
+          );
+          if (upsertErr) console.error("[uploadInspection] findings RPC failed:", upsertErr.message);
+          else console.log(`[uploadInspection] ✓ Upserted ${findingRows.length} findings (status preserved)`);
         }
 
         if (result.roof_year) setRoofYear(String(result.roof_year));
@@ -2605,25 +2680,30 @@ export default function Dashboard() {
       const { data: refreshed } = await supabase.auth.refreshSession();
       const session = refreshed?.session ?? (await supabase.auth.getSession()).data.session;
       if (!session?.user?.id) return;
+      const uid = session.user.id;
 
-      // Read from Postgres documents table — persists across logout/login
+      // Read from Postgres documents table — persists across logout/login.
+      // Explicit user_id filter is belt-and-suspenders on top of RLS.
       const { data, error } = await supabase
         .from("documents")
         .select("id, file_name, storage_path, document_type, created_at")
+        .eq("user_id", uid)
         .eq("document_type", "other")
         .order("created_at", { ascending: false })
         .limit(200);
 
       if (error) {
-        console.error("[loadDocs] db error:", error.message);
+        console.error("[loadDocs] db error:", error.message, error.code);
+        showToast("Could not load your documents — try refreshing.", "error");
         return;
       }
       if (!data) return;
 
-      // Also count insurance docs so the badge survives logout/login
+      // Also restore insurance doc count so the badge survives logout/login
       const { count: insCount } = await supabase
         .from("documents")
         .select("id", { count: "exact", head: true })
+        .eq("user_id", uid)
         .eq("document_type", "insurance");
       if (insCount && insCount > 0) setInsuranceDocCount(insCount);
 
@@ -2663,16 +2743,21 @@ export default function Dashboard() {
     const { error: storageErr } = await supabase.storage.from("documents").upload(fullPath, file, { upsert: true });
     if (storageErr) { alert("Upload failed: " + storageErr.message); setDocLoading(false); return; }
 
-    // 2. Write metadata row to Postgres (so it persists across logout/login)
-    const { data: propRow } = await supabase.from("properties").select("id").eq("user_id", userId).maybeSingle();
+    // 2. Write metadata row to Postgres (so it persists across logout/login).
+    // property_id is bigint (matches properties.id integer type) — nullable.
     const { data: insertedDoc, error: dbErr } = await supabase.from("documents").insert({
       user_id:       userId,
-      property_id:   propRow?.id ?? null,
+      property_id:   activePropertyIdRef.current ?? null,
       file_name:     file.name,
       storage_path:  fullPath,
       document_type: "other",
     }).select("id").maybeSingle();
-    if (dbErr) console.error("[uploadDoc] db insert error:", dbErr.message);
+
+    if (dbErr) {
+      console.error("[uploadDoc] db insert error:", dbErr.message, dbErr.code);
+      showToast(`Upload saved to storage but failed to record in database: ${dbErr.message}`, "error");
+      // Still show the file for this session, but warn the user it won't persist
+    }
 
     addEvent(`Document uploaded: ${file.name}`);
     const { data: signed } = await supabase.storage.from("documents").createSignedUrl(fullPath, 3600);
@@ -2686,8 +2771,8 @@ export default function Dashboard() {
     // Remove from Storage
     const { error: storageErr } = await supabase.storage.from("documents").remove([doc.path]);
     if (storageErr) { showToast("Delete failed: " + storageErr.message, "error"); return; }
-    // Remove from Postgres documents table
-    const { error: dbErr } = await supabase.from("documents").delete().eq("storage_path", doc.path);
+    // Remove from Postgres documents table — use primary key, not path
+    const { error: dbErr } = await supabase.from("documents").delete().eq("id", doc.id);
     if (dbErr) console.error("[deleteDoc] db delete error:", dbErr.message);
     setDocs(prev => prev.filter(d => d.path !== doc.path));
     showToast(`Deleted ${doc.name}`, "success");
@@ -2784,10 +2869,35 @@ export default function Dashboard() {
   }
 
   // ── Persist finding statuses to DB ──────────────────────────────────────
+  // Two-layer write:
+  //  1. Update individual findings rows by normalized_finding_key (source of truth)
+  //  2. Write the full statuses map to properties.finding_statuses (legacy compat
+  //     and fast read on loadProperty for pre-pipeline uploads)
   async function persistFindingStatuses(statuses: Record<string, FindingStatus>) {
     try {
       const propId = activePropertyIdRef.current;
       if (!propId) return;
+
+      // Layer 1 — per-row updates for findings that have a normalized_finding_key
+      const allFindings = [...(inspectionResult?.findings ?? []), ...photoFindings];
+      const rowUpdates: PromiseLike<unknown>[] = [];
+      allFindings.forEach((f, idx) => {
+        const key = findingKey(f, idx);
+        const newStatus = statuses[key];
+        if (f.normalized_finding_key && newStatus) {
+          const validStatus = ["open","completed","dismissed","monitored"].includes(newStatus) ? newStatus : "open";
+          rowUpdates.push(
+            supabase.from("findings")
+              .update({ status: validStatus, updated_at: new Date().toISOString() })
+              .eq("property_id", propId)
+              .eq("normalized_finding_key", f.normalized_finding_key)
+              .then()
+          );
+        }
+      });
+      await Promise.all(rowUpdates as Promise<unknown>[]);
+
+      // Layer 2 — denormalized JSONB map for backward compat
       await supabase.from("properties")
         .update({ finding_statuses: statuses, updated_at: new Date().toISOString() })
         .eq("id", propId);
@@ -2809,7 +2919,7 @@ export default function Dashboard() {
       const updated = { ...findingStatuses };
       allFindings.forEach((f, idx) => {
         if (toCategoryKey(f.category) === categoryKey) {
-          updated[findingKey(f.category, idx)] = "completed";
+          updated[findingKey(f, idx)] = "completed";
         }
       });
       setFindingStatuses(updated);
@@ -2863,8 +2973,8 @@ export default function Dashboard() {
   }
 
   // ── Toggle a single finding status (inline select dropdown) ─────────────
-  async function toggleFindingStatus(category: string, index: number, status: FindingStatus) {
-    const key = findingKey(category, index);
+  async function toggleFindingStatus(findingOrCategory: Finding | string, index: number, status: FindingStatus) {
+    const key = findingKey(findingOrCategory, index);
     const newStatuses = { ...findingStatuses, [key]: status };
     setFindingStatuses(newStatuses);
     await persistFindingStatuses(newStatuses);
@@ -2887,7 +2997,7 @@ export default function Dashboard() {
     setSavingComplete(true);
     try {
       // 1. Mark finding status as completed
-      const key = findingKey(finding.category, globalIdx);
+      const key = findingKey(finding, globalIdx);
       const newStatuses = { ...findingStatuses, [key]: "completed" as FindingStatus };
       setFindingStatuses(newStatuses);
       await persistFindingStatuses(newStatuses);
@@ -4075,7 +4185,7 @@ export default function Dashboard() {
                                   const meta = GROUP_META[gk] ?? GROUP_META.general;
                                   const hasCritical = items.some(({ f }) => f.severity === "critical");
                                   const hasWarning  = items.some(({ f }) => f.severity === "warning");
-                                  const allResolved = items.every(({ f, globalIdx }) => { const s = findingStatuses[findingKey(f.category, globalIdx)] ?? "open"; return s === "completed" || s === "dismissed"; });
+                                  const allResolved = items.every(({ f, globalIdx }) => { const s = findingStatuses[findingKey(f, globalIdx)] ?? "open"; return s === "completed" || s === "dismissed"; });
                                   const worstColor = hasCritical ? C.red : hasWarning ? C.amber : allResolved ? C.green : C.text3;
                                   const worstLabel = hasCritical ? "Critical" : hasWarning ? "Warning" : allResolved ? "Resolved" : "Good";
                                   const worstBg    = hasCritical ? C.redBg   : hasWarning ? C.amberBg : allResolved ? C.greenBg : C.bg;
@@ -4099,7 +4209,7 @@ export default function Dashboard() {
                                         <div style={{ padding: "0 16px 14px", background: "#fafbfc" }}>
                                           <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                                             {items.map(({ f, globalIdx }, fi) => {
-                                              const fk = findingKey(f.category, globalIdx);
+                                              const fk = findingKey(f, globalIdx);
                                               const status = findingStatuses[fk] ?? "open";
                                               const cfg = statusConfig[status];
                                               const isResolved = status === "completed" || status === "dismissed";
@@ -4151,7 +4261,7 @@ export default function Dashboard() {
                                                   </div>
                                                   {/* Action row */}
                                                   <div style={{ display: "flex", alignItems: "center", gap: 7, paddingTop: 2, flexWrap: "wrap" }}>
-                                                    <select value={status} onChange={e => toggleFindingStatus(f.category, globalIdx, e.target.value as FindingStatus)} style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, border: `1px solid ${cfg.color}40`, background: cfg.bg, color: cfg.color, cursor: "pointer", outline: "none" }}>
+                                                    <select value={status} onChange={e => toggleFindingStatus(f, globalIdx, e.target.value as FindingStatus)} style={{ fontSize: 11, fontWeight: 600, padding: "3px 9px", borderRadius: 20, border: `1px solid ${cfg.color}40`, background: cfg.bg, color: cfg.color, cursor: "pointer", outline: "none" }}>
                                                       <option value="open">Open</option>
                                                       <option value="completed">Completed</option>
                                                       <option value="monitored">Monitoring</option>
@@ -4182,7 +4292,7 @@ export default function Dashboard() {
                             // Build a list of completed findings with their metadata
                             const archivedItems: Array<{ f: Finding; globalIdx: number; fk: string }> = [];
                             allFindings.forEach((f, i) => {
-                              const fk = findingKey(f.category, i);
+                              const fk = findingKey(f, i);
                               const s = findingStatuses[fk] ?? "open";
                               if (s === "completed") archivedItems.push({ f, globalIdx: i, fk });
                             });

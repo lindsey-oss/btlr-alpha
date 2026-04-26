@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import { createHash } from "crypto";
 import { extractPdfTextAsync } from "../../../lib/extractPdfText";
 import { normalizeLegacyFindings, computeHomeHealthReport } from "../../../lib/scoring-engine";
+import { normalizeFindings } from "../../../lib/findings/normalizeFinding";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // IN-PROCESS PARSE CACHE
@@ -690,62 +691,12 @@ export async function POST(req) {
       console.error("[parse-inspection] Scoring engine error:", engineErr?.message);
     }
 
-    // ── Enrich findings with scorability metadata ─────────────────────────
-    // Mirrors the isScoredFinding logic in the dashboard so both sides agree.
-    const SUPPLEMENTAL_KEYS = [
-      "fireplace", "chimney", "flue",
-      "pool", "spa", "hot tub", "skimmer",
-      "deck", "patio", "pergola",
-      "fence", "gate",
-      "driveway", "walkway", "sidewalk", "pavement",
-      "sprinkler", "irrigation",
-      "shed", "outbuilding",
-      "attic fan", "ceiling fan", "exhaust fan",
-      "security system", "security camera", "surveillance", "alarm system",
-    ];
-
-    function isScorable(category, description) {
-      const t = (category || "").toLowerCase();
-      const d = (description || "").toLowerCase();
-      if (SUPPLEMENTAL_KEYS.some(s => t.includes(s) || d.includes(s))) return false;
-      return (
-        t.includes("roof") || t.includes("gutter") || t.includes("exterior") ||
-        t.includes("siding") || t.includes("fascia") || t.includes("soffit") ||
-        t.includes("drain") || t.includes("grading") ||
-        t.includes("foundation") || t.includes("structural") || t.includes("structure") ||
-        t.includes("basement") || t.includes("crawl") || t.includes("settling") ||
-        t.includes("plumb") || t.includes("pipe") || t.includes("water heater") ||
-        t.includes("sewer") || t.includes("hose") || t.includes("toilet") || t.includes("sink") ||
-        t.includes("electr") || t.includes("panel") || t.includes("wiring") ||
-        t.includes("outlet") || t.includes("gfci") || t.includes("circuit") ||
-        t.includes("hvac") || t.includes("heat") || t.includes("cool") ||
-        t.includes("furnace") || t.includes("duct") || t.includes("air handler") ||
-        t.includes("thermostat") || t.includes("ventilat") ||
-        t.includes("safety") || t.includes("smoke") || t.includes("carbon") ||
-        t.includes("detector") ||
-        t.includes("mold") || t.includes("pest") || t.includes("termite") ||
-        t.includes("radon") || t.includes("asbestos") || t.includes("lead") ||
-        t.includes("window") || t.includes("door") || t.includes("floor") ||
-        t.includes("ceiling") || t.includes("wall") || t.includes("stair") ||
-        t.includes("interior") || t.includes("handrail") ||
-        t.includes("appliance") || t.includes("washer") || t.includes("dryer") ||
-        t.includes("dishwasher") || t.includes("oven") || t.includes("range") ||
-        t.includes("refrigerator") || t.includes("stove")
-      );
-    }
-
-    const enrichedFindings = findings.map(f => {
-      const scorable = isScorable(f.category, f.description);
-      const sev = (f.severity || "").toLowerCase();
-      return {
-        ...f,
-        is_scorable: scorable,
-        score_impact: scorable
-          ? (sev === "critical" ? "high" : sev === "warning" ? "medium" : "low")
-          : "none",
-        status: "open",
-      };
-    });
+    // ── Normalize findings — deterministic pipeline ───────────────────────
+    // Runs AI-extracted findings through categoryMap → issueType derivation →
+    // location extraction → normalized_finding_key generation → deduplication.
+    // isScorable and score_impact are computed inside normalizeFindings via
+    // the shared scorableRules.ts — single source of truth with the dashboard.
+    const normalizedFindings = normalizeFindings(findings);
 
     const finalResult = {
       property_address:  parsed.property_address  ?? null,
@@ -755,7 +706,7 @@ export async function POST(req) {
       summary:           parsed.summary           ?? null,
       roof_year:         safeRoofYear,
       hvac_year:         safeHvacYear,
-      findings:          enrichedFindings,
+      findings:          normalizedFindings,
       home_health_report,
     };
 
