@@ -161,7 +161,7 @@ const GROUP_META: Record<string, { label: string; iconFn: (color: string) => Rea
 
 /** Human-readable display label for any raw category key or free-form string. */
 function categoryLabel(category: string): string {
-  return GROUP_META[toGroupKey(category)]?.label ?? category;
+  return GROUP_META[toGroupKey(category)]?.label ?? formatLabel(category);
 }
 
 /** Consistent, user-facing severity label. */
@@ -171,6 +171,45 @@ function severityLabel(severity?: string | null): string {
     case "warning":  return "Medium Priority";
     default:         return "Informational";
   }
+}
+
+/**
+ * Converts any raw DB key or AI string to a human-readable label.
+ * Used everywhere user-facing text might contain underscores or raw system keys.
+ * Examples: "pool_spa" → "Pool & Spa", "hvac" → "HVAC", "safety_environmental" → "Safety & Environmental"
+ */
+function formatLabel(raw: string | undefined | null): string {
+  if (!raw) return "General";
+  // Try GROUP_META lookup first (covers all canonical BTLR display groups)
+  const groupKey = toGroupKey(raw);
+  if (GROUP_META[groupKey] && groupKey !== "general") {
+    return GROUP_META[groupKey].label;
+  }
+  // Exact overrides for canonical DB category keys not covered by GROUP_META
+  const LABEL_OVERRIDES: Record<string, string> = {
+    pool_spa:                  "Pool & Spa",
+    safety_environmental:      "Safety & Environmental",
+    safety_security:           "Safety & Security",
+    hvac:                      "HVAC",
+    structure_foundation:      "Foundation",
+    roof_drainage_exterior:    "Roof & Drainage",
+    interior_windows_doors:    "Interior & Windows",
+    appliances_water_heater:   "Appliances",
+    site_grading_drainage:     "Site & Drainage",
+    maintenance_upkeep:        "Maintenance",
+    not_sure:                  "Not Sure",
+    open:                      "Open",
+    completed:                 "Completed",
+    monitored:                 "Monitoring",
+    dismissed:                 "Dismissed",
+  };
+  const key = raw.toLowerCase().trim();
+  if (LABEL_OVERRIDES[key]) return LABEL_OVERRIDES[key];
+  // Generic fallback: replace underscores/hyphens with spaces, title-case each word
+  return raw
+    .replace(/[_-]/g, " ")
+    .replace(/\b\w/g, c => c.toUpperCase())
+    .trim();
 }
 
 // Findings are "active" if status is open, not_sure, or not yet set
@@ -1467,6 +1506,7 @@ export default function Dashboard() {
 
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [docs, setDocs]         = useState<Doc[]>([]);
+  const [inspectionDoc, setInspectionDoc] = useState<Doc | null>(null); // last uploaded inspection file reference
   const [q, setQ]               = useState("");
   type ButlerAction = {
     label: string;
@@ -2572,14 +2612,21 @@ export default function Dashboard() {
         if (activePropId) {
           const { error: updateErr } = await supabase
             .from("properties").update(inspectionPayload).eq("id", activePropId);
-          if (updateErr) console.error("[uploadInspection] update failed:", updateErr.message);
-          else console.log(`[uploadInspection] ✓ Saved ${newFindings.length} findings to property ${activePropId}`);
+          if (updateErr) {
+            console.error("[uploadInspection] update failed:", updateErr.message, updateErr.code);
+            // Surface to user — without this save, data won't persist after refresh
+            showToast(`Inspection analyzed but could not save findings (${updateErr.message}). Try refreshing.`, "error");
+          } else {
+            console.log(`[uploadInspection] ✓ Saved ${newFindings.length} findings to property ${activePropId}`);
+          }
         } else {
           // No active property yet — create one; capture new row's ID for findings upsert
           const { data: inserted, error: insertErr } = await supabase
             .from("properties").insert({ ...inspectionPayload, address: address || "My Home", user_id: uploadUserId }).select("id").single();
-          if (insertErr) console.error("[uploadInspection] insert failed:", insertErr.message);
-          else {
+          if (insertErr) {
+            console.error("[uploadInspection] insert failed:", insertErr.message, insertErr.code);
+            showToast(`Inspection analyzed but could not save to database (${insertErr.message}). Your results will disappear on refresh.`, "error");
+          } else {
             activePropId = inserted.id;
             activePropertyIdRef.current = inserted.id;
             setActivePropertyId(inserted.id);
@@ -2645,6 +2692,44 @@ export default function Dashboard() {
           else console.log(`[uploadInspection] ✓ Upserted ${findingRows.length} findings (status preserved)`);
         }
 
+        // ── Save inspection file reference to documents table ───────────────
+        // This is the persistence record for the file itself. On reload, loadDocs()
+        // reads document_type="inspection" rows and restores the file reference so
+        // users can re-download their original PDF. Without this row, the file is
+        // orphaned in Storage with no way to surface it after refresh/logout.
+        if (activePropId) {
+          // Upsert by storage_path so re-uploading the same file doesn't create duplicates
+          const { error: docInsertErr } = await supabase
+            .from("documents")
+            .upsert(
+              {
+                user_id:       uploadUserId,
+                property_id:   activePropId,
+                file_name:     file.name,
+                storage_path:  storagePath,
+                document_type: "inspection",
+              },
+              { onConflict: "storage_path", ignoreDuplicates: false },
+            );
+          if (docInsertErr) {
+            console.error("[uploadInspection] documents row failed:", docInsertErr.message, docInsertErr.code);
+            showToast("Inspection analyzed but file reference not saved — try refreshing.", "error");
+          } else {
+            console.log("[uploadInspection] ✓ documents row saved for inspection file");
+            // Immediately update local state so the file reference is available
+            const { data: signed } = await supabase.storage
+              .from("documents")
+              .createSignedUrl(storagePath, 3600);
+            setInspectionDoc({
+              id:            "",
+              name:          file.name,
+              path:          storagePath,
+              document_type: "inspection",
+              url:           signed?.signedUrl ?? undefined,
+            });
+          }
+        }
+
         if (result.roof_year) setRoofYear(String(result.roof_year));
         if (result.hvac_year) setHvacYear(String(result.hvac_year));
         if (result.property_address) setAddress(result.property_address);
@@ -2692,14 +2777,14 @@ export default function Dashboard() {
     if (inspRef.current) inspRef.current.value = "";
   }
 
-  // ── Load documents from storage on mount ────────────────────────────────
-  // General docs are stored at the bucket root with a "docs-" prefix.
-  // Inspections/repairs go into subfolders so filtering by "docs-" is safe.
+  // ── Load documents from Postgres on mount ────────────────────────────────
+  // Source of truth: Postgres documents table. Never relies on storage.list()
+  // or React state — both vanish on refresh. Every upload MUST write a row here.
   //
-  // IMPORTANT: this requires a SELECT RLS policy on storage.objects scoped to
-  // auth.uid() = owner (see SUPABASE_DOCS_HOTFIX.sql). Without it, list()
-  // returns { data: [], error: null } — silently empty, not an error — so
-  // documents vanish after every refresh even though files exist in storage.
+  // Loads three document types in parallel:
+  //   "other"      → general docs (warranties, permits, HOA)
+  //   "insurance"  → insurance doc count badge
+  //   "inspection" → last inspection file reference (for re-download)
   async function loadDocs() {
     try {
       const { data: refreshed } = await supabase.auth.refreshSession();
@@ -2707,9 +2792,8 @@ export default function Dashboard() {
       if (!session?.user?.id) return;
       const uid = session.user.id;
 
-      // Read from Postgres documents table — persists across logout/login.
-      // Explicit user_id filter is belt-and-suspenders on top of RLS.
-      const { data, error } = await supabase
+      // ── 1. General docs ("other") ──────────────────────────────────────────
+      const { data: otherData, error: otherErr } = await supabase
         .from("documents")
         .select("id, file_name, storage_path, document_type, created_at")
         .eq("user_id", uid)
@@ -2717,16 +2801,32 @@ export default function Dashboard() {
         .order("created_at", { ascending: false })
         .limit(200);
 
-      if (error) {
-        // Silent fail — background load errors (e.g. first login before any
-        // documents exist, RLS setup, transient network) should not surface a
-        // toast to users who haven't uploaded anything yet.
-        console.warn("[loadDocs] db error (silent):", error.code, error.message);
-        return;
+      if (otherErr) {
+        // Surface real errors (auth failures, RLS issues) but not "table empty"
+        // PGRST116 = no rows, 42P01 = table doesn't exist (new install)
+        if (otherErr.code !== "PGRST116" && otherErr.code !== "42P01") {
+          showToast("Could not load your documents — try refreshing.", "error");
+        }
+        console.warn("[loadDocs] documents query error:", otherErr.code, otherErr.message);
+      } else if (otherData) {
+        const files: Doc[] = await Promise.all(
+          otherData.map(async (row) => {
+            const { data: signed } = await supabase.storage
+              .from("documents")
+              .createSignedUrl(row.storage_path, 3600);
+            return {
+              id:            row.id,
+              name:          row.file_name,
+              path:          row.storage_path,
+              document_type: row.document_type,
+              url:           signed?.signedUrl ?? undefined,
+            };
+          })
+        );
+        setDocs(files);
       }
-      if (!data) return;
 
-      // Also restore insurance doc count so the badge survives logout/login
+      // ── 2. Insurance doc count badge ───────────────────────────────────────
       const { count: insCount } = await supabase
         .from("documents")
         .select("id", { count: "exact", head: true })
@@ -2734,22 +2834,35 @@ export default function Dashboard() {
         .eq("document_type", "insurance");
       if (insCount && insCount > 0) setInsuranceDocCount(insCount);
 
-      const files: Doc[] = await Promise.all(
-        data.map(async (row) => {
-          const { data: signed } = await supabase.storage
-            .from("documents")
-            .createSignedUrl(row.storage_path, 3600);
-          return {
-            id:            row.id,
-            name:          row.file_name,
-            path:          row.storage_path,
-            document_type: row.document_type,
-            url:           signed?.signedUrl ?? undefined,
-          };
-        })
-      );
+      // ── 3. Inspection file reference ──────────────────────────────────────
+      // Restores the "View original PDF" link after logout/login without relying
+      // on any React state. The inspection FINDINGS are loaded separately via
+      // loadProperty() → findings table + properties.inspection_findings JSONB.
+      const { data: inspData, error: inspErr } = await supabase
+        .from("documents")
+        .select("id, file_name, storage_path, document_type, created_at")
+        .eq("user_id", uid)
+        .eq("document_type", "inspection")
+        .order("created_at", { ascending: false })
+        .limit(1);
 
-      setDocs(files);
+      if (inspErr) {
+        console.warn("[loadDocs] inspection doc query error:", inspErr.code, inspErr.message);
+      } else if (inspData?.length) {
+        const row = inspData[0];
+        const { data: signed } = await supabase.storage
+          .from("documents")
+          .createSignedUrl(row.storage_path, 3600);
+        setInspectionDoc({
+          id:            row.id,
+          name:          row.file_name,
+          path:          row.storage_path,
+          document_type: "inspection",
+          url:           signed?.signedUrl ?? undefined,
+        });
+        console.log("[loadDocs] ✓ Restored inspection file reference:", row.file_name);
+      }
+
     } catch (err) {
       console.error("[loadDocs] unexpected error:", err);
     }
@@ -4298,7 +4411,7 @@ export default function Dashboard() {
                                   <div key={i} style={{ background: C.greenBg, border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                                       <CheckCircle2 size={13} color={C.green}/>
-                                      <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{r.category ?? "Repair"}{r.vendor ? ` — ${r.vendor}` : ""}</span>
+                                      <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{formatLabel(r.category) || "Repair"}{r.vendor ? ` — ${r.vendor}` : ""}</span>
                                       {r.cost ? <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: C.green }}>${r.cost.toLocaleString()}</span> : null}
                                     </div>
                                     {r.summary && <p style={{ fontSize: 12, color: C.text2, margin: "0 0 4px 21px", lineHeight: 1.5 }}>{r.summary}</p>}
