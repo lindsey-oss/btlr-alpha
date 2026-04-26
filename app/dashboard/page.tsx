@@ -50,6 +50,23 @@ function findingKey(category: string, index: number): string {
 // Repairs tab but are excluded from the post-upload review modal.
 function isScoredFinding(category: string): boolean {
   const t = (category || "").toLowerCase();
+
+  // Supplemental systems — always excluded from scoring regardless of keyword overlap.
+  // These still appear in the Repairs tab but never affect the Home Health Score.
+  const SUPPLEMENTAL = [
+    "fireplace", "chimney", "flue",
+    "pool", "spa", "hot tub",
+    "deck", "patio", "pergola",
+    "fence", "gate",
+    "driveway", "walkway", "sidewalk", "pavement",
+    "sprinkler", "irrigation",
+    "shed", "outbuilding",
+    "attic fan",          // attic ventilation fans — cosmetic, not HVAC
+    "ceiling fan",        // cosmetic
+    "exhaust fan",        // bathroom exhaust fan — cosmetic
+  ];
+  if (SUPPLEMENTAL.some(s => t.includes(s))) return false;
+
   return (
     t.includes("roof") || t.includes("gutter") || t.includes("exterior") ||
     t.includes("siding") || t.includes("fascia") || t.includes("soffit") ||
