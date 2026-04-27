@@ -352,9 +352,27 @@ findings:
       • "Deficiency" / numbered items
       • "Recommended" / "Noted" / "Observed"
       • Items in a General Summary or deficiency list
-  - category: one of — Roof, HVAC, Plumbing, Electrical, Foundation, Structural,
-    Exterior, Windows, Appliances, Insulation, Pest, Pool, Spa, Deck, Garage,
-    Fireplace, Safety, Environmental, General
+  - category: choose the MOST SPECIFIC label that fits from the list below.
+    Use EXACTLY one of these strings (spelling matters):
+      Roof | Gutters | Siding | Exterior | Deck | Patio | Chimney | Fireplace
+      HVAC | Furnace | Air Conditioning | Ductwork | Thermostat
+      Plumbing | Water Heater
+      Electrical | Panel
+      Foundation | Structural | Crawlspace | Basement
+      Windows | Doors | Garage Door
+      Interior | Floors | Ceilings | Walls | Drywall | Insulation | Attic
+      Appliances | Dishwasher | Oven | Range | Refrigerator | Washer | Dryer
+      Safety | Environmental | Pest | Mold | Radon | Asbestos
+      Pool | Spa | Hot Tub | Pool Equipment
+      Garage | General
+    CRITICAL CATEGORY RULES — always follow these:
+      • Acoustic/popcorn ceiling texture, ceiling stains, drywall damage, wall cracks,
+        floor issues, interior paint → use "Interior" or the specific label (Ceilings, Walls, Floors)
+      • Window glass, window seals, window sashes, window frames → use "Windows"
+      • Entry doors, interior doors, sliding doors, screen doors → use "Doors"
+      • NEVER use "Windows" for ceilings, floors, walls, drywall, or interior surfaces
+      • NEVER use "Exterior" for indoor observations
+      • If a category does not fit any label above, use "General"
   - severity:
       "critical" = immediate safety hazard, structural failure, active leak, mold, pest infestation
       "warning"  = significant repair needed, system nearing end of life, inspector recommends repair
@@ -413,6 +431,10 @@ Respond ONLY with valid JSON in exactly this shape:
   ]
 }
 ${addressHint}
+Use the same CRITICAL CATEGORY RULES as pass 1:
+  • Ceilings, walls, floors, drywall, interior paint, acoustic/popcorn texture → "Interior" or specific (Ceilings, Walls, Floors)
+  • Window glass/seals/frames → "Windows"  |  Doors → "Doors"
+  • NEVER use "Windows" for interior surfaces, ceilings, or walls
 Return ALL findings you see across all systems. The merger will deduplicate against pass 1. Return up to 30 findings.`;
 }
 

@@ -10,7 +10,7 @@ import {
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
   ExternalLink, ArrowRight, BarChart3, Clock, TrendingUp,
-  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera, Phone, Mail,
+  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera, Phone, Mail, Trash2,
 } from "lucide-react";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
@@ -173,7 +173,20 @@ function getScoreImpact(category: string, severity?: string, description?: strin
 
 // Maps a raw finding category to a broader display group key
 function toGroupKey(category: string): string {
-  const t = category.toLowerCase();
+  const t = category.toLowerCase().trim();
+
+  // ── Canonical BTLR category keys (exact match wins — avoids substring collision)
+  // e.g. "interior_windows_doors" contains "window" but must map to "interior"
+  if (t === "interior_windows_doors")    return "interior";
+  if (t === "roof_drainage_exterior")    return "roof";
+  if (t === "structure_foundation")      return "foundation";
+  if (t === "appliances_water_heater")   return "appliances";
+  if (t === "safety_environmental")      return "safety";
+  if (t === "site_grading_drainage")     return "exterior";
+  if (t === "maintenance_upkeep")        return "general";
+  if (t === "pool_spa")                  return "general";
+
+  // ── Substring checks for raw AI category strings ──────────────────────────
   if (t.includes("roof"))                                                       return "roof";
   if (t.includes("garage"))                                                     return "garage";
   if (t.includes("exterior") || t.includes("siding") || t.includes("deck") ||
@@ -190,6 +203,10 @@ function toGroupKey(category: string): string {
   if (t.includes("found") || t.includes("crawl") || t.includes("basement") ||
       t.includes("structural") || t.includes("settling"))                      return "foundation";
   if (t.includes("attic") || t.includes("insul"))                             return "attic";
+  // "interior" check before "window"/"door" so raw "Interior" → interior group
+  if (t.includes("interior") || t.includes("ceiling") || t.includes("floor") ||
+      t.includes("wall") || t.includes("stair") || t.includes("handrail") ||
+      t.includes("paint") || t.includes("drywall") || t.includes("trim"))     return "interior";
   if (t.includes("window") || t.includes("door"))                             return "windows";
   if (t.includes("appliance") || t.includes("washer") || t.includes("dryer") ||
       t.includes("dishwasher") || t.includes("oven") || t.includes("stove") ||
@@ -197,8 +214,6 @@ function toGroupKey(category: string): string {
   if (t.includes("safety") || t.includes("smoke") || t.includes("carbon") ||
       t.includes("radon") || t.includes("pest") || t.includes("termite") ||
       t.includes("mold") || t.includes("bug"))                                 return "safety";
-  if (t.includes("interior") || t.includes("floor") || t.includes("ceiling") ||
-      t.includes("stair") || t.includes("handrail") || t.includes("paint"))   return "interior";
   return "general";
 }
 
@@ -3095,41 +3110,42 @@ export default function Dashboard() {
         }
 
         // ── Save inspection file reference to documents table ───────────────
-        // This is the persistence record for the file itself. On reload, loadDocs()
-        // reads document_type="inspection" rows and restores the file reference so
-        // users can re-download their original PDF. Without this row, the file is
-        // orphaned in Storage with no way to surface it after refresh/logout.
+        // storagePath includes Date.now() so it is always unique — use INSERT, not
+        // upsert (the documents table has no UPDATE RLS policy so upsert would fail
+        // silently on any conflict path).
         if (activePropId) {
-          // Upsert by storage_path so re-uploading the same file doesn't create duplicates
           const { error: docInsertErr } = await supabase
             .from("documents")
-            .upsert(
-              {
-                user_id:       uploadUserId,
-                property_id:   activePropId,
-                file_name:     file.name,
-                storage_path:  storagePath,
-                document_type: "inspection",
-              },
-              { onConflict: "storage_path", ignoreDuplicates: false },
-            );
+            .insert({
+              user_id:       uploadUserId,
+              property_id:   activePropId,
+              file_name:     file.name,
+              storage_path:  storagePath,
+              document_type: "inspection",
+            });
           if (docInsertErr) {
             console.error("[uploadInspection] documents row failed:", docInsertErr.message, docInsertErr.code);
-            showToast("Inspection analyzed but file reference not saved — try refreshing.", "error");
+            // Non-fatal: don't block the upload flow — user still sees results in session
           } else {
             console.log("[uploadInspection] ✓ documents row saved for inspection file");
-            // Immediately update local state so the file reference is available
-            const { data: signed } = await supabase.storage
-              .from("documents")
-              .createSignedUrl(storagePath, 3600);
-            setInspectionDoc({
-              id:            "",
-              name:          file.name,
-              path:          storagePath,
-              document_type: "inspection",
-              url:           signed?.signedUrl ?? undefined,
-            });
           }
+        }
+
+        // ── Always update in-session state regardless of DB write success ───
+        // This ensures the file reference appears in the Documents tab immediately
+        // even if the DB write failed. On next reload, loadDocs() will re-hydrate
+        // from Postgres (if the row was saved).
+        {
+          const { data: signedDoc } = await supabase.storage
+            .from("documents")
+            .createSignedUrl(storagePath, 3600);
+          setInspectionDoc({
+            id:            "",
+            name:          file.name,
+            path:          storagePath,
+            document_type: "inspection",
+            url:           signedDoc?.signedUrl ?? undefined,
+          });
         }
 
         if (result.roof_year) setRoofYear(String(result.roof_year));
@@ -3197,6 +3213,8 @@ export default function Dashboard() {
     } catch (err: unknown) { setInspectErr(err instanceof Error ? err.message : "Upload failed"); }
     setInspecting(false);
     if (inspRef.current) inspRef.current.value = "";
+    // Re-sync Documents tab from DB so the new inspection row is visible immediately
+    loadDocs();
   }
 
   // ── Load documents from Postgres on mount ────────────────────────────────
@@ -3335,6 +3353,24 @@ export default function Dashboard() {
     if (dbErr) console.error("[deleteDoc] db delete error:", dbErr.message);
     setDocs(prev => prev.filter(d => d.path !== doc.path));
     showToast(`Deleted ${doc.name}`, "success");
+  }
+
+  async function deleteInspectionDoc() {
+    if (!inspectionDoc) return;
+    if (!confirm(`Remove "${inspectionDoc.name}"? The file will be deleted and you can upload a new report.`)) return;
+    // Remove from Storage
+    const { error: storageErr } = await supabase.storage.from("documents").remove([inspectionDoc.path]);
+    if (storageErr) console.warn("[deleteInspectionDoc] storage delete error:", storageErr.message);
+    // Remove from Postgres — by id if available, otherwise by storage_path
+    if (inspectionDoc.id) {
+      await supabase.from("documents").delete().eq("id", inspectionDoc.id);
+    } else {
+      await supabase.from("documents").delete().eq("storage_path", inspectionDoc.path);
+    }
+    setInspectionDoc(null);
+    // Also clear last-seen filename so the duplicate guard doesn't block re-upload
+    setLastInspectionFilename(null);
+    showToast("Inspection report removed — upload a new one to re-analyze", "success");
   }
 
   // ── Load repair history from DB on mount ────────────────────────────────
@@ -5004,12 +5040,21 @@ export default function Dashboard() {
                                     <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inspectionDoc.name}</p>
                                     <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>Inspection Report</p>
                                   </div>
-                                  {inspectionDoc.url && (
-                                    <a href={inspectionDoc.url} target="_blank" rel="noopener noreferrer"
-                                      style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, background: C.accent, color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none", flexShrink: 0 }}>
-                                      <ExternalLink size={11}/> View PDF
-                                    </a>
-                                  )}
+                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                                    {inspectionDoc.url && (
+                                      <a href={inspectionDoc.url} target="_blank" rel="noopener noreferrer"
+                                        style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, background: C.accent, color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                                        <ExternalLink size={11}/> View PDF
+                                      </a>
+                                    )}
+                                    <button
+                                      onClick={deleteInspectionDoc}
+                                      title="Remove report"
+                                      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, border: `1px solid ${C.border}`, background: "white", color: C.red, cursor: "pointer", flexShrink: 0 }}
+                                    >
+                                      <Trash2 size={13}/>
+                                    </button>
+                                  </div>
                                 </div>
                                 <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", width: "fit-content" }}>
                                   {inspecting ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Upload size={11}/> Upload New Report</>}
