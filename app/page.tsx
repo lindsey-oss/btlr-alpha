@@ -276,18 +276,25 @@ export default function LandingPage() {
 
     function onScroll() {
       const section = document.getElementById("dollhouse");
-      if (!section || !v.duration) return;
-      const rect = section.getBoundingClientRect();
+      if (!section) return;
+      const rect  = section.getBoundingClientRect();
       const total = section.offsetHeight - window.innerHeight;
+      if (total <= 0) return;
       const raw = Math.max(0, Math.min(1, -rect.top / total));
-      const progress = raw < 0.10 ? 0 : raw > 0.90 ? 1 : (raw - 0.10) / 0.80;
-      targetTime = progress * v.duration;
+
+      // ── Labels always appear based on scroll — independent of video load state ──
       showLabel("lbl-roof",        raw > 0.15);
       showLabel("lbl-hvac",        raw > 0.25);
       showLabel("lbl-landscaping", raw > 0.35);
       showLabel("lbl-plumbing",    raw > 0.50);
       showLabel("lbl-electrical",  raw > 0.60);
       showLabel("lbl-all",         raw > 0.75);
+
+      // ── Video scrub — only when metadata has loaded ───────────────────────
+      if (ready && v.duration) {
+        const progress = raw < 0.10 ? 0 : raw > 0.90 ? 1 : (raw - 0.10) / 0.80;
+        targetTime = progress * v.duration;
+      }
     }
 
     raf = requestAnimationFrame(tick);
@@ -316,7 +323,7 @@ export default function LandingPage() {
       <style>{`
         *{margin:0;padding:0;box-sizing:border-box}
         html{scroll-behavior:smooth}
-        body{background:#fff;color:${C.text};font-family:'DM Sans',sans-serif;overflow-x:hidden}
+        body{background:#fff;color:${C.text};font-family:'DM Sans',sans-serif;overflow-x:clip}
         .reveal{opacity:0;transform:translateY(28px);transition:opacity .75s,transform .75s}
         .reveal.in{opacity:1;transform:translateY(0)}
         .reveal.d1{transition-delay:.1s}
@@ -327,6 +334,7 @@ export default function LandingPage() {
         @keyframes pulse{0%,100%{opacity:.3}50%{opacity:1}}
         @keyframes dashPulse{0%,100%{opacity:1}50%{opacity:.4}}
         @keyframes float{0%,100%{transform:translateY(0)}50%{transform:translateY(-6px)}}
+        #sv-labels-mobile{display:none}
         .feat-card:hover{border-color:${C.borderGold} !important;background:#F5F8FC !important}
         .feat-card::after{content:'';position:absolute;bottom:0;left:0;width:0;height:2px;background:${C.gold};transition:width .4s}
         .feat-card:hover::after{width:100%}
@@ -526,9 +534,9 @@ export default function LandingPage() {
             />
           </div>
 
-          {/* Mobile system chips — always visible on small screens */}
+          {/* Mobile system chips — CSS controls display (none on desktop, flex on mobile) */}
           <div id="sv-labels-mobile" style={{
-            display: "none", flexWrap: "wrap", gap: 8, justifyContent: "center",
+            flexWrap: "wrap", gap: 8, justifyContent: "center",
             padding: "14px 16px 0", position: "relative", zIndex: 3, maxWidth: "96vw",
           }}>
             {[
