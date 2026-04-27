@@ -17,7 +17,7 @@
 
 import {
   computeHomeHealthReport,
-  CATEGORY_WEIGHTS,
+  getWeightsForPropertyType,
   type NormalizedItem,
   type HomeHealthReport,
 } from "./scoring-engine";
@@ -45,6 +45,18 @@ import {
 export interface PipelineInput {
   items: NormalizedItem[];
   propertyId: string | number;
+
+  /** Property type for condo-aware weight redistribution.
+   *  "condo" / "condominium" → roof excluded, 5-system weights.
+   *  All other values (or null/undefined) → standard 6-system weights.
+   */
+  propertyType?: string | null;
+
+  /** ISO date of the most recent inspection (YYYY-MM-DD or full timestamp).
+   *  Used by Phase 3 decay module. Confidence always adjusted; score adjusted
+   *  only when enableDecay flag is on.
+   */
+  inspectionDate?: string | null;
 
   /** Optional: resolved items for audit log enrichment */
   resolvedItems?: Array<{
@@ -76,13 +88,13 @@ export interface PipelineOutput {
 // MAIN PIPELINE FUNCTION
 // ─────────────────────────────────────────────────────────────────
 export function runScoringPipeline(input: PipelineInput): PipelineOutput {
-  const { items, propertyId, resolvedItems = [] } = input;
+  const { items, propertyId, propertyType = null, inspectionDate = null, resolvedItems = [] } = input;
 
-  // ── Step 1: Run baseline engine (unchanged) ───────────────────
-  const report = computeHomeHealthReport(items);
+  // ── Step 1: Run baseline engine (property-type-aware, decay-aware) ───
+  const report = computeHomeHealthReport(items, propertyType, inspectionDate);
 
   // ── Step 2: Build audit snapshot ─────────────────────────────
-  const snapshot = buildSnapshot(items, report, propertyId, resolvedItems);
+  const snapshot = buildSnapshot(items, report, propertyId, propertyType, inspectionDate, resolvedItems);
 
   // ── Step 3: Regression check ──────────────────────────────────
   const regression = checkForRegression(snapshot);
@@ -117,8 +129,11 @@ function buildSnapshot(
   items: NormalizedItem[],
   report: HomeHealthReport,
   propertyId: string | number,
+  propertyType: string | null | undefined,
+  inspectionDate: string | null | undefined,
   resolvedItems: PipelineInput["resolvedItems"] = [],
 ): ScoreSnapshot {
+  const weights = getWeightsForPropertyType(propertyType);
   const deductions     = extractDeductions(items);
   const inputSummaries = items.map(summarizeInput);
   const inputHash      = hashNormalizedInputs(items);
@@ -133,40 +148,45 @@ function buildSnapshot(
 
   // Per-category audit rows
   const categoryAudits: CategoryScoreAudit[] = report.category_scores.map(cs => {
-    const catItems    = items.filter(i => i.category === cs.category);
+    const catItems = items.filter(i => i.category === cs.category);
+    // Not Assessed → no items, no avg score (null/0 — never blend toward a baseline)
     const avgItemScore = catItems.length > 0
       ? catItems.reduce((s, i) => {
           const base = i.condition_score;
-          const pen  = (deductions
+          const pen  = deductions
             .filter(d => d.category === i.category && d.item_description.startsWith((i.notes || i.system).slice(0, 40)))
-            .reduce((s2, d) => s2 + d.points, 0));
+            .reduce((s2, d) => s2 + d.points, 0);
           return s + Math.max(0, Math.min(100, base + pen));
         }, 0) / catItems.length
-      : 72;
+      : 0; // Not Assessed — no score to report
     const topDeductions = deductions
       .filter(d => d.category === cs.category && d.points < 0)
       .sort((a, b) => a.points - b.points)
       .slice(0, 3);
 
     return {
-      category:                cs.category,
-      weight:                  CATEGORY_WEIGHTS[cs.category] ?? 0,
-      raw_item_count:          catItems.length,
-      avg_item_score:          Math.round(avgItemScore),
+      category:                 cs.category,
+      weight:                   weights[cs.category] ?? 0,   // property-type-aware
+      raw_item_count:           catItems.length,
+      avg_item_score:           Math.round(avgItemScore),
       confidence_blended_score: cs.score,
-      final_score:             cs.score,
-      confidence:              cs.confidence,
-      limited_data:            cs.limited_data,
-      top_deductions:          topDeductions,
+      final_score:              cs.score,
+      confidence:               cs.confidence,
+      limited_data:             cs.limited_data,
+      top_deductions:           topDeductions,
     };
   });
 
   // Score narrative
   const topIssue = report.priority_actions[0]?.issue ?? "";
+  const decayNote = report.decay
+    ? ` Inspection: ${report.decay.label} (${report.decay.monthsElapsed}mo ago, confidence ×${report.decay.confidenceMultiplier.toFixed(2)}).`
+    : "";
   const narrative = `Score ${report.home_health_score} (${report.score_band}). `
     + `${items.length} inputs from ${sourceTypes.join(", ")}. `
-    + `Data completeness: ${Math.round(dataCompleteness * 100)}%. `
-    + (topIssue ? `Top issue: ${topIssue}.` : "No major issues flagged.");
+    + `Data completeness: ${Math.round(dataCompleteness * 100)}%.`
+    + decayNote
+    + (topIssue ? ` Top issue: ${topIssue}.` : " No major issues flagged.");
 
   return {
     snapshot_id:      generateSnapshotId(),

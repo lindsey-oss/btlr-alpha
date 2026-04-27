@@ -56,6 +56,15 @@ export interface FeatureFlagConfig {
   enableRecommendations: boolean;
 
   /**
+   * Apply the Extended Condition (Tier 2) modifier on top of the Core Score.
+   * When true: computes a ±8 modifier from supplemental items (deck, pool,
+   * garage, fireplace, driveway, landscape, cosmetic finishes) and shows a
+   * separate Excellent / Good / Fair / Poor condition label in the UI.
+   * When false: modifier is always 0, no condition label is shown.
+   */
+  enableExtendedCondition: boolean;
+
+  /**
    * Emit diff logs to console when dualRunComparison is active.
    */
   verboseDiffLogging: boolean;
@@ -67,13 +76,14 @@ export interface FeatureFlagConfig {
 // To change a flag: edit this object ONLY. Never scatter flag checks
 // through business logic — always call isEnabled() or read FLAGS.
 export const FLAGS: Readonly<FeatureFlagConfig> = {
-  useNewScoring:             false,  // ← Phase 2: flip after regression suite passes
-  logScoreSnapshots:         true,   // ← ON: audit trail is safe to enable now
-  dualRunComparison:         false,  // ← Phase 2: enable after new pipeline exists
-  enableDecay:               false,  // ← Phase 3: time-based decay
-  enableConfidenceWeighting: false,  // ← Phase 3: confidence as score modifier
-  enablePredictions:         false,  // ← Phase 4: failure window + cost range
-  enableRecommendations:     false,  // ← Phase 4: action recommendation engine
+  useNewScoring:             true,   // ← Phase 2: ✓ 6-system weighted engine active
+  logScoreSnapshots:         true,   // ← ON: audit trail active
+  dualRunComparison:         false,  // ← Phase 2: N/A — engine rebuilt in-place
+  enableDecay:               true,   // ← Phase 3: ✓ time-based decay active
+  enableConfidenceWeighting: true,   // ← Phase 3: ✓ confidence-weighted category averages active
+  enablePredictions:         true,   // ← Phase 4: ✓ failure window + cost range active
+  enableRecommendations:     true,   // ← Phase 4: ✓ action recommendation engine active
+  enableExtendedCondition:   true,   // ← Phase 5: ✓ Tier 2 extended condition modifier active
   verboseDiffLogging:        false,
 } as const;
 

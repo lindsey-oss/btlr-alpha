@@ -10,18 +10,29 @@ import {
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
   ExternalLink, ArrowRight, BarChart3, Clock, TrendingUp,
-  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank,
+  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera,
 } from "lucide-react";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
 import type { HomeHealthReport } from "../../lib/scoring-engine";
-import { normalizeLegacyFindings, computeHomeHealthReport } from "../../lib/scoring-engine";
+import { normalizeLegacyFindings } from "../../lib/scoring-engine";
+import { runScoringPipeline } from "../../lib/scoring-pipeline";
+import { configureSupabaseStore } from "../../lib/score-snapshot-store";
+import { registerCostOverrides } from "../../lib/scoring-cost-ranges";
 import { isScorable } from "../../lib/findings/scorableRules";
+import { computeExtendedCondition, type ExtendedConditionResult } from "../../lib/scoring-extended";
+import { isEnabled } from "../../lib/feature-flags";
+import { SELF_INSPECT_STEPS, generateSelfInspectionFindings, type SelfInspectAnswers, isStepComplete } from "../../lib/self-inspection-questionnaire";
+
+// Wire Supabase client into the snapshot store so audit snapshots persist to DB.
+// Module-level: runs once on import, safe for server/client boundary (store is
+// no-op server-side since window is undefined).
+configureSupabaseStore(supabase);
 
 // ── Types ─────────────────────────────────────────────────────────────────
 interface TimelineEvent { date: string; event: string }
 interface Doc { id: string; name: string; path: string; url?: string; document_type: string }
-type FindingStatus = "open" | "completed" | "monitored" | "not_sure" | "dismissed";
+type FindingStatus = "repair_needed" | "completed" | "monitored" | "not_needed";
 
 interface Finding {
   category: string;
@@ -197,11 +208,10 @@ function formatLabel(raw: string | undefined | null): string {
     appliances_water_heater:   "Appliances",
     site_grading_drainage:     "Site & Drainage",
     maintenance_upkeep:        "Maintenance",
-    not_sure:                  "Not Sure",
-    open:                      "Open",
+    repair_needed:             "Repair Needed",
     completed:                 "Completed",
     monitored:                 "Monitoring",
-    dismissed:                 "Dismissed",
+    not_needed:                "Not Needed",
   };
   const key = raw.toLowerCase().trim();
   if (LABEL_OVERRIDES[key]) return LABEL_OVERRIDES[key];
@@ -212,12 +222,12 @@ function formatLabel(raw: string | undefined | null): string {
     .trim();
 }
 
-// Findings are "active" if status is open, not_sure, or not yet set
+// Findings are "active" if status is repair_needed or not yet set
 // index = position in the global allFindings array
 function isActiveFinding(finding: Finding, index: number, statuses: Record<string, FindingStatus>): boolean {
   const key = findingKey(finding, index);
-  const status = statuses[key] ?? "open";
-  return status === "open" || status === "not_sure";
+  const status = statuses[key] ?? "repair_needed";
+  return status === "repair_needed" || status === "monitored";
 }
 
 // ── Deterministic Health Score Engine ────────────────────────────────────
@@ -263,7 +273,7 @@ function computeHealthScore(
     else if (roofAge >= 19) { pts = -7;  note = `${roofAge} yrs old — approaching end of life`;  }
     else if (roofAge >= 13) { pts = -3;  note = `${roofAge} yrs old — aging`;                    }
     if (pts !== 0) {
-      const resolved = statuses[toCategoryKey("Roof")] === "completed" || statuses[toCategoryKey("Roof")] === "dismissed";
+      const resolved = statuses[toCategoryKey("Roof")] === "completed" || statuses[toCategoryKey("Roof")] === "not_needed";
       add({ id: "age_roof", category: "Roof", reason: `Roof: ${note}`, points: pts, source: "system_age" }, resolved);
     }
   }
@@ -274,7 +284,7 @@ function computeHealthScore(
     else if (hvacAge >= 12) { pts = -7;  note = `${hvacAge} yrs old — nearing end of life`;     }
     else if (hvacAge >= 8)  { pts = -3;  note = `${hvacAge} yrs old — aging`;                   }
     if (pts !== 0) {
-      const resolved = statuses[toCategoryKey("HVAC")] === "completed" || statuses[toCategoryKey("HVAC")] === "dismissed";
+      const resolved = statuses[toCategoryKey("HVAC")] === "completed" || statuses[toCategoryKey("HVAC")] === "not_needed";
       add({ id: "age_hvac", category: "HVAC", reason: `HVAC: ${note}`, points: pts, source: "system_age" }, resolved);
     }
   }
@@ -317,12 +327,12 @@ function computeHealthScore(
     // This way marking all the critical issues resolved removes the -8 even if
     // minor warnings remain, and vice versa.
     const criticalsResolved = criticalItems.length > 0 && criticalItems.every(it => {
-      const s = statuses[findingKey(it.f, it.idx)] ?? "open";
-      return s === "completed" || s === "dismissed";
+      const s = statuses[findingKey(it.f, it.idx)] ?? "repair_needed";
+      return s === "completed" || s === "not_needed";
     });
     const ncsResolved = ncItems.length > 0 && ncItems.every(it => {
-      const s = statuses[findingKey(it.f, it.idx)] ?? "open";
-      return s === "completed" || s === "dismissed";
+      const s = statuses[findingKey(it.f, it.idx)] ?? "repair_needed";
+      return s === "completed" || s === "not_needed";
     });
 
     // One deduction for the whole system if it has any critical findings
@@ -560,7 +570,7 @@ function HousePhoto({ address, height = 200 }: { address: string; height?: numbe
 }
 
 // ── Inspection Review Modal ───────────────────────────────────────────────
-// Shown after inspection upload — lets user mark findings as completed/open/not_sure
+// Shown after inspection upload — lets user mark findings as completed/repair_needed/monitored
 function InspectionReviewModal({
   findings,
   initialStatuses,
@@ -579,7 +589,7 @@ function InspectionReviewModal({
     for (let i = 0; i < findings.length; i++) {
       const f = findings[i];
       const key = findingKey(f, i);
-      init[key] = initialStatuses[key] ?? "open";
+      init[key] = initialStatuses[key] ?? "repair_needed";
     }
     return init;
   });
@@ -588,13 +598,13 @@ function InspectionReviewModal({
     setLocalStatuses(prev => ({ ...prev, [findingKey(finding, index)]: status }));
   }
 
-  const completedCount = Object.values(localStatuses).filter(s => s === "completed" || s === "dismissed").length;
+  const completedCount = Object.values(localStatuses).filter(s => s === "completed" || s === "not_needed").length;
 
   const statusOptions: { value: FindingStatus; label: string; bg: string; color: string }[] = [
-    { value: "completed",  label: "Already Fixed",  bg: C.greenBg, color: C.green  },
-    { value: "open",       label: "Still Needed",   bg: C.redBg,   color: C.red    },
-    { value: "not_sure",   label: "Not Sure",       bg: C.amberBg, color: C.amber  },
-    { value: "monitored",  label: "Monitoring",     bg: "#eff6ff",  color: C.accent },
+    { value: "completed",     label: "Already Fixed", bg: C.greenBg, color: C.green  },
+    { value: "repair_needed", label: "Still Needed",  bg: C.redBg,   color: C.red    },
+    { value: "monitored",     label: "Monitoring",    bg: "#eff6ff",  color: C.accent },
+    { value: "not_needed",    label: "Not Needed",    bg: C.bg,       color: C.text3  },
   ];
 
   return (
@@ -628,14 +638,14 @@ function InspectionReviewModal({
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px" }}>
           {findings.map((finding, i) => {
             const key = findingKey(finding, i);
-            const currentStatus = localStatuses[key] ?? "open";
+            const currentStatus = localStatuses[key] ?? "repair_needed";
             const sevColor = finding.severity === "critical" ? C.red : finding.severity === "warning" ? C.amber : C.text3;
 
             return (
               <div key={i} style={{
-                background: currentStatus === "completed" || currentStatus === "dismissed"
+                background: currentStatus === "completed" || currentStatus === "not_needed"
                   ? C.greenBg : C.bg,
-                border: `1px solid ${currentStatus === "completed" || currentStatus === "dismissed" ? "#bbf7d0" : C.border}`,
+                border: `1px solid ${currentStatus === "completed" || currentStatus === "not_needed" ? "#bbf7d0" : C.border}`,
                 borderRadius: 12, padding: "14px 16px", marginBottom: 10,
                 transition: "all 0.15s",
               }}>
@@ -796,20 +806,140 @@ function RichScoreDimensions({ report }: { report: HomeHealthReport }) {
   );
 }
 
+// ── Self-Inspection Modal ─────────────────────────────────────────────────────
+function SelfInspectionModal({
+  answers, step, onAnswer, onNext, onBack, onClose, onSave, saving,
+}: {
+  answers:  SelfInspectAnswers;
+  step:     number;
+  onAnswer: (questionId: string, value: string) => void;
+  onNext:   () => void;
+  onBack:   () => void;
+  onClose:  () => void;
+  onSave:   () => void;
+  saving:   boolean;
+}) {
+  const totalSteps = SELF_INSPECT_STEPS.length;
+  const currentStep = SELF_INSPECT_STEPS[step];
+  if (!currentStep) return null;
+  const stepComplete = isStepComplete(currentStep.key, answers);
+  const isLast = step === totalSteps - 1;
+  const answeredCount = Object.keys(answers).length;
+  const totalQuestions = SELF_INSPECT_STEPS.reduce((s, st) => s + st.questions.length, 0);
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(15,31,61,0.55)", backdropFilter: "blur(4px)" }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: C.surface, borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 600, maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 -8px 48px rgba(15,31,61,0.18)" }}>
+
+        {/* Header */}
+        <div style={{ padding: "18px 20px 14px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 2px" }}>Home Self-Inspection</p>
+              <p style={{ fontSize: 16, fontWeight: 800, color: C.text, margin: 0 }}>
+                {currentStep.emoji} {currentStep.systemName}
+              </p>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, padding: 4 }}>
+              <X size={20}/>
+            </button>
+          </div>
+          {/* Progress bar */}
+          <div style={{ display: "flex", gap: 4, marginBottom: 8 }}>
+            {SELF_INSPECT_STEPS.map((s, i) => (
+              <div key={s.key} style={{ flex: 1, height: 4, borderRadius: 4, background: i < step ? C.accent : i === step ? C.accentLt : C.border, transition: "background 0.3s" }}/>
+            ))}
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <p style={{ fontSize: 11, color: C.text3, margin: 0 }}>Step {step + 1} of {totalSteps}</p>
+            <p style={{ fontSize: 11, color: C.text3, margin: 0 }}>{answeredCount} / {totalQuestions} answered</p>
+          </div>
+        </div>
+
+        {/* Body — scrollable */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 20px" }}>
+          <p style={{ fontSize: 13, color: C.text3, margin: "0 0 18px", lineHeight: 1.5 }}>{currentStep.description}</p>
+
+          {currentStep.questions.map(q => (
+            <div key={q.id} style={{ marginBottom: 22 }}>
+              <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: "0 0 4px", lineHeight: 1.4 }}>{q.label}</p>
+              {q.hint && <p style={{ fontSize: 12, color: C.text3, margin: "0 0 10px", lineHeight: 1.4 }}>{q.hint}</p>}
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                {q.options.map(opt => {
+                  const selected = answers[q.id] === opt.value;
+                  const sevColor = opt.severity === "critical" ? C.red : opt.severity === "warning" ? "#f97316" : C.green;
+                  const sevBg    = opt.severity === "critical" ? C.redBg : opt.severity === "warning" ? "rgba(249,115,22,0.08)" : C.greenBg;
+                  return (
+                    <button key={opt.value} onClick={() => onAnswer(q.id, opt.value)} style={{
+                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                      padding: "11px 14px", borderRadius: 12, cursor: "pointer", textAlign: "left",
+                      border: selected ? `2px solid ${sevColor}` : `2px solid ${C.border}`,
+                      background: selected ? sevBg : C.surface,
+                      transition: "all 0.15s",
+                    }}>
+                      <div>
+                        <p style={{ fontSize: 14, fontWeight: 700, color: selected ? sevColor : C.text, margin: "0 0 2px" }}>{opt.label}</p>
+                        {opt.subLabel && <p style={{ fontSize: 12, color: selected ? sevColor : C.text3, margin: 0, opacity: 0.85 }}>{opt.subLabel}</p>}
+                      </div>
+                      <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${selected ? sevColor : C.border}`, background: selected ? sevColor : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        {selected && <Check size={11} color="white"/>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 20px 20px", borderTop: `1px solid ${C.border}`, flexShrink: 0, display: "flex", gap: 10 }}>
+          {step > 0 && (
+            <button onClick={onBack} style={{ padding: "12px 20px", borderRadius: 12, border: `1px solid ${C.border}`, background: C.surface, color: C.text2, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+              ← Back
+            </button>
+          )}
+          {isLast ? (
+            <button onClick={onSave} disabled={saving} style={{
+              flex: 1, padding: "13px 20px", borderRadius: 12, border: "none",
+              background: saving ? C.accentLt : C.accent, color: "white", fontSize: 15, fontWeight: 700,
+              cursor: saving ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            }}>
+              {saving ? <><Loader2 size={15} className="animate-spin"/> Saving…</> : <><CheckCircle2 size={15}/> Save Results</>}
+            </button>
+          ) : (
+            <button onClick={onNext} style={{
+              flex: 1, padding: "13px 20px", borderRadius: 12, border: "none",
+              background: stepComplete ? C.accent : C.border, color: stepComplete ? "white" : C.text3,
+              fontSize: 15, fontWeight: 700, cursor: stepComplete ? "pointer" : "default", transition: "all 0.15s",
+            }}>
+              {stepComplete ? "Next →" : "Answer all questions to continue"}
+            </button>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function HealthScoreModal({
-  breakdown, roofYear, hvacYear, year, homeHealthReport, onClose, onFindVendors,
+  breakdown, roofYear, hvacYear, year, homeHealthReport, extCondition, onClose, onFindVendors,
 }: {
   breakdown:         ScoreBreakdown;
   roofYear:          string;
   hvacYear:          string;
   year:              number;
   homeHealthReport?: HomeHealthReport | null;
+  extCondition?:     ExtendedConditionResult | null;
   onClose:           () => void;
   onFindVendors:     (trade: string, context?: string, issue?: string) => void;
 }) {
   const { score, deductions, resolvedDeductions } = breakdown;
-  const st         = healthStatusInfo(score);
-  const scoreColor = score >= 90 ? "#22c55e" : score >= 80 ? "#84cc16" : score >= 65 ? C.amber : score >= 50 ? "#f97316" : C.red;
+  // Adjusted score = Core Score + Extended Condition modifier (±8, 0 when no data)
+  const adjustedScore = Math.max(0, Math.min(100, score + (extCondition?.modifier ?? 0)));
+  const st            = healthStatusInfo(adjustedScore);
+  const scoreColor    = adjustedScore >= 90 ? "#22c55e" : adjustedScore >= 80 ? "#84cc16" : adjustedScore >= 65 ? C.amber : adjustedScore >= 50 ? "#f97316" : C.red;
 
   const roofAge = roofYear ? year - Number(roofYear) : null;
   const hvacAge = hvacYear ? year - Number(hvacYear) : null;
@@ -852,7 +982,7 @@ function HealthScoreModal({
           <div>
             <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>Home Health Score</p>
             <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
-              <span style={{ fontSize: 58, fontWeight: 800, color: scoreColor, lineHeight: 1, letterSpacing: "-2px" }}>{score}</span>
+              <span style={{ fontSize: 58, fontWeight: 800, color: scoreColor, lineHeight: 1, letterSpacing: "-2px" }}>{adjustedScore}</span>
               <span style={{ fontSize: 18, color: "rgba(255,255,255,0.35)", alignSelf: "flex-end", marginBottom: 4 }}>/100</span>
             </div>
             <span style={{ fontSize: 13, fontWeight: 700, padding: "4px 14px", borderRadius: 20, color: st.tagColor, background: `${st.tagColor}25` }}>
@@ -905,7 +1035,7 @@ function HealthScoreModal({
             style={{ width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 28px", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
             <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: 0 }}>Score Breakdown</p>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor }}>{score} / 100</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: scoreColor }}>{adjustedScore} / 100</span>
               <ChevronRight size={15} color={C.text3} style={{ transform: breakdownOpen ? "rotate(90deg)" : "none", transition: "transform 0.2s" }}/>
             </div>
           </button>
@@ -918,6 +1048,27 @@ function HealthScoreModal({
                 <span style={{ fontSize: 13, color: C.text2 }}>Starting score</span>
                 <span style={{ fontSize: 14, fontWeight: 700, color: C.green }}>100</span>
               </div>
+
+              {/* Extended Condition modifier row — shown only when Tier 2 data exists */}
+              {extCondition?.label && (() => {
+                const mod = extCondition.modifier;
+                const modColor = mod >= 4 ? C.green : mod > 0 ? "#84cc16" : mod < 0 ? C.red : C.text3;
+                const modBg    = mod >= 4 ? C.greenBg : mod > 0 ? "rgba(132,204,22,0.10)" : mod < 0 ? C.redBg : C.bg;
+                return (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 12px", borderRadius: 8, background: modBg, border: `1px solid ${modColor}30`, marginBottom: 10 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 12, color: C.text2, fontWeight: 500 }}>Extended Condition</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 20, color: modColor, background: `${modColor}18`, border: `1px solid ${modColor}35` }}>
+                        {extCondition.label}
+                      </span>
+                      <span style={{ fontSize: 11, color: C.text3 }}>· {extCondition.itemCount} item{extCondition.itemCount !== 1 ? "s" : ""}</span>
+                    </div>
+                    <span style={{ fontSize: 14, fontWeight: 800, color: modColor, flexShrink: 0 }}>
+                      {mod > 0 ? `+${mod}` : mod < 0 ? `${mod}` : "±0"}
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* Deduction rows — color-coded cards */}
               {deductions.length === 0 ? (
@@ -964,7 +1115,7 @@ function HealthScoreModal({
               {/* Final score row */}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", paddingTop: 10, borderTop: `1px solid ${C.border}` }}>
                 <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>Final score</span>
-                <span style={{ fontSize: 16, fontWeight: 800, color: scoreColor }}>{score} / 100</span>
+                <span style={{ fontSize: 16, fontWeight: 800, color: scoreColor }}>{adjustedScore} / 100</span>
               </div>
             </div>
           )}
@@ -1100,30 +1251,42 @@ function HealthScoreModal({
 
 // ── Score Ring SVG ────────────────────────────────────────────────────────
 function ScoreRing({ score, color, size = 130 }: { score: number; color: string; size?: number }) {
-  const r = size * 0.38;
-  const cx = size / 2;
-  const cy = size / 2;
-  const strokeW = size * 0.09;
-  const circumference = 2 * Math.PI * r;
-  const filled = Math.max(0, Math.min(score / 100, 1)) * circumference;
+  const r      = size * 0.38;
+  const cx     = size / 2;
+  const cy     = size / 2;
+  const strokeW= size * 0.085;
+  const circum = 2 * Math.PI * r;
+  const filled = Math.max(0, Math.min(score / 100, 1)) * circum;
+  const uid    = `glow-${size}`;  // stable per-size id
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0 }}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={strokeW}/>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0, filter: `drop-shadow(0 0 ${size * 0.07}px ${color}80)` }}>
+      <defs>
+        <filter id={uid} x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur stdDeviation={size * 0.025} result="blur"/>
+          <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+        </filter>
+      </defs>
+      {/* Track */}
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth={strokeW}/>
+      {/* Filled arc */}
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={strokeW}
-        strokeDasharray={`${filled} ${circumference - filled}`}
+        strokeDasharray={`${filled} ${circum - filled}`}
         strokeLinecap="round"
         transform={`rotate(-90 ${cx} ${cy})`}
-        style={{ transition: "stroke-dasharray 1s ease" }}
+        filter={`url(#${uid})`}
+        style={{ transition: "stroke-dasharray 1.2s cubic-bezier(0.34,1.56,0.64,1)" }}
       />
-      <text x={cx} y={cy - 4} textAnchor="middle" dominantBaseline="middle"
-        fill="white" fontSize={size * 0.26} fontWeight="800" fontFamily="-apple-system, sans-serif"
-        style={{ letterSpacing: "-1px" }}>
+      {/* Score number */}
+      <text x={cx} y={cy - size * 0.04} textAnchor="middle" dominantBaseline="middle"
+        fill="white" fontSize={size * 0.28} fontWeight="800" fontFamily="'DM Sans', -apple-system, sans-serif"
+        style={{ letterSpacing: "-2px" }}>
         {score}
       </text>
-      <text x={cx} y={cy + size * 0.17} textAnchor="middle" dominantBaseline="middle"
-        fill="rgba(255,255,255,0.4)" fontSize={size * 0.1} fontFamily="-apple-system, sans-serif">
-        /100
+      {/* /100 label */}
+      <text x={cx} y={cy + size * 0.18} textAnchor="middle" dominantBaseline="middle"
+        fill="rgba(255,255,255,0.35)" fontSize={size * 0.09} fontFamily="'DM Sans', -apple-system, sans-serif">
+        / 100
       </text>
     </svg>
   );
@@ -1669,8 +1832,23 @@ export default function Dashboard() {
   const [contributionInput, setContributionInput] = useState("");
   const warrantyRef = useRef<HTMLInputElement>(null);
 
-  const inspRef = useRef<HTMLInputElement>(null);
-  const docRef  = useRef<HTMLInputElement>(null);
+  const inspRef  = useRef<HTMLInputElement>(null);
+  const docRef   = useRef<HTMLInputElement>(null);
+  const photoRef = useRef<HTMLInputElement>(null);
+
+  // ── User tier + inspection source ─────────────────────────────────────────
+  const [userTier, setUserTier]               = useState<"free" | "pro">("free");
+  const [inspectionSource, setInspectionSource] = useState<"professional" | "self" | null>(null);
+
+  // ── Self-inspection modal ──────────────────────────────────────────────────
+  const [showSelfInspectModal, setShowSelfInspectModal] = useState(false);
+  const [selfInspectStep, setSelfInspectStep]           = useState(0);
+  const [selfInspectAnswers, setSelfInspectAnswers]     = useState<SelfInspectAnswers>({});
+  const [savingSelfInspect, setSavingSelfInspect]       = useState(false);
+
+  // ── Photo capture ──────────────────────────────────────────────────────────
+  const [photoAnalyzing, setPhotoAnalyzing] = useState(false);
+  const [photoErr, setPhotoErr]             = useState("");
 
   // ── Multi-property support ────────────────────────────────────────────
   const [activePropertyId, setActivePropertyId] = useState<number | null>(null);
@@ -2136,6 +2314,9 @@ export default function Dashboard() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.push("/login"); return false; }
     setUser(session.user);
+    // Load user tier from user_profiles (non-blocking — defaults to 'free')
+    supabase.from("user_profiles").select("tier").eq("id", session.user.id).maybeSingle()
+      .then(({ data: profile }) => { if (profile?.tier) setUserTier(profile.tier as "free" | "pro"); });
     return true;
   }
 
@@ -2180,6 +2361,106 @@ export default function Dashboard() {
     setHomeHealthReport(null); setHomeValue(null); setPropertyTax(null);
     setTimeline([]); setInsuranceDocCount(0);
     setParseDebug(null); setMortgageForm({ lender: "loanDepot", balance: "", payment: "", due_day: "1", rate: "" });
+    setInspectionSource(null);
+  }
+
+  // ── Save self-inspection results ───────────────────────────────────────
+  async function saveSelfInspection(answers: SelfInspectAnswers) {
+    const propId = activePropertyIdRef.current;
+    if (!propId) return;
+    setSavingSelfInspect(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setSavingSelfInspect(false); return; }
+
+      const generated = generateSelfInspectionFindings(answers);
+
+      // 1. Delete previous self-inspection findings for this property
+      await supabase.from("findings")
+        .delete()
+        .eq("property_id", propId)
+        .eq("finding_source", "self_inspection");
+
+      // 2. Insert new findings
+      if (generated.length > 0) {
+        const rows = generated.map(f => ({
+          property_id:            propId,
+          user_id:                session.user.id,
+          category:               f.category,
+          description:            f.description,
+          severity:               f.severity,
+          normalized_finding_key: f.normalized_finding_key,
+          finding_source:         "self_inspection",
+          raw_finding:            f,
+          status:                 "repair_needed",
+        }));
+        await supabase.from("findings").upsert(rows, { onConflict: "normalized_finding_key,property_id" });
+      }
+
+      // 3. Mark property as self-inspected today
+      await supabase.from("properties").update({
+        inspection_source: "self",
+        inspection_date:   new Date().toISOString().slice(0, 10),
+        inspection_type:   "Self-Inspection",
+      }).eq("id", propId);
+
+      setInspectionSource("self");
+      setShowSelfInspectModal(false);
+      setSelfInspectAnswers({});
+      setSelfInspectStep(0);
+
+      // Reload scoring with new findings
+      loadProperty(propId);
+    } catch (err) {
+      console.error("[saveSelfInspection] error:", err);
+    }
+    setSavingSelfInspect(false);
+  }
+
+  // ── Analyze photos from camera / gallery ───────────────────────────────
+  async function handlePhotoCapture(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setPhotoErr("");
+    setPhotoAnalyzing(true);
+    try {
+      // Convert each file to base64 data URL (OpenAI vision accepts these directly)
+      const toBase64 = (f: File): Promise<string> => new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload  = () => res(reader.result as string);
+        reader.onerror = rej;
+        reader.readAsDataURL(f);
+      });
+      const photoUrls = await Promise.all(files.slice(0, 5).map(toBase64));
+      const headers   = await getAuthHeader();
+      const resp = await fetch("/api/analyze-photos", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body:    JSON.stringify({ photoUrls }),
+      });
+      if (!resp.ok) { setPhotoErr("Photo analysis failed — please try again."); return; }
+      const result = await resp.json();
+      if (!result.success) { setPhotoErr(result.error ?? "Analysis failed — please try again."); return; }
+
+      const newFindings: Finding[] = (result.findings ?? []).map((f: Finding) => ({ ...f, source: "photo" }));
+      const allPhotoFindings = [...photoFindings, ...newFindings];
+      setPhotoFindings(allPhotoFindings);
+      setInspectDone(true);
+
+      // Persist to DB
+      const propId = activePropertyIdRef.current;
+      if (propId) {
+        supabase.from("properties")
+          .update({ photo_findings: allPhotoFindings })
+          .eq("id", propId)
+          .then(({ error }) => { if (error) console.warn("[handlePhotoCapture] DB update failed:", error.message); });
+      }
+    } catch (err) {
+      console.error("[handlePhotoCapture]", err);
+      setPhotoErr("Photo upload failed — please try again.");
+    }
+    setPhotoAnalyzing(false);
+    if (photoRef.current) photoRef.current.value = "";
   }
 
   // ── Load all properties for the user ───────────────────────────────────
@@ -2320,6 +2601,48 @@ export default function Dashboard() {
       setAddress(data.address ?? "My Home");
       setRoofYear(data.roof_year?.toString() ?? "");
       setHvacYear(data.hvac_year?.toString() ?? "");
+      setInspectionSource((data.inspection_source ?? null) as "professional" | "self" | null);
+
+      // ── Regional cost ranges ──────────────────────────────────────────────
+      // Load cached regional ranges into the scoring engine override table.
+      // If cache is missing or older than 90 days, fetch fresh data in background.
+      const COST_STALE_DAYS = 90;
+      const cachedRanges    = data.regional_cost_ranges;
+      const cachedAt        = data.regional_cost_ranges_at ? new Date(data.regional_cost_ranges_at) : null;
+      const isStale         = !cachedAt || (Date.now() - cachedAt.getTime()) > COST_STALE_DAYS * 24 * 60 * 60 * 1000;
+
+      if (cachedRanges?.ranges) {
+        // Apply cached ranges immediately — scoring engine uses them on next run
+        registerCostOverrides(cachedRanges.ranges);
+        console.log(`[loadProperty] Regional cost ranges loaded (${cachedRanges.location?.city ?? "unknown"}, source: cached)`);
+      }
+
+      if (isStale && data.address) {
+        // Fetch fresh ranges in background — don't block property load
+        const address = data.address;
+        ;(async () => {
+          try {
+            const headers = await getAuthHeader();
+            const res = await fetch("/api/cost-estimates", {
+              method:  "POST",
+              headers: { "Content-Type": "application/json", ...headers },
+              body:    JSON.stringify({ address, propertyId: propId }),
+            });
+            if (res.ok) {
+              const fresh = await res.json();
+              if (fresh?.ranges) {
+                registerCostOverrides(fresh.ranges);
+                console.log(`[loadProperty] Regional cost ranges refreshed (${fresh.location?.city ?? "unknown"}, ${fresh.location?.state ?? ""})`);
+              }
+            } else {
+              console.warn("[loadProperty] Cost estimate refresh failed:", res.status);
+            }
+          } catch (fetchErr) {
+            // Non-fatal — static ranges remain as fallback
+            console.warn("[loadProperty] Cost estimate fetch error (non-fatal):", fetchErr);
+          }
+        })();
+      }
 
       // Load photo findings
       if (data.photo_findings?.length > 0) {
@@ -2367,7 +2690,7 @@ export default function Dashboard() {
             needs_review:           row.needs_review            ?? false,
           };
           if (row.normalized_finding_key) {
-            statusesFromRows[row.normalized_finding_key] = row.status ?? "open";
+            statusesFromRows[row.normalized_finding_key] = row.status ?? "repair_needed";
           }
           return f;
         });
@@ -2409,18 +2732,42 @@ export default function Dashboard() {
       // IMPORTANT: also run when roof_year or hvac_year are set even with 0
       // findings — normalizeLegacyFindings synthesizes age-based items for
       // those systems so Roof/HVAC bars appear in the breakdown immediately.
-      const hasAnyFindings = (data.inspection_findings?.length > 0) || (data.photo_findings?.length > 0);
-      const hasSystemAge   = !!(data.roof_year || data.hvac_year);
+      //
+      // KEY: prefer `loadedFindings` (findings table — persistent pipeline source)
+      // over `data.inspection_findings` (JSONB — may be empty for newer uploads).
+      // hasAnyFindings must check both sources so the score always computes on refresh.
+      const scoringFindings   = loadedFindings.length > 0 ? loadedFindings : (data.inspection_findings ?? []);
+      const hasAnyFindings    = scoringFindings.length > 0 || (data.photo_findings?.length > 0);
+      const hasSystemAge      = !!(data.roof_year || data.hvac_year);
       if (hasAnyFindings || data.inspection_summary || hasSystemAge) {
         try {
           const currentYear = new Date().getFullYear();
           const roofAge = data.roof_year ? currentYear - data.roof_year : null;
           const hvacAge = data.hvac_year ? currentYear - data.hvac_year : null;
-          const inspNorm = normalizeLegacyFindings(data.inspection_findings ?? [], roofAge, hvacAge);
+          const inspNorm = normalizeLegacyFindings(scoringFindings, roofAge, hvacAge);
           const photoNorm = normalizeLegacyFindings(data.photo_findings ?? [], null, null)
             .map(item => ({ ...item, inspector_confidence: 0.85, source_type: "photo" }));
-          setHomeHealthReport(computeHomeHealthReport([...inspNorm, ...photoNorm]));
-        } catch { /* non-fatal — rich breakdown falls back gracefully */ }
+          const { report } = runScoringPipeline({
+            items:          [...inspNorm, ...photoNorm],
+            propertyId:     propId,
+            propertyType:   data.home_type ?? null,
+            inspectionDate: data.inspection_date ?? null,
+          });
+          setHomeHealthReport(report);
+          console.log(`[loadProperty] Score computed: ${report.home_health_score} (${scoringFindings.length} findings from ${loadedFindings.length > 0 ? "findings table" : "JSONB fallback"})`);
+          // Persist score metadata so confidence bar and renewal funnel survive refresh
+          if (propId) {
+            supabase.from("properties").update({
+              score_date:       new Date().toISOString(),
+              score_confidence: report.confidence_score,
+            }).eq("id", propId).then(({ error }) => {
+              if (error) console.warn("[loadProperty] score_metadata update failed:", error.message);
+            });
+          }
+        } catch (scoreErr) {
+          console.error("[loadProperty] scoring pipeline failed:", scoreErr);
+          // non-fatal — rich breakdown falls back gracefully
+        }
       }
       if (data.home_value)          setHomeValue(data.home_value);
       if (data.property_tax_annual) setPropertyTax(data.property_tax_annual);
@@ -2592,7 +2939,7 @@ export default function Dashboard() {
         // ── Reset finding statuses on new inspection ───────────────────────
         // Old "completed" statuses from a prior inspection would mask new findings
         // and keep the score artificially high. Clear them so every finding from
-        // the new report starts as "open" and actually affects the score.
+        // the new report starts as "repair_needed" and actually affects the score.
         const freshStatuses: Record<string, FindingStatus> = {};
         setFindingStatuses(freshStatuses);
 
@@ -2750,7 +3097,24 @@ export default function Dashboard() {
           const inspNorm = normalizeLegacyFindings(newFindings, rA, hA);
           const photoNorm = normalizeLegacyFindings(photoFindings, null, null)
             .map(item => ({ ...item, inspector_confidence: 0.85, source_type: "photo" }));
-          setHomeHealthReport(computeHomeHealthReport([...inspNorm, ...photoNorm]));
+          const currentHomeType = allProperties.find(p => p.id === activePropertyId)?.home_type ?? null;
+          const savePropId = activePropertyIdRef.current;
+          const { report: mergedReport } = runScoringPipeline({
+            items:          [...inspNorm, ...photoNorm],
+            propertyId:     savePropId ?? "unknown",
+            propertyType:   currentHomeType,
+            inspectionDate: result.inspection_date ?? null,
+          });
+          setHomeHealthReport(mergedReport);
+          // Persist score metadata so confidence bar and renewal funnel survive refresh
+          if (savePropId) {
+            supabase.from("properties").update({
+              score_date:       new Date().toISOString(),
+              score_confidence: mergedReport.confidence_score,
+            }).eq("id", savePropId).then(({ error }) => {
+              if (error) console.warn("[uploadInspection] score_metadata update failed:", error.message);
+            });
+          }
         } catch {
           // Fall back to API-computed report if merge fails
           if (result.home_health_report) setHomeHealthReport(result.home_health_report);
@@ -3028,7 +3392,7 @@ export default function Dashboard() {
         const key = findingKey(f, idx);
         const newStatus = statuses[key];
         if (f.normalized_finding_key && newStatus) {
-          const validStatus = ["open","completed","dismissed","monitored"].includes(newStatus) ? newStatus : "open";
+          const validStatus = ["repair_needed","completed","not_needed","monitored"].includes(newStatus) ? newStatus : "repair_needed";
           rowUpdates.push(
             supabase.from("findings")
               .update({ status: validStatus, updated_at: new Date().toISOString() })
@@ -3462,8 +3826,8 @@ export default function Dashboard() {
   const roofSt  = systemStatus(roofAge, 20, 25);
   const hvacSt  = systemStatus(hvacAge, 10, 15);
 
-  // Only count ACTIVE findings (open or not_sure) in costs list
-  // Completed/dismissed/monitored findings reflect real-world repairs
+  // Only count ACTIVE findings (repair_needed or monitored) in costs list
+  // Completed/not_needed findings reflect resolved items
   // Merge inspection + photo findings so photo evidence also drives cost estimates
   const allFindings       = [...(inspectionResult?.findings ?? []), ...photoFindings];
   const activeFindings    = allFindings.filter((f, i) =>  isActiveFinding(f, i, findingStatuses));
@@ -3476,7 +3840,14 @@ export default function Dashboard() {
 
   // Deterministic score — pure function, same inputs = same score every time
   const breakdown    = computeHealthScore(allFindingsForScore, findingStatuses, roofYear, hvacYear, year);
-  const health       = breakdown.score;
+
+  // Extended Condition (Tier 2) — ±8 modifier from supplemental items.
+  // No Tier 2 data → modifier = 0, no label shown. Absence is never penalized.
+  const extCondition: ExtendedConditionResult = isEnabled("enableExtendedCondition")
+    ? computeExtendedCondition(allFindingsForScore)
+    : { label: null, modifier: 0, itemCount: 0, items: [] };
+
+  const health       = Math.max(0, Math.min(100, breakdown.score + extCondition.modifier));
   const healthColor  = health >= 90 ? "#22c55e" : health >= 80 ? "#84cc16" : health >= 65 ? C.amber : health >= 50 ? "#f97316" : C.red;
   const healthSt     = healthStatusInfo(health);
   const criticalCount = breakdown.deductions.filter(d => d.severity === "critical").length;
@@ -3552,8 +3923,8 @@ export default function Dashboard() {
   // Only added when NOT already covered by an inspection finding above
   const roofKey = toCategoryKey("Roof");
   const hvacKey = toCategoryKey("HVAC");
-  const roofResolved = findingStatuses[roofKey] === "completed" || findingStatuses[roofKey] === "dismissed";
-  const hvacResolved = findingStatuses[hvacKey] === "completed" || findingStatuses[hvacKey] === "dismissed";
+  const roofResolved = findingStatuses[roofKey] === "completed" || findingStatuses[roofKey] === "not_needed";
+  const hvacResolved = findingStatuses[hvacKey] === "completed" || findingStatuses[hvacKey] === "not_needed";
   const roofAlreadyKnown = usedCategories.has("roof");
   const hvacAlreadyKnown = usedCategories.has("hvac") || usedCategories.has("hvac/heating") || usedCategories.has("hvac/cooling");
 
@@ -3657,6 +4028,39 @@ export default function Dashboard() {
     <div style={{ height: "100vh", overflow: "hidden", display: "flex", background: C.bg, fontFamily: "'DM Sans', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif" }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+
+        /* ── Scrollbar ─────────────────────────────────────── */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(28,25,20,0.14); border-radius: 99px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(28,25,20,0.24); }
+
+        /* ── Input / select focus ──────────────────────────── */
+        input:focus, select:focus, textarea:focus {
+          outline: none;
+          border-color: #2C5F8A !important;
+          box-shadow: 0 0 0 3px rgba(44,95,138,0.12) !important;
+        }
+
+        /* ── Button transitions ────────────────────────────── */
+        button { transition: opacity 0.13s, background 0.13s, box-shadow 0.13s, transform 0.1s; }
+        button:active:not(:disabled) { transform: scale(0.97); }
+
+        /* ── Toast entrance ────────────────────────────────── */
+        @keyframes fadeInDown {
+          from { opacity: 0; transform: translateX(-50%) translateY(-8px); }
+          to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+        }
+
+        /* ── Dropdown / modal entrance ─────────────────────── */
+        @keyframes fadeIn {
+          from { opacity: 0; transform: translateY(4px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ── Link-style reset for anchor buttons ───────────── */
+        a { text-decoration: none; }
+        a:hover { opacity: 0.85; }
       `}</style>
 
       {/* ── Toast notification ────────────────────────────────────────── */}
@@ -3688,11 +4092,24 @@ export default function Dashboard() {
           onSkip={() => setShowReviewModal(false)}
         />
       )}
+      {showSelfInspectModal && (
+        <SelfInspectionModal
+          answers={selfInspectAnswers}
+          step={selfInspectStep}
+          saving={savingSelfInspect}
+          onAnswer={(questionId, value) => setSelfInspectAnswers(prev => ({ ...prev, [questionId]: value }))}
+          onNext={() => setSelfInspectStep(s => Math.min(s + 1, SELF_INSPECT_STEPS.length - 1))}
+          onBack={() => setSelfInspectStep(s => Math.max(s - 1, 0))}
+          onClose={() => setShowSelfInspectModal(false)}
+          onSave={() => saveSelfInspection(selfInspectAnswers)}
+        />
+      )}
       {showHealthModal && (
         <HealthScoreModal
           breakdown={breakdown}
           roofYear={roofYear} hvacYear={hvacYear} year={year}
           homeHealthReport={homeHealthReport}
+          extCondition={extCondition}
           onClose={() => setShowHealthModal(false)}
           onFindVendors={handleFindVendors}
         />
@@ -3773,7 +4190,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <nav style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 2, overflowY: "auto" }}>
+        <nav style={{ flex: 1, padding: "12px 10px", display: "flex", flexDirection: "column", gap: 1, overflowY: "auto" }}>
           {navItems.map(({ label, icon, badge }) => (
             <button key={label} onClick={() => {
               setNav(label);
@@ -3781,13 +4198,17 @@ export default function Dashboard() {
               if (label === "Vendors") { setVendorPrefill(null); setVendorContext(null); setVendorIssue(null); }
             }} style={{
               display: "flex", alignItems: "center", gap: 9,
-              padding: "9px 12px", borderRadius: 10, fontSize: 13,
+              padding: "9px 12px", borderRadius: 9, fontSize: 13,
               border: "none", cursor: "pointer", textAlign: "left", width: "100%",
-              background: nav === label ? `${C.accent}20` : "transparent",
-              color: nav === label ? "white" : "rgba(255,255,255,0.5)",
-              fontWeight: nav === label ? 600 : 400, transition: "all 0.15s",
-              position: "relative",
-            }}>
+              background: nav === label ? "rgba(255,255,255,0.12)" : "transparent",
+              color: nav === label ? "white" : "rgba(255,255,255,0.48)",
+              fontWeight: nav === label ? 600 : 400,
+              boxShadow: nav === label ? "inset 3px 0 0 rgba(255,255,255,0.55)" : "inset 3px 0 0 transparent",
+              transition: "background 0.15s, color 0.15s, box-shadow 0.15s",
+            }}
+            onMouseEnter={e => { if (nav !== label) { (e.currentTarget as HTMLButtonElement).style.background = "rgba(255,255,255,0.07)"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.75)"; } }}
+            onMouseLeave={e => { if (nav !== label) { (e.currentTarget as HTMLButtonElement).style.background = "transparent"; (e.currentTarget as HTMLButtonElement).style.color = "rgba(255,255,255,0.48)"; } }}
+            >
               {icon} {label}
               {badge ? (
                 <span style={{ marginLeft: "auto", background: C.red, color: "white", fontSize: 10, fontWeight: 700, padding: "1px 6px", borderRadius: 99 }}>
@@ -3815,7 +4236,7 @@ export default function Dashboard() {
 
       {/* ── Main ─────────────────────────────────────────────────────── */}
       <main style={{ flex: 1, minWidth: 0, height: "100vh", overflowY: "auto", overflowX: "hidden" }}>
-        <div style={{ maxWidth: 940, margin: "0 auto", padding: isMobile ? "16px 16px 100px" : "36px 28px", display: "flex", flexDirection: "column", gap: 18, minWidth: 0 }}>
+        <div style={{ maxWidth: 940, margin: "0 auto", padding: isMobile ? "16px 14px 110px" : "32px 28px", display: "flex", flexDirection: "column", gap: isMobile ? 14 : 18, minWidth: 0 }}>
 
           {/* Mobile Property Selector */}
           {isMobile && (
@@ -3860,24 +4281,24 @@ export default function Dashboard() {
           )}
 
           {/* Header */}
-          <div>
-            <h1 style={{ fontSize: 28, fontWeight: 700, color: C.text, letterSpacing: "-0.5px", margin: 0 }}>
-              {nav === "Vendors" ? "Repairs & Vendors"
+          <div style={{ paddingBottom: 6, borderBottom: `1px solid ${C.border}` }}>
+            <h1 style={{ fontSize: isMobile ? 22 : 26, fontWeight: 700, color: C.text, letterSpacing: "-0.4px", margin: 0, lineHeight: 1.2 }}>
+              {nav === "Vendors" ? "Vendors"
                : nav === "My Jobs" ? "My Jobs"
-               : nav === "Maintenance" ? "Maintenance Schedule"
-               : nav === "Repairs" ? "Repairs & Upcoming Costs"
+               : nav === "Maintenance" ? "Maintenance"
+               : nav === "Repairs" ? "Repairs"
                : nav === "Documents" ? "Documents"
                : nav === "Settings" ? "Settings"
-               : address && address !== "My Home" ? toTitleCase(address) : "Dashboard"}
+               : address && address !== "My Home" ? toTitleCase(address).split(",")[0] : "Dashboard"}
             </h1>
-            <p style={{ color: C.text3, fontSize: 14, marginTop: 3 }}>
-              {nav === "Vendors" ? "AI-powered contractor routing for your home"
+            <p style={{ color: C.text3, fontSize: 13, marginTop: 4, marginBottom: 0, lineHeight: 1.4 }}>
+              {nav === "Vendors" ? "Connect with vetted contractors for your property"
                : nav === "My Jobs" ? "Track all your contractor requests in real time"
-               : nav === "Maintenance" ? "Upcoming and recommended maintenance tasks"
-               : nav === "Repairs" ? "Upcoming repair costs and actionable next steps"
-               : nav === "Documents" ? "Receipts, warranties, and inspection reports"
-               : nav === "Settings" ? "Manage your account and property"
-               : "Home Dashboard"}
+               : nav === "Maintenance" ? "Proactive maintenance forecast and seasonal checklists"
+               : nav === "Repairs" ? "Active findings, repair status, and cost estimates"
+               : nav === "Documents" ? "Inspection reports, warranties, and insurance"
+               : nav === "Settings" ? "Account and property configuration"
+               : "Home Health Score and AI-powered insights"}
             </p>
           </div>
 
@@ -3918,23 +4339,22 @@ export default function Dashboard() {
             }
             const repGroups = [...repGroupMap.entries()].map(([gk, v]) => ({ gk, ...v }));
             const repStatusConfig: Record<FindingStatus, { label: string; color: string; bg: string }> = {
-              open:      { label: "Open",       color: C.red,    bg: C.redBg   },
-              completed: { label: "Completed",  color: C.green,  bg: C.greenBg },
-              monitored: { label: "Monitoring", color: C.accent, bg: "#eff6ff" },
-              not_sure:  { label: "Not Sure",   color: C.amber,  bg: C.amberBg },
-              dismissed: { label: "Dismissed",  color: C.text3,  bg: C.bg      },
+              repair_needed: { label: "Repair Needed", color: C.red,    bg: C.redBg   },
+              completed:     { label: "Completed",     color: C.green,  bg: C.greenBg },
+              monitored:     { label: "Monitoring",    color: C.accent, bg: "#eff6ff" },
+              not_needed:    { label: "Not Needed",    color: C.text3,  bg: C.bg      },
             };
             const repArchivedItems: Array<{ f: Finding; globalIdx: number; fk: string }> = [];
             allFindings.forEach((f, i) => {
               const fk = findingKey(f, i);
-              const s = findingStatuses[fk] ?? "open";
-              if (s === "completed") repArchivedItems.push({ f, globalIdx: i, fk });
+              const s = findingStatuses[fk] ?? "repair_needed";
+              if (s === "completed" || s === "not_needed") repArchivedItems.push({ f, globalIdx: i, fk });
             });
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
                   {/* Color key strip */}
-                  <div style={{ padding: "10px 16px", background: "#f8fafc", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
+                  <div style={{ padding: "10px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
                     {[
                       { color: C.red,    label: "High Impact" },
                       { color: C.amber,  label: "Medium Impact" },
@@ -3962,7 +4382,7 @@ export default function Dashboard() {
                     const meta = GROUP_META[gk] ?? GROUP_META.general;
                     const hasCritical = items.some(({ f }) => f.severity === "critical");
                     const hasWarning  = items.some(({ f }) => f.severity === "warning");
-                    const allResolved = items.every(({ f, globalIdx }) => { const s = findingStatuses[findingKey(f, globalIdx)] ?? "open"; return s === "completed" || s === "dismissed"; });
+                    const allResolved = items.every(({ f, globalIdx }) => { const s = findingStatuses[findingKey(f, globalIdx)] ?? "repair_needed"; return s === "completed" || s === "not_needed"; });
                     const worstColor = hasCritical ? C.red : hasWarning ? C.amber : allResolved ? C.green : C.text3;
                     const worstLabel = hasCritical ? "Critical" : hasWarning ? "Warning" : allResolved ? "Resolved" : "Good";
                     const worstBg    = hasCritical ? C.redBg   : hasWarning ? C.amberBg : allResolved ? C.greenBg : C.bg;
@@ -3983,13 +4403,13 @@ export default function Dashboard() {
                           <div style={{ transition: "transform 0.2s", transform: isGrpOpen ? "rotate(180deg)" : "rotate(0deg)" }}><ChevronDown size={14} color={C.text3}/></div>
                         </button>
                         {isGrpOpen && (
-                          <div style={{ padding: "0 16px 14px", background: "#fafbfc" }}>
+                          <div style={{ padding: "0 16px 14px", background: C.bg }}>
                             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                               {items.map(({ f, globalIdx }, fi) => {
                                 const fk = findingKey(f, globalIdx);
-                                const status = findingStatuses[fk] ?? "open";
+                                const status = findingStatuses[fk] ?? "repair_needed";
                                 const cfg = repStatusConfig[status];
-                                const isResolved = status === "completed" || status === "dismissed";
+                                const isResolved = status === "completed" || status === "not_needed";
                                 const impact = getScoreImpact(f.category, f.severity, f.description);
                                 const cardBorder = isResolved ? C.border : `${impact.color}40`;
                                 const cardBg = isResolved ? C.surface : impact.bg;
@@ -4028,7 +4448,7 @@ export default function Dashboard() {
                                       {/* Single impact indicator — active repairs only */}
                                       {!isResolved && impact.affects && (
                                         <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: impact.color + "14", color: impact.color }}>
-                                          {impact.label} · Affects Home Health Score
+                                          {impact.label} · {impact.reason}
                                         </span>
                                       )}
                                       {/* Completed state badge */}
@@ -4037,9 +4457,9 @@ export default function Dashboard() {
                                           ✓ Completed{impact.affects ? " · Score Updated" : ""}
                                         </span>
                                       )}
-                                      {isResolved && status === "dismissed" && (
+                                      {isResolved && status === "not_needed" && (
                                         <span style={{ fontSize: 11, fontWeight: 600, padding: "2px 10px", borderRadius: 20, background: C.bg, color: C.text3 }}>
-                                          Dismissed
+                                          Not Needed
                                         </span>
                                       )}
                                       {/* Action buttons — open repairs only */}
@@ -4047,10 +4467,9 @@ export default function Dashboard() {
                                         <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
                                           <select value={status} onChange={e => toggleFindingStatus(f, globalIdx, e.target.value as FindingStatus)}
                                             style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text2, cursor: "pointer", outline: "none" }}>
-                                            <option value="open">Open</option>
+                                            <option value="repair_needed">Repair Needed</option>
                                             <option value="monitored">Monitoring</option>
-                                            <option value="not_sure">Not Sure</option>
-                                            <option value="dismissed">Dismissed</option>
+                                            <option value="not_needed">Not Needed</option>
                                           </select>
                                           <button onClick={() => { setChatMessages([{ role: "user", content: f.description ?? f.category }]); askAI(f.description ?? f.category); setNav("Dashboard"); }}
                                             style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: "#eff6ff", border: `1px solid ${C.accent}30`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
@@ -4115,10 +4534,10 @@ export default function Dashboard() {
                                   ✓ Completed{meta?.was_scorable ? " · Score Updated" : ""}
                                 </span>
                                 {completedDate && (
-                                  <span style={{ fontSize: 11, color: C.text3 }}>📅 {completedDate}</span>
+                                  <span style={{ fontSize: 11, color: C.text3, display: "inline-flex", alignItems: "center", gap: 4 }}><Clock size={10}/> {completedDate}</span>
                                 )}
                                 {meta?.receipt_url && (
-                                  <span style={{ fontSize: 11, color: C.green }}>📎 Receipt attached</span>
+                                  <span style={{ fontSize: 11, color: C.green, display: "inline-flex", alignItems: "center", gap: 4 }}><CheckCircle2 size={10}/> Receipt attached</span>
                                 )}
                                 {meta?.notes && (
                                   <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic" }}>"{meta.notes.length > 60 ? meta.notes.slice(0, 60) + "…" : meta.notes}"</span>
@@ -4136,34 +4555,280 @@ export default function Dashboard() {
           })()}
 
           {/* ── Maintenance ───────────────────────────────────────────── */}
-          {nav === "Maintenance" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-              {[
-                { icon: <HomeIcon size={16} color={C.text3}/>, title: "Roof Inspection",       due: "Annual",         note: roofYear ? `Installed ${roofYear} · Check for wear` : "Upload inspection to track", status: "upcoming" },
-                { icon: <Wind size={16} color={C.text3}/>,     title: "HVAC Filter Change",    due: "Every 3 months", note: "Replace air filter — improves efficiency by up to 15%",                            status: "due" },
-                { icon: <Wrench size={16} color={C.text3}/>,   title: "Furnace Tune-up",       due: "Annual (Fall)",  note: "Schedule before heating season",                                                    status: "upcoming" },
-                { icon: <Droplets size={16} color={C.text3}/>, title: "Water Heater Flush",    due: "Annual",         note: "Removes sediment, extends life by 2–3 years",                                       status: "upcoming" },
-                { icon: <Eye size={16} color={C.text3}/>,      title: "Window Seal Check",     due: "Annual",         note: "Look for fogging or drafts between panes",                                          status: "upcoming" },
-                { icon: <Activity size={16} color={C.text3}/>, title: "Gutter Cleaning",       due: "Twice a year",   note: "Spring and Fall — prevents water damage",                                           status: "upcoming" },
-                { icon: <Bug size={16} color={C.text3}/>,      title: "Pest Inspection",       due: "Annual",         note: "Termite and pest prevention check",                                                  status: "upcoming" },
-                { icon: <Zap size={16} color={C.text3}/>,      title: "Smoke Detector Test",   due: "Every 6 months", note: "Test all detectors, replace batteries",                                              status: "due" },
-              ].map((item, i) => (
-                <div key={i} style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.border}`, padding: "14px 18px", display: "flex", alignItems: "center", gap: 14, boxShadow: "0 1px 4px rgba(15,31,61,0.05)" }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 9, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{item.icon}</div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontWeight: 700, fontSize: 14, color: C.text, margin: 0 }}>{item.title}</p>
-                    <p style={{ fontSize: 12, color: C.text3, margin: "3px 0 0" }}>{item.note}</p>
-                  </div>
-                  <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
-                    <span style={{ fontSize: 11, color: C.text3 }}>{item.due}</span>
-                    <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: item.status === "due" ? C.amberBg : C.greenBg, color: item.status === "due" ? C.amber : C.green }}>
-                      {item.status === "due" ? "Due Soon" : "Upcoming"}
-                    </span>
-                  </div>
+          {nav === "Maintenance" && (() => {
+            const predictions = homeHealthReport?.predictions ?? [];
+            const mo = new Date().getMonth(); // 0-11
+            const season: "winter" | "spring" | "summer" | "fall" =
+              mo <= 1 || mo === 11 ? "winter" : mo <= 4 ? "spring" : mo <= 7 ? "summer" : "fall";
+            const seasonLabel = season.charAt(0).toUpperCase() + season.slice(1);
+
+            // Urgency visual config
+            const UM: Record<string, { label: string; color: string; bg: string; border: string; dot: string }> = {
+              critical: { label: "Act Now",    color: "#ef4444", bg: "rgba(239,68,68,0.10)",  border: "rgba(239,68,68,0.25)",  dot: "#ef4444" },
+              high:     { label: "This Year",  color: "#f97316", bg: "rgba(249,115,22,0.10)", border: "rgba(249,115,22,0.25)", dot: "#f97316" },
+              medium:   { label: "1–3 Years",  color: "#f59e0b", bg: "rgba(245,158,11,0.09)", border: "rgba(245,158,11,0.25)", dot: "#f59e0b" },
+              low:      { label: "3–5 Years",  color: "#84cc16", bg: "rgba(132,204,22,0.09)", border: "rgba(132,204,22,0.2)",  dot: "#84cc16" },
+              monitor:  { label: "Good Shape", color: "#22c55e", bg: "rgba(34,197,94,0.09)",  border: "rgba(34,197,94,0.2)",   dot: "#22c55e" },
+            };
+
+            const sysIcon = (cat: string, clr: string) => {
+              if (cat.includes("roof"))       return <HomeIcon  size={15} color={clr}/>;
+              if (cat.includes("electrical")) return <Zap       size={15} color={clr}/>;
+              if (cat.includes("plumbing"))   return <Droplets  size={15} color={clr}/>;
+              if (cat.includes("hvac"))       return <Wind      size={15} color={clr}/>;
+              if (cat.includes("safety"))     return <Shield    size={15} color={clr}/>;
+              if (cat.includes("appliance"))  return <Wrench    size={15} color={clr}/>;
+              return <Activity size={15} color={clr}/>;
+            };
+
+            // 5-year cost outlook buckets
+            const urgentPreds  = predictions.filter(p => ["critical","high"].includes(p.urgency) && !p.not_assessed);
+            const medPreds     = predictions.filter(p => p.urgency === "medium" && !p.not_assessed);
+            const longPreds    = predictions.filter(p => ["low","monitor"].includes(p.urgency) && !p.not_assessed);
+            const avg          = (p: typeof predictions[0]) => (p.cost_range.estimated_cost_min + p.cost_range.estimated_cost_max) / 2;
+            const urgentTotal  = urgentPreds.reduce((s, p) => s + avg(p), 0);
+            const medTotal     = medPreds.reduce((s,   p) => s + avg(p), 0);
+            const longTotal    = longPreds.reduce((s,  p) => s + avg(p), 0);
+            const fiveYrTotal  = urgentTotal + medTotal + longTotal + (maintenanceBaseline * 5);
+            const fmt = (n: number) => n >= 1000 ? `$${(n/1000).toFixed(0)}k` : `$${Math.round(n).toLocaleString()}`;
+
+            // Seasonal checklist data
+            const SEASONAL: Record<string, Array<{ task: string; system: string; freq: string; icon: React.ReactNode }>> = {
+              winter: [
+                { task: "Check pipe insulation in unheated spaces",    system: "Plumbing",   freq: "Prevent freezing",        icon: <Droplets size={13} color={C.text3}/> },
+                { task: "Test heating system — replace filters",        system: "HVAC",       freq: "Before cold snap",        icon: <Wind size={13} color={C.text3}/> },
+                { task: "Inspect window & door weatherstripping",       system: "Envelope",   freq: "Energy savings",          icon: <Eye size={13} color={C.text3}/> },
+                { task: "Test smoke & CO detectors",                    system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
+                { task: "Check roof for ice dams after snowfall",       system: "Roof",       freq: "After heavy snow",        icon: <HomeIcon size={13} color={C.text3}/> },
+              ],
+              spring: [
+                { task: "Clean gutters & downspouts",                   system: "Roof",       freq: "After last frost",        icon: <HomeIcon size={13} color={C.text3}/> },
+                { task: "Schedule A/C tune-up before summer heat",      system: "HVAC",       freq: "Before heat season",      icon: <Wind size={13} color={C.text3}/> },
+                { task: "Inspect roof for winter damage",               system: "Roof",       freq: "Annual",                  icon: <HomeIcon size={13} color={C.text3}/> },
+                { task: "Check deck / patio for winter damage",         system: "Exterior",   freq: "Annual",                  icon: <Activity size={13} color={C.text3}/> },
+                { task: "Test all GFCI outlets",                        system: "Electrical", freq: "Annual",                  icon: <Zap size={13} color={C.text3}/> },
+                { task: "Inspect foundation for new cracks",            system: "Structure",  freq: "Annual",                  icon: <Activity size={13} color={C.text3}/> },
+              ],
+              summer: [
+                { task: "Replace HVAC filters",                         system: "HVAC",       freq: "Every 3 months",          icon: <Wind size={13} color={C.text3}/> },
+                { task: "Test smoke & CO detectors",                    system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
+                { task: "Inspect exterior caulking & paint",            system: "Exterior",   freq: "Annual",                  icon: <Eye size={13} color={C.text3}/> },
+                { task: "Schedule pest / termite inspection",           system: "Safety",     freq: "Annual",                  icon: <Bug size={13} color={C.text3}/> },
+                { task: "Flush water heater to clear sediment",         system: "Plumbing",   freq: "Annual — extends life 2–3 yrs", icon: <Droplets size={13} color={C.text3}/> },
+              ],
+              fall: [
+                { task: "Schedule furnace / boiler tune-up",            system: "HVAC",       freq: "Before heating season",   icon: <Wind size={13} color={C.text3}/> },
+                { task: "Clean gutters — leaves & debris",              system: "Roof",       freq: "Before first freeze",     icon: <HomeIcon size={13} color={C.text3}/> },
+                { task: "Drain outdoor hose bibbs & irrigation",        system: "Plumbing",   freq: "Before freeze",           icon: <Droplets size={13} color={C.text3}/> },
+                { task: "Inspect chimney & fireplace (if applicable)",  system: "Fireplace",  freq: "Before first use",        icon: <Activity size={13} color={C.text3}/> },
+                { task: "Test smoke & CO detectors",                    system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
+                { task: "Replace HVAC filters",                         system: "HVAC",       freq: "Before heating season",   icon: <Wind size={13} color={C.text3}/> },
+              ],
+            };
+            const seasonTasks = SEASONAL[season];
+
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+                {/* ── PROACTIVE HEADLINE CARD ──────────────────────────── */}
+                <div style={{
+                  background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accentDk} 70%, ${C.accent} 100%)`,
+                  borderRadius: 18, padding: isMobile ? "18px 18px" : "22px 28px",
+                  position: "relative", overflow: "hidden",
+                }}>
+                  <div style={{ position: "absolute", top: 0, right: 0, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,0.04)", transform: "translate(40px,-40px)", pointerEvents: "none" }}/>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>5-Year Maintenance Forecast</p>
+                  {predictions.length > 0 ? (
+                    <>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 34, fontWeight: 800, color: "white", letterSpacing: "-1px" }}>{fmt(fiveYrTotal)}</span>
+                        <span style={{ fontSize: 14, color: "rgba(255,255,255,0.5)" }}>estimated over 5 years</span>
+                      </div>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", margin: "0 0 16px", lineHeight: 1.5 }}>
+                        Knowing what&apos;s coming means you can plan, budget, and schedule on your terms — not in a panic after something breaks.
+                      </p>
+                      {/* Cost breakdown pills */}
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {urgentTotal > 0 && (
+                          <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(239,68,68,0.2)", color: "#fca5a5", border: "1px solid rgba(239,68,68,0.3)" }}>
+                            {fmt(urgentTotal)} urgent / this year
+                          </span>
+                        )}
+                        {medTotal > 0 && (
+                          <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(245,158,11,0.2)", color: "#fcd34d", border: "1px solid rgba(245,158,11,0.3)" }}>
+                            {fmt(medTotal)} in 1–3 years
+                          </span>
+                        )}
+                        <span style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                          {fmt(maintenanceBaseline * 5)} routine maintenance
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: 20, fontWeight: 800, color: "rgba(255,255,255,0.4)", margin: "0 0 8px" }}>No forecast yet</p>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: "0 0 14px", lineHeight: 1.5 }}>
+                        Upload an inspection report or complete a self-inspection to unlock your personalized 5-year maintenance forecast.
+                      </p>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button onClick={() => inspRef.current?.click()} style={{ padding: "8px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Upload size={13}/> Upload Inspection
+                        </button>
+                        <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ padding: "8px 14px", borderRadius: 10, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.8)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                          Self-Inspection
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
-              ))}
-            </div>
-          )}
+
+                {/* ── SYSTEM PREDICTION CARDS ──────────────────────────── */}
+                {predictions.length > 0 && (
+                  <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
+                    <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>System Forecast</p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>Prioritized by urgency · Based on inspection findings</p>
+                      </div>
+                      {urgentPreds.length > 0 && (
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: "rgba(239,68,68,0.12)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)" }}>
+                          {urgentPreds.length} need attention
+                        </span>
+                      )}
+                    </div>
+                    {predictions.map((pred, i) => {
+                      const um = UM[pred.urgency] ?? UM.monitor;
+                      const isUrgent = pred.urgency === "critical" || pred.urgency === "high";
+                      return (
+                        <div key={i} style={{
+                          display: "flex", alignItems: "center", gap: 12,
+                          padding: "13px 18px",
+                          borderBottom: i < predictions.length - 1 ? `1px solid ${C.border}` : "none",
+                          background: isUrgent ? `${um.bg}` : "transparent",
+                          transition: "background 0.15s",
+                        }}>
+                          {/* System icon */}
+                          <div style={{ width: 36, height: 36, borderRadius: 9, background: `${um.color}18`, border: `1px solid ${um.color}30`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {sysIcon(pred.category, um.color)}
+                          </div>
+                          {/* Label + driver */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
+                              <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0, whiteSpace: "nowrap" }}>{pred.system_label}</p>
+                              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: um.bg, color: um.color, border: `1px solid ${um.border}`, whiteSpace: "nowrap" }}>
+                                {um.label}
+                              </span>
+                            </div>
+                            <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                              {pred.not_assessed ? "Not yet assessed — self-inspect or upload report" : pred.driver}
+                            </p>
+                          </div>
+                          {/* Cost + action */}
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
+                            {!pred.not_assessed && (
+                              <span style={{ fontSize: 12, fontWeight: 700, color: isUrgent ? um.color : C.text2 }}>
+                                {pred.cost_range_formatted.replace(" (estimated)", "")}
+                              </span>
+                            )}
+                            {isUrgent ? (
+                              <button
+                                onClick={() => { handleFindVendors(pred.system_label, pred.driver); }}
+                                style={{ padding: "5px 12px", borderRadius: 8, background: um.color, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                Find Pro
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: 11, color: C.text3 }}>{pred.failure_window_label}</span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* ── 5-YEAR COST TIMELINE ─────────────────────────────── */}
+                {predictions.length > 0 && (
+                  <div style={{ ...card({ padding: "16px 18px" }) }}>
+                    <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: "0 0 12px" }}>Cost Timeline</p>
+                    {(() => {
+                      const buckets = [
+                        { label: "Now",        years: "Immediate",  amount: urgentTotal,                   color: "#ef4444" },
+                        { label: "1 yr",       years: "This year",  amount: urgentTotal * 0.5 + medTotal * 0.2 + maintenanceBaseline, color: "#f97316" },
+                        { label: "3 yrs",      years: "Years 1–3",  amount: medTotal * 0.6 + maintenanceBaseline * 2, color: "#f59e0b" },
+                        { label: "5 yrs",      years: "Years 3–5",  amount: longTotal * 0.4 + medTotal * 0.2 + maintenanceBaseline * 2, color: "#84cc16" },
+                      ];
+                      const max = Math.max(...buckets.map(b => b.amount), 1);
+                      return (
+                        <div style={{ display: "flex", gap: isMobile ? 8 : 14, alignItems: "flex-end", height: 80 }}>
+                          {buckets.map((b, i) => (
+                            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%" }}>
+                              <p style={{ fontSize: 10, fontWeight: 700, color: b.amount > 0 ? b.color : C.text3, margin: 0 }}>{b.amount > 0 ? fmt(b.amount) : "—"}</p>
+                              <div style={{ flex: 1, width: "100%", display: "flex", alignItems: "flex-end" }}>
+                                <div style={{ width: "100%", height: `${Math.max(8, (b.amount / max) * 52)}px`, borderRadius: "4px 4px 0 0", background: b.amount > 0 ? b.color : C.border, opacity: b.amount > 0 ? 1 : 0.4, transition: "height 0.4s ease" }}/>
+                              </div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: C.text2, margin: 0 }}>{b.label}</p>
+                              <p style={{ fontSize: 9, color: C.text3, margin: 0 }}>{b.years}</p>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )}
+
+                {/* ── SEASONAL CHECKLIST ───────────────────────────────── */}
+                <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
+                  <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 16 }}>{season === "spring" ? "🌱" : season === "summer" ? "☀️" : season === "fall" ? "🍂" : "❄️"}</span>
+                    <div>
+                      <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>{seasonLabel} Maintenance Checklist</p>
+                      <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>Proactive tasks for this season</p>
+                    </div>
+                  </div>
+                  {seasonTasks.map((item, i) => (
+                    <div key={i} style={{
+                      display: "flex", alignItems: "center", gap: 12, padding: "12px 18px",
+                      borderBottom: i < seasonTasks.length - 1 ? `1px solid ${C.border}` : "none",
+                    }}>
+                      <div style={{ width: 28, height: 28, borderRadius: 7, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{item.icon}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: 0 }}>{item.task}</p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>{item.system} · {item.freq}</p>
+                      </div>
+                      <button
+                        onClick={() => handleFindVendors(item.system, item.task)}
+                        style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                        Find Pro
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* ── STAY AHEAD CTA ───────────────────────────────────── */}
+                <div style={{ borderRadius: 14, padding: "16px 18px", background: C.accentBg, border: `1px solid ${C.accent}22`, display: "flex", alignItems: "center", gap: 14 }}>
+                  <div style={{ width: 40, height: 40, borderRadius: 12, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                    <TrendingUp size={18} color="white"/>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>Stay ahead with a professional inspection</p>
+                    <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.4 }}>
+                      A certified BTLR inspector gives you a verified, bank-grade report — and locks in the Professionally Verified badge for your score.
+                    </p>
+                  </div>
+                  {userTier === "pro" ? (
+                    <button onClick={() => setNav("Vendors")} style={{ padding: "8px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
+                      Find Inspector
+                    </button>
+                  ) : (
+                    <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ padding: "8px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
+                      Self-Inspect
+                    </button>
+                  )}
+                </div>
+
+              </div>
+            );
+          })()}
 
           {/* ── Documents ─────────────────────────────────────────────── */}
           {nav === "Documents" && (() => {
@@ -4261,7 +4926,7 @@ export default function Dashboard() {
 
                       {/* Expanded content */}
                       {isOpen && (
-                        <div style={{ padding: "16px 18px 20px", background: "#fafbfc", borderTop: `1px solid ${C.border}` }}>
+                        <div style={{ padding: "16px 18px 20px", background: C.bg, borderTop: `1px solid ${C.border}` }}>
 
                           {/* ── Inspection Report content ── */}
                           {sec.id === "inspection" && (<>
@@ -4299,13 +4964,37 @@ export default function Dashboard() {
                                 </label>
                               </div>
                             ) : (
-                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${inspecting ? C.accent : C.border}`, background: inspecting ? "#eff6ff" : "#fafbfc" }}>
-                                {inspecting
-                                  ? <><Loader2 size={20} color={C.accent} className="animate-spin"/><span style={{ fontSize: 14, color: C.accent }}>Analyzing report…</span></>
-                                  : <><FileText size={20} color={C.text3}/><span style={{ fontSize: 14, color: C.text }}>Upload inspection report PDF</span><span style={{ fontSize: 12, color: C.text3 }}>BTLR will extract all findings and score your home</span></>
-                                }
-                                <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
-                              </label>
+                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                                {inspecting ? (
+                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, border: `2px dashed ${C.accent}`, background: "#eff6ff" }}>
+                                    <Loader2 size={20} color={C.accent} className="animate-spin"/>
+                                    <span style={{ fontSize: 14, color: C.accent }}>Analyzing report…</span>
+                                  </div>
+                                ) : photoAnalyzing ? (
+                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, border: `2px dashed ${C.accent}`, background: "#eff6ff" }}>
+                                    <Loader2 size={20} color={C.accent} className="animate-spin"/>
+                                    <span style={{ fontSize: 14, color: C.accent }}>Analyzing photos…</span>
+                                  </div>
+                                ) : (
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                                    <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "18px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${C.border}`, background: C.bg }}>
+                                      <FileText size={20} color={C.text3}/>
+                                      <span style={{ fontSize: 14, color: C.text }}>Upload inspection report PDF</span>
+                                      <span style={{ fontSize: 12, color: C.text3 }}>BTLR extracts all findings and scores your home</span>
+                                      <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
+                                    </label>
+                                    <div style={{ display: "flex", gap: 8 }}>
+                                      <button onClick={() => photoRef.current?.click()} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                                        <Camera size={14}/> Take or Upload Photos
+                                      </button>
+                                      <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                                        <CheckCircle2 size={14}/> Self-Inspection
+                                      </button>
+                                    </div>
+                                    {photoErr && <p style={{ fontSize: 12, color: C.red, margin: 0 }}>{photoErr}</p>}
+                                  </div>
+                                )}
+                              </div>
                             )}
                           </>)}
 
@@ -4315,7 +5004,7 @@ export default function Dashboard() {
                               Upload your home warranty or maintenance policy. BTLR will extract your coverage, exclusions, service fee, and claim contact info.
                             </p>
                             {!warranty ? (
-                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingWarranty ? "#7c3aed" : "#e9d5ff"}`, background: parsingWarranty ? "#faf5ff" : "#faf5ff" }}>
+                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingWarranty ? "#7c3aed" : C.border}`, background: parsingWarranty ? "#faf5ff" : C.bg }}>
                                 {parsingWarranty
                                   ? <><Loader2 size={20} color="#7c3aed" className="animate-spin"/><span style={{ fontSize: 14, color: "#7c3aed" }}>Parsing warranty document…</span></>
                                   : <><Shield size={20} color="#7c3aed"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
@@ -4341,18 +5030,18 @@ export default function Dashboard() {
                                 </div>
                                 {(warranty.claimUrl || warranty.claimPhone || warranty.claimEmail) && (
                                   <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px" }}>
-                                    <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>📋 File a Claim</p>
+                                    <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><Send size={11}/> File a Claim</p>
                                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                       {warranty.claimUrl && <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
                                       {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>📞 {warranty.claimPhone}</a>}
                                       {warranty.claimEmail && <a href={`mailto:${warranty.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>✉️ Email Claims</a>}
                                     </div>
-                                    {warranty.responseTime && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>⏱ Typical response: {warranty.responseTime}</p>}
+                                    {warranty.responseTime && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>Typical response: {warranty.responseTime}</p>}
                                   </div>
                                 )}
                                 {(warranty.coverageItems?.length ?? 0) > 0 && (
                                   <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({warranty.coverageItems!.length})</p>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered ({warranty.coverageItems!.length})</p>
                                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                                       {warranty.coverageItems!.map((item, i) => <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>)}
                                     </div>
@@ -4360,7 +5049,7 @@ export default function Dashboard() {
                                 )}
                                 {(warranty.exclusions?.length ?? 0) > 0 && (
                                   <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({warranty.exclusions!.length})</p>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Excluded ({warranty.exclusions!.length})</p>
                                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                                       {warranty.exclusions!.map((item, i) => <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>)}
                                     </div>
@@ -4368,7 +5057,7 @@ export default function Dashboard() {
                                 )}
                                 {warranty.coverageLimits && Object.keys(warranty.coverageLimits).length > 0 && (
                                   <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>💰 Per-System Limits</p>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Coverage Limits</p>
                                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                                       {Object.entries(warranty.coverageLimits).map(([sys, limit]) => <span key={sys} style={{ fontSize: 12, background: C.amberBg, border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "3px 9px", color: C.amber }}>{sys}: ${(limit as number).toLocaleString()}</span>)}
                                     </div>
@@ -4384,7 +5073,7 @@ export default function Dashboard() {
                               Upload your homeowners insurance declarations page. BTLR will extract coverage amounts, deductibles, exclusions, and claim contact info.
                             </p>
                             {!insurance ? (
-                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingInsurance ? "#0891b2" : "#bae6fd"}`, background: "#f0f9ff" }}>
+                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingInsurance ? "#0891b2" : C.border}`, background: parsingInsurance ? "#f0f9ff" : C.bg }}>
                                 {parsingInsurance
                                   ? <><Loader2 size={20} color="#0891b2" className="animate-spin"/><span style={{ fontSize: 14, color: "#0891b2" }}>Parsing insurance documents…</span></>
                                   : <><Shield size={20} color="#0891b2"/><span style={{ fontSize: 14, color: C.text }}>Upload homeowners insurance policy or dec page</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text — select multiple files at once</span></>
@@ -4425,18 +5114,18 @@ export default function Dashboard() {
                                 )}
                                 {(insurance.claimUrl || insurance.claimPhone || insurance.claimEmail) && (
                                   <div style={{ background: "#e0f2fe", border: "1px solid #bae6fd", borderRadius: 10, padding: "12px 16px" }}>
-                                    <p style={{ fontSize: 12, fontWeight: 700, color: "#0891b2", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}>📋 File a Claim</p>
+                                    <p style={{ fontSize: 12, fontWeight: 700, color: "#0891b2", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><Send size={11}/> File a Claim</p>
                                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                       {insurance.claimUrl   && <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
                                       {insurance.claimPhone && <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>📞 {insurance.claimPhone}</a>}
                                       {insurance.claimEmail && <a href={`mailto:${insurance.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>✉️ Email Claims</a>}
                                     </div>
-                                    {insurance.claimHours && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>⏱ {insurance.claimHours}</p>}
+                                    {insurance.claimHours && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>{insurance.claimHours}</p>}
                                   </div>
                                 )}
                                 {(insurance.coverageItems?.length ?? 0) > 0 && (
                                   <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({insurance.coverageItems!.length})</p>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered ({insurance.coverageItems!.length})</p>
                                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                                       {insurance.coverageItems!.map((item, i) => <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>)}
                                     </div>
@@ -4444,7 +5133,7 @@ export default function Dashboard() {
                                 )}
                                 {(insurance.endorsements?.length ?? 0) > 0 && (
                                   <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>➕ Endorsements ({insurance.endorsements!.length})</p>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Endorsements ({insurance.endorsements!.length})</p>
                                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                                       {insurance.endorsements!.map((item, i) => <span key={i} style={{ fontSize: 12, background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 6, padding: "3px 9px", color: "#0369a1" }}>{item}</span>)}
                                     </div>
@@ -4452,7 +5141,7 @@ export default function Dashboard() {
                                 )}
                                 {(insurance.exclusions?.length ?? 0) > 0 && (
                                   <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({insurance.exclusions!.length})</p>
+                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Excluded ({insurance.exclusions!.length})</p>
                                     <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
                                       {insurance.exclusions!.map((item, i) => <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>)}
                                     </div>
@@ -4499,7 +5188,7 @@ export default function Dashboard() {
                           {/* ── Other Documents content ── */}
                           {sec.id === "other" && (<>
                             <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>Warranties, permits, HOA docs, and other property files.</p>
-                            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${docLoading ? C.accent : C.border}`, background: docLoading ? "#eff6ff" : "#fafbfc" }}>
+                            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${docLoading ? C.accent : C.border}`, background: docLoading ? C.accentBg : C.bg }}>
                               {docLoading ? <><Loader2 size={20} color={C.accent} className="animate-spin"/><span style={{ fontSize: 14, color: C.accent }}>Uploading…</span></> : <><CloudUpload size={20} color={C.text3}/><span style={{ fontSize: 14, color: C.text }}>Click to upload file</span></>}
                               <input ref={docRef} type="file" style={{ display: "none" }} onChange={uploadDoc} disabled={docLoading}/>
                             </label>
@@ -4590,19 +5279,24 @@ export default function Dashboard() {
               <div
                 onClick={() => setShowHealthModal(true)}
                 style={{
-                  background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accentDk} 65%, ${C.accent} 100%)`,
-                  borderRadius: 20, padding: isMobile ? "20px 18px" : "28px 32px", cursor: "pointer",
-                  transition: "all 0.15s", position: "relative", overflow: "hidden",
-                  boxShadow: `0 4px 20px ${C.navy}1F`,
+                  background: `linear-gradient(145deg, ${C.navy} 0%, #1e3a5c 45%, ${C.accentDk} 80%, ${C.accent} 100%)`,
+                  borderRadius: 20, padding: isMobile ? "22px 18px" : "30px 32px", cursor: "pointer",
+                  transition: "all 0.18s", position: "relative", overflow: "hidden",
+                  boxShadow: `0 6px 28px ${C.navy}40, 0 1px 0 rgba(255,255,255,0.06) inset`,
                 }}
-                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 10px 36px rgba(15,31,61,0.22)"; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = "0 4px 20px rgba(15,31,61,0.12)"; }}
+                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 14px 44px ${C.navy}55, 0 1px 0 rgba(255,255,255,0.06) inset`; }}
+                onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 6px 28px ${C.navy}40, 0 1px 0 rgba(255,255,255,0.06) inset`; }}
               >
-                {/* radial glow behind ring */}
-                <div style={{ position: "absolute", top: 0, left: 0, right: 0, bottom: 0, background: `radial-gradient(circle at 12% 50%, ${healthColor}20 0%, transparent 55%)`, pointerEvents: "none" }}/>
-                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 16 : 28, position: "relative" }}>
-                  {/* Score Ring */}
-                  <ScoreRing score={health} color={healthColor} size={isMobile ? 100 : 134} />
+                {/* Ambient glow orb — health color radiates from behind the ring */}
+                <div style={{ position: "absolute", top: "50%", left: isMobile ? "50%" : "calc(32px + 80px)", transform: "translate(-50%, -50%)", width: isMobile ? 220 : 280, height: isMobile ? 220 : 280, borderRadius: "50%", background: `radial-gradient(circle, ${healthColor}30 0%, ${healthColor}10 40%, transparent 70%)`, pointerEvents: "none", filter: "blur(2px)" }}/>
+                {/* Decorative halo rings */}
+                <div style={{ position: "absolute", top: "50%", left: isMobile ? "50%" : "calc(32px + 80px)", transform: "translate(-50%, -50%)", width: isMobile ? 170 : 210, height: isMobile ? 170 : 210, borderRadius: "50%", border: `1px solid ${healthColor}18`, pointerEvents: "none" }}/>
+                <div style={{ position: "absolute", top: "50%", left: isMobile ? "50%" : "calc(32px + 80px)", transform: "translate(-50%, -50%)", width: isMobile ? 200 : 250, height: isMobile ? 200 : 250, borderRadius: "50%", border: `1px solid ${healthColor}0d`, pointerEvents: "none" }}/>
+                {/* Top-right subtle corner shimmer */}
+                <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%)", pointerEvents: "none" }}/>
+                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 18 : 28, position: "relative" }}>
+                  {/* Score Ring — larger and more prominent */}
+                  <ScoreRing score={health} color={healthColor} size={isMobile ? 130 : 160} />
                   {/* Main content */}
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>Home Health Score</p>
@@ -4631,6 +5325,25 @@ export default function Dashboard() {
                         <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20,
                           background: "rgba(239,68,68,0.15)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}>
                           {criticalCount} Critical Finding{criticalCount !== 1 ? "s" : ""}
+                        </span>
+                      )}
+                      {/* Extended Condition (Tier 2) label — shown when supplemental data exists */}
+                      {extCondition.label && (() => {
+                        const mod = extCondition.modifier;
+                        const clr = mod >= 4 ? "#22c55e" : mod > 0 ? "#84cc16" : mod < 0 ? "#ef4444" : "#94a3b8";
+                        const bg  = mod >= 4 ? "rgba(34,197,94,0.15)" : mod > 0 ? "rgba(132,204,22,0.15)" : mod < 0 ? "rgba(239,68,68,0.15)" : "rgba(148,163,184,0.15)";
+                        return (
+                          <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: bg, color: clr, border: `1px solid ${clr}50`, whiteSpace: "nowrap" }}>
+                            Condition · {extCondition.label}
+                          </span>
+                        );
+                      })()}
+                      {/* Professionally Verified badge — PRO + professional inspection + Fresh or Current decay */}
+                      {userTier === "pro" && inspectionSource === "professional" &&
+                       (homeHealthReport?.decay?.label === "Fresh" || homeHealthReport?.decay?.label === "Current") && (
+                        <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 20, display: "inline-flex", alignItems: "center", gap: 5,
+                          background: "rgba(34,197,94,0.18)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.35)", whiteSpace: "nowrap" }}>
+                          <Shield size={11}/> Professionally Verified
                         </span>
                       )}
                     </div>
@@ -4719,11 +5432,19 @@ export default function Dashboard() {
                   ) : (
                     <>
                       <p style={{ fontSize: 28, fontWeight: 800, color: "rgba(255,255,255,0.3)", margin: "0 0 8px" }}>Not yet calculated</p>
-                      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", margin: "0 0 16px" }}>Upload an inspection report or enter your roof & HVAC years to get your score.</p>
-                      <div style={{ display: "flex", gap: 10 }}>
+                      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.4)", margin: "0 0 16px" }}>Upload an inspection report, take photos, or enter your roof & HVAC years to get your score.</p>
+                      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                         <button onClick={() => inspRef.current?.click()}
                           style={{ padding: "9px 18px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
                           <Upload size={13}/> Upload Inspection
+                        </button>
+                        <button onClick={() => photoRef.current?.click()} disabled={photoAnalyzing}
+                          style={{ padding: "9px 16px", borderRadius: 10, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.85)", fontSize: 13, fontWeight: 600, cursor: photoAnalyzing ? "not-allowed" : "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                          {photoAnalyzing ? <><Loader2 size={13} className="animate-spin"/> Analyzing…</> : <><Camera size={13}/> Take / Upload Photos</>}
+                        </button>
+                        <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }}
+                          style={{ padding: "9px 14px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                          Self-Inspection
                         </button>
                         <button onClick={() => setNav("Settings")}
                           style={{ padding: "9px 14px", borderRadius: 10, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,255,255,0.6)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
@@ -4736,15 +5457,46 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Hidden file input for inspection upload — always in DOM so inspRef works */}
-            <input ref={inspRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
+            {/* Hidden inputs — inspection upload + photo capture */}
+            <input ref={inspRef}  type="file" accept=".pdf,.txt"   style={{ display: "none" }} onChange={uploadInspection}    disabled={inspecting}/>
+            <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoCapture} disabled={photoAnalyzing}/>
+
+            {/* ── Renewal prompt banner — shown when inspection data is aging/stale/expired ── */}
+            {inspectDone && homeHealthReport?.decay?.label && ["Aging", "Stale", "Expired"].includes(homeHealthReport.decay.label) && (
+              <div style={{ borderRadius: 14, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
+                background: userTier === "pro" ? "rgba(44,95,138,0.08)" : "rgba(234,179,8,0.10)",
+                border: `1px solid ${userTier === "pro" ? "rgba(44,95,138,0.2)" : "rgba(234,179,8,0.3)"}` }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+                  <Clock size={16} color={userTier === "pro" ? C.accent : C.amber}/>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: userTier === "pro" ? C.accent : C.amber, margin: "0 0 1px" }}>
+                      {userTier === "pro" ? "Time for your annual professional inspection" : "Update your home's health score"}
+                    </p>
+                    <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>
+                      {userTier === "pro"
+                        ? `Last inspection is ${homeHealthReport.decay.label.toLowerCase()} — schedule with a certified BTLR inspector to stay verified`
+                        : `Last assessment is ${homeHealthReport.decay.label.toLowerCase()} — answer a quick 7-step check-in to refresh your score`}
+                    </p>
+                  </div>
+                </div>
+                {userTier === "pro" ? (
+                  <button onClick={() => setNav("Vendors")} style={{ padding: "8px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                    Find an Inspector
+                  </button>
+                ) : (
+                  <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ padding: "8px 16px", borderRadius: 10, background: C.amber, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                    Start Check-In
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Street View — directly under home score */}
             <HousePhoto address={toTitleCase(address)} height={isMobile ? 140 : 200} />
 
 
             {/* ── AI BUTLER ─────────────────────────────────────────── */}
-            <div style={{ ...card(), background: "linear-gradient(160deg, #f8faff 0%, #eef2ff 100%)", border: `1.5px solid ${C.accent}22`, padding: 0, overflow: "hidden" }}>
+            <div style={{ ...card(), background: C.surface, border: `1px solid ${C.border}`, padding: 0, overflow: "hidden" }}>
 
               {/* ── Header ── */}
               <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "15px 18px 13px" }}>
@@ -5303,7 +6055,7 @@ export default function Dashboard() {
                           </a>
                         )}
                         {insurance.claimHours && (
-                          <span style={{ fontSize: 12, color: "#0891b2", alignSelf: "center" }}>⏱ {insurance.claimHours}</span>
+                          <span style={{ fontSize: 12, color: "#0891b2", alignSelf: "center" }}>{insurance.claimHours}</span>
                         )}
                       </div>
                     )}
@@ -5348,7 +6100,7 @@ export default function Dashboard() {
                     {/* What's Covered */}
                     {(insurance.coverageItems?.length ?? 0) > 0 && (
                       <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: "#15803d", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered ({insurance.coverageItems!.length})</p>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: "#15803d", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered ({insurance.coverageItems!.length})</p>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                           {insurance.coverageItems!.map((item, i) => (
                             <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
@@ -5360,7 +6112,7 @@ export default function Dashboard() {
                     {/* Endorsements */}
                     {(insurance.endorsements?.length ?? 0) > 0 && (
                       <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>➕ Endorsements / Riders ({insurance.endorsements!.length})</p>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Endorsements / Riders ({insurance.endorsements!.length})</p>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                           {insurance.endorsements!.map((item, i) => (
                             <span key={i} style={{ fontSize: 12, background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 6, padding: "3px 9px", color: "#0369a1" }}>{item}</span>
@@ -5372,7 +6124,7 @@ export default function Dashboard() {
                     {/* Exclusions */}
                     {(insurance.exclusions?.length ?? 0) > 0 && (
                       <div>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered ({insurance.exclusions!.length})</p>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Excluded ({insurance.exclusions!.length})</p>
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                           {insurance.exclusions!.map((item, i) => (
                             <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>
@@ -5384,7 +6136,7 @@ export default function Dashboard() {
                     {/* Agent */}
                     {(insurance.agentName || insurance.agentPhone || insurance.agentEmail) && (
                       <div style={{ borderTop: "1px solid #bae6fd", paddingTop: 12 }}>
-                        <p style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>🧑‍💼 Your Agent</p>
+                        <p style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Your Agent</p>
                         {insurance.agentName  && <p style={{ fontSize: 13, color: C.text, margin: "0 0 2px" }}>{insurance.agentName}</p>}
                         {insurance.agentPhone && <a href={`tel:${insurance.agentPhone.replace(/\D/g, "")}`} style={{ fontSize: 13, color: "#0891b2", display: "block", textDecoration: "none", margin: "0 0 2px" }}>📞 {insurance.agentPhone}</a>}
                         {insurance.agentEmail && <a href={`mailto:${insurance.agentEmail}`} style={{ fontSize: 13, color: "#0891b2", display: "block", textDecoration: "none" }}>✉️ {insurance.agentEmail}</a>}
@@ -5485,7 +6237,7 @@ export default function Dashboard() {
                   {/* Key info row */}
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                     {warranty.serviceFee     && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}><strong>${warranty.serviceFee}</strong> service fee/claim</span>}
-                    {warranty.responseTime   && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>⏱ {warranty.responseTime} response</span>}
+                    {warranty.responseTime   && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>{warranty.responseTime} response</span>}
                     {warranty.maxAnnualBenefit && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>Max ${warranty.maxAnnualBenefit?.toLocaleString()}/yr</span>}
                     {warranty.paymentAmount  && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>${warranty.paymentAmount}/{warranty.paymentFrequency ?? "mo"}</span>}
                   </div>
@@ -5493,7 +6245,7 @@ export default function Dashboard() {
                   {/* Coverage */}
                   {(warranty.coverageItems?.length ?? 0) > 0 && (
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>✅ What&apos;s Covered</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered</p>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {warranty.coverageItems!.map((item, i) => (
                           <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
@@ -5505,7 +6257,7 @@ export default function Dashboard() {
                   {/* Exclusions */}
                   {(warranty.exclusions?.length ?? 0) > 0 && (
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>❌ Not Covered</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Excluded</p>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {warranty.exclusions!.map((item, i) => (
                           <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>
@@ -5517,7 +6269,7 @@ export default function Dashboard() {
                   {/* Coverage limits */}
                   {warranty.coverageLimits && Object.keys(warranty.coverageLimits).length > 0 && (
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: C.amber, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>💰 Coverage Limits</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: C.amber, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Coverage Limits</p>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {Object.entries(warranty.coverageLimits).map(([sys, limit]) => (
                           <span key={sys} style={{ fontSize: 12, background: C.amberBg, border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "3px 9px", color: C.amber }}>{sys}: ${(limit as number).toLocaleString()}</span>
@@ -5534,7 +6286,7 @@ export default function Dashboard() {
             <div style={{ ...card({ padding: 0, overflow: "hidden" }), border: `1px solid ${C.border}` }}>
 
               {/* Dark header strip */}
-              <div style={{ background: `linear-gradient(135deg, #1a3a2a 0%, #2D6A4F 100%)`, padding: "20px 24px" }}>
+              <div style={{ background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accentDk} 80%, ${C.accent} 100%)`, padding: "20px 24px" }}>
                 <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Projected 12-Month Costs</p>
                 <p style={{ fontSize: 32, fontWeight: 800, color: "white", margin: "4px 0 2px", letterSpacing: "-0.02em" }}>
                   ~${repairFundNeeded.toLocaleString()}
@@ -6120,13 +6872,16 @@ export default function Dashboard() {
           position: "fixed", bottom: 0, left: 0, right: 0, zIndex: 200,
           background: C.navy, borderTop: "1px solid rgba(255,255,255,0.1)",
           display: "flex", paddingBottom: "env(safe-area-inset-bottom)",
+          boxShadow: "0 -4px 20px rgba(15,31,61,0.3)",
         }}>
           {navItems.map(({ label, icon, badge }) => (
             <button key={label} onClick={() => setNav(label)} style={{
               flex: 1, display: "flex", flexDirection: "column", alignItems: "center",
               gap: 3, padding: "10px 4px 8px", border: "none", cursor: "pointer",
-              background: "transparent", color: nav === label ? "white" : "rgba(255,255,255,0.4)",
+              background: "transparent",
+              color: nav === label ? "white" : "rgba(255,255,255,0.38)",
               fontSize: 10, fontWeight: nav === label ? 700 : 400, position: "relative",
+              borderTop: nav === label ? `2px solid ${C.accentLt}` : "2px solid transparent",
             }}>
               {icon}
               <span>{label}</span>

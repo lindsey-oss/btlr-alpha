@@ -4,23 +4,81 @@
  *
  * Deterministic, weighted, multi-dimensional scoring for residential properties.
  * Same inputs → same outputs, every time.
+ *
+ * CORE SCORE WEIGHTS (source of truth — do not change without explicit approval):
+ *   Structure 25% | Roof/Envelope 20% | Electrical 15% | Plumbing 15% | HVAC 15% | Appliances 10%
+ *   Roof/Envelope is excluded (not penalized) for condos — remaining weights redistribute proportionally.
+ *   Safety is a HARD MODIFIER applied on top of the weighted score, not a weighted category.
+ *
+ * Phase 3 features (gated by feature flags):
+ *   enableDecay              — applies time-based score adjustment as inspection ages
+ *   enableConfidenceWeighting — confidence-weighted category averages instead of equal-weight
  */
 
+import { isEnabled } from "./feature-flags";
+import { computeDecay, type DecayResult } from "./scoring-decay";
+import { computePredictions, type SystemPrediction } from "./scoring-predictions";
+import { computeRecommendations, type Recommendation } from "./scoring-recommendations";
+
 // ─────────────────────────────────────────────────────────────────
-// MASTER CATEGORY WEIGHTS
+// CORE CATEGORY WEIGHTS — 6 universal systems
+// Source of truth confirmed 2026-04-26.
 // ─────────────────────────────────────────────────────────────────
 export const CATEGORY_WEIGHTS: Record<string, number> = {
-  structure_foundation:     0.18,
-  roof_drainage_exterior:   0.16,
-  plumbing:                 0.11,
-  electrical:               0.11,
-  hvac:                     0.10,
-  interior_windows_doors:   0.08,
-  appliances_water_heater:  0.07,
-  safety_environmental:     0.10,
-  site_grading_drainage:    0.05,
-  maintenance_upkeep:       0.04,
+  structure_foundation:    0.25,
+  roof_drainage_exterior:  0.20,   // excluded for condos — see getWeightsForPropertyType()
+  electrical:              0.15,
+  plumbing:                0.15,
+  hvac:                    0.15,
+  appliances_water_heater: 0.10,
 };
+
+// Condo weights — roof excluded, remaining 80% redistributed proportionally
+const CONDO_CATEGORY_WEIGHTS: Record<string, number> = {
+  structure_foundation:    0.3125,  // 25/80
+  electrical:              0.1875,  // 15/80
+  plumbing:                0.1875,
+  hvac:                    0.1875,
+  appliances_water_heater: 0.1250,  // 10/80
+};
+
+/**
+ * Returns the correct weight map for the given property type.
+ * Condos exclude roof/envelope — it doesn't exist in their calculation, not penalized.
+ */
+export function getWeightsForPropertyType(propertyType?: string | null): Record<string, number> {
+  const t = (propertyType || "").toLowerCase();
+  if (t === "condo" || t === "condominium") return CONDO_CATEGORY_WEIGHTS;
+  return CATEGORY_WEIGHTS; // SFR, townhouse, multi-family, unknown — all include roof
+}
+
+// ─────────────────────────────────────────────────────────────────
+// SAFETY HARD MODIFIER
+// Applied ON TOP of the weighted score after calculation.
+// Safety is not a weighted category — it is a trip wire.
+// ─────────────────────────────────────────────────────────────────
+const SAFETY_MODIFIER_PENALTIES: Record<string, number> = {
+  critical: 15,  // missing CO detector, active electrical hazard, structural collapse risk
+  high:     10,  // serious safety concern
+  medium:    5,  // moderate safety concern
+  low:       2,  // minor safety note
+};
+
+/**
+ * Computes the safety hard modifier from all items.
+ * Returns a negative number (penalty) to subtract from the weighted score.
+ * Capped at -20 so a report full of minor safety notes doesn't zero out an otherwise good score.
+ */
+function computeSafetyModifier(items: NormalizedItem[]): number {
+  const safetyItems = items.filter(i =>
+    i.safety_impact !== "none" && i.safety_impact !== "unknown"
+  );
+  if (!safetyItems.length) return 0;
+  const raw = safetyItems.reduce((sum, i) => {
+    return sum + (SAFETY_MODIFIER_PENALTIES[i.safety_impact] ?? 0);
+  }, 0);
+  return -Math.min(20, raw); // cap at -20
+}
 
 // ─────────────────────────────────────────────────────────────────
 // CONDITION MAP
@@ -150,6 +208,8 @@ export interface CategoryScore {
   status: string;
   top_findings: string[];
   limited_data: boolean;
+  not_assessed: boolean;   // true = no data exists, excluded from score (not penalized)
+  weight: number;          // the weight this category contributes to the Core Score (0 if not_assessed)
 }
 
 export interface PriorityAction {
@@ -175,6 +235,12 @@ export interface HomeHealthReport {
   data_gaps: string[];
   recent_improvements: string[];
   summary_for_user: string;
+  /** Decay metadata — always present when inspectionDate is provided, null otherwise */
+  decay: DecayResult | null;
+  /** Phase 4: per-system failure windows and cost ranges. Null when enablePredictions is off. */
+  predictions: SystemPrediction[] | null;
+  /** Phase 4: bundled, prioritized action recommendations. Null when enableRecommendations is off. */
+  recommendations: Recommendation[] | null;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -193,21 +259,38 @@ function computeItemScore(item: NormalizedItem): number {
 }
 
 // ─────────────────────────────────────────────────────────────────
-// CATEGORY SCORE WITH CONFIDENCE BLENDING
-// Neutral baseline is 72 — a home with unknown data shouldn't look
-// excellent or terrible, just uncertain.
+// CATEGORY SCORE
+// Returns null when a category has no data — caller treats this as
+// "Not Assessed" and excludes it from the weighted calculation.
+// No blending toward a neutral baseline — scores are earned, not assumed.
+// A perfect score of 100 is achievable when all systems are in excellent
+// condition, fully assessed, and all findings are resolved.
+//
+// Phase 3 — Confidence Weighting (enableConfidenceWeighting flag):
+//   OFF (default): equal-weight average across all items
+//   ON:            weighted average — each item weighted by inspector_confidence
+//                  High-confidence findings count more; low-confidence findings
+//                  are downweighted. Effect: typically 0–5 point shift.
 // ─────────────────────────────────────────────────────────────────
-const CONFIDENCE_NEUTRAL = 72;
+function computeCategoryScore(items: NormalizedItem[]): { score: number; confidence: number } | null {
+  if (!items.length) return null; // Not Assessed — excluded from score, not penalized
 
-function computeCategoryScore(items: NormalizedItem[]): { score: number; confidence: number } {
-  if (!items.length) return { score: CONFIDENCE_NEUTRAL, confidence: 0.3 };
+  let avgScore: number;
+  const avgConf = items.reduce((s, i) => s + i.inspector_confidence, 0) / items.length;
 
-  const avgScore = items.reduce((s, i) => s + computeItemScore(i), 0) / items.length;
-  const avgConf  = items.reduce((s, i) => s + i.inspector_confidence, 0) / items.length;
+  if (isEnabled("enableConfidenceWeighting")) {
+    // Confidence-weighted average: Σ(score × confidence) / Σ(confidence)
+    // Findings with low confidence (0.4) contribute ~44% as much as high confidence (0.9)
+    const totalConf = items.reduce((s, i) => s + i.inspector_confidence, 0);
+    avgScore = totalConf > 0
+      ? items.reduce((s, i) => s + computeItemScore(i) * i.inspector_confidence, 0) / totalConf
+      : items.reduce((s, i) => s + computeItemScore(i), 0) / items.length;
+  } else {
+    // Equal-weight average (Phase 1 / 2 baseline)
+    avgScore = items.reduce((s, i) => s + computeItemScore(i), 0) / items.length;
+  }
 
-  // Blend toward neutral when confidence is low
-  const blended = (avgScore * avgConf) + (CONFIDENCE_NEUTRAL * (1 - avgConf));
-  return { score: Math.max(0, Math.min(100, blended)), confidence: avgConf };
+  return { score: Math.max(0, Math.min(100, avgScore)), confidence: avgConf };
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -236,42 +319,88 @@ function urgencyLabel(u: string): string {
 
 // ─────────────────────────────────────────────────────────────────
 // MAIN ENGINE ENTRY POINT
+// propertyType:   "single_family" | "condo" | "townhouse" | "multi_family" | null
+//                 Roof/Envelope is excluded (not penalized) for condos.
+// inspectionDate: ISO date of the most recent inspection.
+//                 Used by Phase 3 decay module — confidence always adjusted,
+//                 score adjusted only when enableDecay flag is on.
 // ─────────────────────────────────────────────────────────────────
-export function computeHomeHealthReport(items: NormalizedItem[]): HomeHealthReport {
-  // Group items by master category
+export function computeHomeHealthReport(
+  items: NormalizedItem[],
+  propertyType?: string | null,
+  inspectionDate?: string | null,
+): HomeHealthReport {
+  const weights = getWeightsForPropertyType(propertyType);
+
+  // Group items by core category — only the 6 scored systems
   const byCategory: Record<string, NormalizedItem[]> = {};
-  for (const cat of Object.keys(CATEGORY_WEIGHTS)) byCategory[cat] = [];
+  for (const cat of Object.keys(weights)) byCategory[cat] = [];
   for (const item of items) {
     const key = item.category in byCategory ? item.category : toCategoryKey(item.system);
     if (key in byCategory) byCategory[key].push(item);
   }
 
   // Compute per-category scores
-  const categoryScores: CategoryScore[] = Object.entries(CATEGORY_WEIGHTS).map(([cat, weight]) => {
+  // Categories with no items → not_assessed: true, excluded from weighted sum
+  const categoryScores: CategoryScore[] = Object.entries(weights).map(([cat, weight]) => {
     const catItems = byCategory[cat] ?? [];
-    const { score, confidence } = computeCategoryScore(catItems);
-    const limited   = catItems.length === 0 || confidence < 0.5;
+    const result   = computeCategoryScore(catItems);
     const topFindings = catItems
       .filter(i => i.deficiency_severity !== "none")
       .sort((a, b) => computeItemScore(a) - computeItemScore(b))
       .slice(0, 3)
       .map(i => i.notes || i.recommended_action);
+
+    if (!result) {
+      // No data for this system — mark Not Assessed, excluded from score
+      return {
+        category:     cat,
+        score:        0,
+        confidence:   0,
+        status:       "Not Assessed",
+        top_findings: [],
+        limited_data: true,
+        not_assessed: true,
+        weight,
+      };
+    }
+
+    const { score, confidence } = result;
     return {
-      category: cat,
-      score:     Math.round(score),
-      confidence: parseFloat(confidence.toFixed(2)),
-      status:    scoreBand(score),
+      category:     cat,
+      score:        Math.round(score),
+      confidence:   parseFloat(confidence.toFixed(2)),
+      status:       scoreBand(score),
       top_findings: topFindings,
-      limited_data: limited,
+      limited_data: confidence < 0.5,
+      not_assessed: false,
+      weight,
     };
   });
 
-  // Weighted home health score
-  const rawHealth = categoryScores.reduce((sum, cs) => {
-    const w = CATEGORY_WEIGHTS[cs.category] ?? 0;
-    return sum + cs.score * w;
-  }, 0);
-  const home_health_score = Math.round(Math.max(0, Math.min(100, rawHealth)));
+  // Weighted Core Health Score
+  // Only assessed categories contribute — weights of not_assessed categories are
+  // redistributed proportionally so the score still sums to 100% of what's known.
+  const assessedScores  = categoryScores.filter(cs => !cs.not_assessed);
+  const totalWeight     = assessedScores.reduce((s, cs) => s + cs.weight, 0);
+  const rawHealth = totalWeight > 0
+    ? assessedScores.reduce((sum, cs) => sum + cs.score * (cs.weight / totalWeight), 0)
+    : 0;
+
+  // Apply safety hard modifier on top of weighted score
+  const safetyModifier = computeSafetyModifier(items);
+
+  // Phase 3 — Decay modifier
+  // computeDecay() always runs so DecayResult is available as metadata.
+  // scoreAdjustment only affects home_health_score when enableDecay flag is on.
+  const decay: DecayResult | null = inspectionDate != null
+    ? computeDecay(inspectionDate)
+    : null;
+  const decayScoreAdj = (decay && isEnabled("enableDecay")) ? decay.scoreAdjustment : 0;
+
+  const home_health_score = Math.round(
+    Math.max(0, Math.min(100, rawHealth + safetyModifier + decayScoreAdj))
+  );
 
   // ── Sub-scores ────────────────────────────────────────────────
   //
@@ -319,10 +448,14 @@ export function computeHomeHealthReport(items: NormalizedItem[]): HomeHealthRepo
   const readiness_score = Math.round(Math.max(30, Math.min(100, readiness)));
 
   // Confidence score: average inspector confidence across items
+  // Phase 3 — decay always reduces reported confidence regardless of enableDecay flag.
+  // The confidenceMultiplier communicates freshness to the user even when score
+  // decay is not yet enabled.
   const avgConf = items.length > 0
     ? items.reduce((s, i) => s + i.inspector_confidence, 0) / items.length
     : 0.4;
-  const confidence_score = Math.round(avgConf * 100);
+  const decayConfMultiplier = decay?.confidenceMultiplier ?? 1.0;
+  const confidence_score = Math.round(avgConf * decayConfMultiplier * 100);
 
   // ── Priority actions ──────────────────────────────────────────
   const priority_actions: PriorityAction[] = items
@@ -374,6 +507,15 @@ export function computeHomeHealthReport(items: NormalizedItem[]): HomeHealthRepo
   };
   const summary_for_user = summaryMap[band] ?? "See full breakdown for details.";
 
+  // ── Phase 4: Predictions & Recommendations ───────────────────
+  const predictions: SystemPrediction[] | null = isEnabled("enablePredictions")
+    ? computePredictions(items, Object.keys(weights))
+    : null;
+
+  const recommendations: Recommendation[] | null = isEnabled("enableRecommendations")
+    ? computeRecommendations(items)
+    : null;
+
   return {
     home_health_score,
     score_band: band,
@@ -388,6 +530,9 @@ export function computeHomeHealthReport(items: NormalizedItem[]): HomeHealthRepo
     data_gaps,
     recent_improvements: [],
     summary_for_user,
+    decay,
+    predictions,
+    recommendations,
   };
 }
 

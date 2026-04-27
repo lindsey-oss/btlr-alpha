@@ -15,7 +15,7 @@ import type { NormalizedItem, HomeHealthReport, CategoryScore } from "./scoring-
 // ─────────────────────────────────────────────────────────────────
 // ENGINE VERSION — bump this any time scoring logic changes
 // ─────────────────────────────────────────────────────────────────
-export const SCORING_ENGINE_VERSION = "1.0.0";
+export const SCORING_ENGINE_VERSION = "4.0.0"; // Phase 4: predictions engine + recommendations engine
 
 // ─────────────────────────────────────────────────────────────────
 // DEDUCTION RECORD
