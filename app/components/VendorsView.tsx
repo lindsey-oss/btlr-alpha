@@ -46,12 +46,13 @@ function formatCategory(raw: string): string {
     electrical:               "Electrical",
     plumbing:                 "Plumbing",
     hvac:                     "HVAC",
-    roof_drainage_exterior:   "Roof & Exterior",
-    structure_foundation:     "Foundation",
+    roof_drainage_exterior:   "Roof",
+    structure_foundation:     "Structure",
     interior_windows_doors:   "Interior",
     appliances_water_heater:  "Appliances",
     safety_environmental:     "Safety",
     site_grading_drainage:    "Site & Drainage",
+    exterior:                 "Exterior",
     maintenance_upkeep:       "Maintenance",
     pool_spa:                 "Pool & Spa",
     general:                  "General",
@@ -62,7 +63,7 @@ function formatCategory(raw: string): string {
   if (t.includes("electric") || t.includes("panel")) return "Electrical";
   if (t.includes("plumb") || t.includes("pipe"))     return "Plumbing";
   if (t.includes("hvac") || t.includes("heat") || t.includes("furnace") || t.includes("cool")) return "HVAC";
-  if (t.includes("found") || t.includes("struct") || t.includes("crawl")) return "Foundation";
+  if (t.includes("found") || t.includes("struct") || t.includes("crawl")) return "Structure";
   if (t.includes("window") || t.includes("door"))    return "Windows & Doors";
   if (t.includes("interior") || t.includes("ceil") || t.includes("floor") || t.includes("wall")) return "Interior";
   if (t.includes("applian") || t.includes("washer") || t.includes("dryer")) return "Appliances";

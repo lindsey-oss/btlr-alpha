@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { Loader2, ExternalLink, Clock, CheckCircle2, XCircle, Wrench, Phone, RefreshCw,
   DollarSign, Home, Droplets, Zap, Thermometer, Bug, Layers, Wind, Paintbrush, AlignLeft,
-  Briefcase } from "lucide-react";
+  Briefcase, Trash2 } from "lucide-react";
 
 function getTradeIcon(trade: string, size = 18, color = "#94a3b8"): React.ReactNode {
   const k = (trade || "").toLowerCase();
@@ -90,6 +90,13 @@ export default function MyJobsView() {
       return () => { supabase.removeChannel(channel); };
     });
   }, []);
+
+  async function deleteJob(jobId: string) {
+    if (!confirm("Remove this job request? This cannot be undone.")) return;
+    const { error } = await supabase.from("job_requests").delete().eq("id", jobId);
+    if (error) { alert("Could not delete job: " + error.message); return; }
+    setJobs(prev => prev.filter(j => j.id !== jobId));
+  }
 
   async function loadJobs(uid?: string | null) {
     const filterUid = uid ?? userId;
@@ -180,6 +187,13 @@ export default function MyJobsView() {
                       color: C.text2, textDecoration: "none", fontWeight: 600 }}>
                     <ExternalLink size={11}/> Job Link
                   </a>
+                  <button onClick={() => deleteJob(job.id)}
+                    title="Delete job"
+                    style={{ display: "flex", alignItems: "center", justifyContent: "center",
+                      width: 28, height: 28, borderRadius: 8, border: `1px solid ${C.border}`,
+                      background: C.surface, cursor: "pointer", color: C.red }}>
+                    <Trash2 size={13}/>
+                  </button>
                 </div>
               </div>
 
