@@ -891,6 +891,49 @@ function SelfInspectionModal({
   const answeredCount = Object.keys(answers).length;
   const totalQuestions = SELF_INSPECT_STEPS.reduce((s, st) => s + st.questions.length, 0);
 
+  // ── Per-question photo state ──────────────────────────────────────────────
+  const [photoData, setPhotoData] = useState<Record<string, {
+    previewUrl: string;
+    analyzing:  boolean;
+    suggestion?: string;
+  }>>({});
+
+  async function handleStepPhoto(questionId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const previewUrl = URL.createObjectURL(file);
+    setPhotoData(prev => ({ ...prev, [questionId]: { previewUrl, analyzing: true } }));
+    try {
+      const base64 = await new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onload  = () => res(reader.result as string);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const { data: { session } } = await supabase.auth.getSession();
+      const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (session?.access_token) reqHeaders["Authorization"] = `Bearer ${session.access_token}`;
+      const resp = await fetch("/api/analyze-photos", {
+        method:  "POST",
+        headers: reqHeaders,
+        body:    JSON.stringify({ photoUrls: [base64] }),
+      });
+      let suggestion = "Photo captured — use it as a reference when answering.";
+      if (resp.ok) {
+        const result = await resp.json();
+        const topFinding = (result.findings ?? [])[0];
+        if (topFinding?.description) {
+          const raw = topFinding.description as string;
+          suggestion = raw.length > 100 ? raw.slice(0, 97) + "…" : raw;
+        }
+      }
+      setPhotoData(prev => ({ ...prev, [questionId]: { previewUrl, analyzing: false, suggestion } }));
+    } catch {
+      setPhotoData(prev => ({ ...prev, [questionId]: { previewUrl, analyzing: false, suggestion: "Photo captured." } }));
+    }
+    e.target.value = "";
+  }
+
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(15,31,61,0.55)", backdropFilter: "blur(4px)" }}
       onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
@@ -925,36 +968,84 @@ function SelfInspectionModal({
         <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 20px" }}>
           <p style={{ fontSize: 13, color: C.text3, margin: "0 0 18px", lineHeight: 1.5 }}>{currentStep.description}</p>
 
-          {currentStep.questions.map(q => (
-            <div key={q.id} style={{ marginBottom: 22 }}>
-              <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: "0 0 4px", lineHeight: 1.4 }}>{q.label}</p>
-              {q.hint && <p style={{ fontSize: 12, color: C.text3, margin: "0 0 10px", lineHeight: 1.4 }}>{q.hint}</p>}
-              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                {q.options.map(opt => {
-                  const selected = answers[q.id] === opt.value;
-                  const sevColor = opt.severity === "critical" ? C.red : opt.severity === "warning" ? "#f97316" : C.green;
-                  const sevBg    = opt.severity === "critical" ? C.redBg : opt.severity === "warning" ? "rgba(249,115,22,0.08)" : C.greenBg;
-                  return (
-                    <button key={opt.value} onClick={() => onAnswer(q.id, opt.value)} style={{
-                      display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
-                      padding: "11px 14px", borderRadius: 12, cursor: "pointer", textAlign: "left",
-                      border: selected ? `2px solid ${sevColor}` : `2px solid ${C.border}`,
-                      background: selected ? sevBg : C.surface,
-                      transition: "all 0.15s",
-                    }}>
-                      <div>
-                        <p style={{ fontSize: 14, fontWeight: 700, color: selected ? sevColor : C.text, margin: "0 0 2px" }}>{opt.label}</p>
-                        {opt.subLabel && <p style={{ fontSize: 12, color: selected ? sevColor : C.text3, margin: 0, opacity: 0.85 }}>{opt.subLabel}</p>}
+          {currentStep.questions.map(q => {
+            const pd = photoData[q.id];
+            return (
+              <div key={q.id} style={{ marginBottom: 22 }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: "0 0 4px", lineHeight: 1.4 }}>{q.label}</p>
+                {q.hint && <p style={{ fontSize: 12, color: C.text3, margin: "0 0 10px", lineHeight: 1.4 }}>{q.hint}</p>}
+
+                {/* ── Photo prompt card ── */}
+                {q.photoPrompt && (
+                  <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <Camera size={15} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }}/>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: "#92400e", margin: "0 0 2px" }}>{q.photoPrompt.label}</p>
+                        <p style={{ fontSize: 11, color: "#b45309", margin: "0 0 8px", lineHeight: 1.4 }}>{q.photoPrompt.tip}</p>
+
+                        {pd ? (
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                            {/* Thumbnail */}
+                            <img src={pd.previewUrl} alt="inspection photo" style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "1.5px solid #fcd34d" }}/>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {pd.analyzing ? (
+                                <p style={{ fontSize: 12, color: "#d97706", margin: 0, display: "flex", alignItems: "center", gap: 5 }}>
+                                  <Loader2 size={11} className="animate-spin"/> Analyzing photo…
+                                </p>
+                              ) : pd.suggestion ? (
+                                <p style={{ fontSize: 12, color: "#78350f", margin: "0 0 6px", lineHeight: 1.4 }}>
+                                  <span style={{ fontWeight: 700 }}>🤖 AI sees: </span>{pd.suggestion}
+                                </p>
+                              ) : null}
+                              <label style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 11, color: "#d97706", fontWeight: 600, cursor: "pointer", textDecoration: "underline" }}>
+                                Retake
+                                <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={e => handleStepPhoto(q.id, e)}/>
+                              </label>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "7px 14px", borderRadius: 8, background: "#d97706", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                              <Camera size={12}/> Take Photo
+                              <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={e => handleStepPhoto(q.id, e)}/>
+                            </label>
+                            <span style={{ fontSize: 11, color: "#b45309" }}>Optional — helps verify your answer</span>
+                          </div>
+                        )}
                       </div>
-                      <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${selected ? sevColor : C.border}`, background: selected ? sevColor : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        {selected && <Check size={11} color="white"/>}
-                      </div>
-                    </button>
-                  );
-                })}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Answer options ── */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {q.options.map(opt => {
+                    const selected = answers[q.id] === opt.value;
+                    const sevColor = opt.severity === "critical" ? C.red : opt.severity === "warning" ? "#f97316" : C.green;
+                    const sevBg    = opt.severity === "critical" ? C.redBg : opt.severity === "warning" ? "rgba(249,115,22,0.08)" : C.greenBg;
+                    return (
+                      <button key={opt.value} onClick={() => onAnswer(q.id, opt.value)} style={{
+                        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10,
+                        padding: "11px 14px", borderRadius: 12, cursor: "pointer", textAlign: "left",
+                        border: selected ? `2px solid ${sevColor}` : `2px solid ${C.border}`,
+                        background: selected ? sevBg : C.surface,
+                        transition: "all 0.15s",
+                      }}>
+                        <div>
+                          <p style={{ fontSize: 14, fontWeight: 700, color: selected ? sevColor : C.text, margin: "0 0 2px" }}>{opt.label}</p>
+                          {opt.subLabel && <p style={{ fontSize: 12, color: selected ? sevColor : C.text3, margin: 0, opacity: 0.85 }}>{opt.subLabel}</p>}
+                        </div>
+                        <div style={{ width: 20, height: 20, borderRadius: "50%", border: `2px solid ${selected ? sevColor : C.border}`, background: selected ? sevColor : "transparent", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {selected && <Check size={11} color="white"/>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* Footer */}

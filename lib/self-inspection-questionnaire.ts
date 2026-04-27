@@ -38,13 +38,20 @@ export interface SelfInspectOption {
   lifespan_years?: number;
 }
 
+/** A guided photo prompt attached to a question. */
+export interface SelfInspectPhotoPrompt {
+  label: string;   // Short imperative: "Photograph your roof shingles"
+  tip:   string;   // 1-line coaching tip shown below the label
+}
+
 /** A single question within a step. */
 export interface SelfInspectQuestion {
-  id:       string;         // unique — used as normalized_finding_key suffix
-  category: string;         // BTLR canonical category key
-  label:    string;         // question text
-  hint?:    string;         // supporting context
-  options:  SelfInspectOption[];
+  id:          string;                    // unique — used as normalized_finding_key suffix
+  category:    string;                    // BTLR canonical category key
+  label:       string;                    // question text
+  hint?:       string;                    // supporting context
+  photoPrompt?: SelfInspectPhotoPrompt;  // optional camera prompt shown before answer options
+  options:     SelfInspectOption[];
 }
 
 /** One system step in the questionnaire (groups 2-3 questions). */
@@ -74,6 +81,7 @@ export const SELF_INSPECT_STEPS: SelfInspectStep[] = [
         category: "structure_foundation",
         label:    "Do you see cracks in your foundation, basement walls, or around door/window frames?",
         hint:     "Look for stair-step cracks, wide gaps (> ¼ inch), or horizontal cracks.",
+        photoPrompt: { label: "Photograph any cracks in your foundation or basement walls", tip: "Get close enough to show the width and pattern clearly." },
         options: [
           { value: "none",     label: "None visible",                  subLabel: "No cracks observed",          severity: "info",     note: "No structural cracks observed in foundation or walls." },
           { value: "hairline", label: "Hairline cracks only",          subLabel: "Small, thin cracks < ¼ inch",  severity: "warning",  note: "Hairline cracks noted in foundation or walls — monitor annually for changes." },
@@ -117,6 +125,7 @@ export const SELF_INSPECT_STEPS: SelfInspectStep[] = [
         category: "roof_drainage_exterior",
         label:    "What's the visible condition of your roof from outside or the attic?",
         hint:     "Look for damaged/missing shingles, curling, or sagging areas.",
+        photoPrompt: { label: "Photograph your roof shingles from ground level", tip: "Walk around the perimeter and capture each side. Zoom in if you can." },
         options: [
           { value: "good",     label: "Looks good / recently replaced", subLabel: "No visible damage",            severity: "info",     note: "Roof appears to be in good condition with no visible damage observed." },
           { value: "aging",    label: "Showing age or weathering",     subLabel: "Worn but intact",               severity: "warning",  note: "Roof shows signs of aging and weathering — monitor and plan for replacement within a few years." },
@@ -128,6 +137,7 @@ export const SELF_INSPECT_STEPS: SelfInspectStep[] = [
         category: "roof_drainage_exterior",
         label:    "Any water stains on ceilings, walls, or in the attic?",
         hint:     "Check attic corners, around skylights, and chimney areas.",
+        photoPrompt: { label: "Photograph any water stains on ceilings or in the attic", tip: "Good lighting helps — try using a flashlight in attic corners." },
         options: [
           { value: "none",     label: "No stains or leaks",           subLabel: "Ceilings and attic dry",        severity: "info",     note: "No water stains or evidence of roof leaks observed." },
           { value: "old",      label: "Old / dried stains",           subLabel: "Past issue, appears resolved",  severity: "warning",  note: "Old water staining observed — verify source has been repaired." },
@@ -159,6 +169,7 @@ export const SELF_INSPECT_STEPS: SelfInspectStep[] = [
         category: "electrical",
         label:    "Do circuit breakers trip repeatedly, or do lights flicker?",
         hint:     "Frequent tripping or flickering can signal overloaded circuits or failing components.",
+        photoPrompt: { label: "Photograph your electrical panel with the door open", tip: "Capture the full panel so breaker labels and any double-tapping are visible." },
         options: [
           { value: "never",    label: "Never",                        subLabel: "No tripping or flickering",     severity: "info",     note: "No circuit breaker trips or flickering lights observed." },
           { value: "occasional", label: "Occasional tripping",        subLabel: "Once a month or less",          severity: "warning",  note: "Occasional circuit breaker trips or flickering — evaluate load and panel condition." },
@@ -223,6 +234,7 @@ export const SELF_INSPECT_STEPS: SelfInspectStep[] = [
         category: "appliances_water_heater",
         label:    "How old is your water heater? (Approximate)",
         hint:     "Check the label on the unit — manufacture date is usually stamped.",
+        photoPrompt: { label: "Photograph the label on your water heater", tip: "The manufacture date and serial number are printed on the sticker on the side of the tank." },
         options: [
           { value: "young",    label: "Under 6 years",                subLabel: "Recently replaced",             severity: "info",     note: "Water heater is relatively new — operating within normal lifespan.", age_years: 3, lifespan_years: 12 },
           { value: "mid",      label: "6–10 years",                   subLabel: "Mid-life, monitor",             severity: "warning",  note: "Water heater is approaching mid-life — plan for replacement within a few years.", age_years: 8, lifespan_years: 12 },
@@ -265,6 +277,7 @@ export const SELF_INSPECT_STEPS: SelfInspectStep[] = [
         category: "hvac",
         label:    "How old is your heating/cooling system?",
         hint:     "Age is found on the manufacturer label inside the unit.",
+        photoPrompt: { label: "Photograph the label inside your furnace or air handler door", tip: "Open the front panel — the manufacture date sticker is usually on the inside door or the unit casing." },
         options: [
           { value: "young",    label: "Under 8 years",                subLabel: "Relatively new",                severity: "info",     note: "HVAC system is relatively new and well within typical service life.", age_years: 4, lifespan_years: 15 },
           { value: "mid",      label: "8–12 years",                   subLabel: "Monitor, plan ahead",           severity: "warning",  note: "HVAC system is in the later half of its expected lifespan — begin planning for eventual replacement.", age_years: 10, lifespan_years: 15 },
@@ -339,6 +352,7 @@ export const SELF_INSPECT_STEPS: SelfInspectStep[] = [
         category: "safety_environmental",
         label:    "Any known hazards — mold, active pests, or gas smell?",
         hint:     "Check under sinks, in bathrooms, basement/crawl, and near gas appliances.",
+        photoPrompt: { label: "Photograph any areas of concern you've found", tip: "Check under sinks, basement corners, and around the water heater. Good lighting helps." },
         options: [
           { value: "none",     label: "None observed",               subLabel: "No hazards seen or smelled",     severity: "info",     note: "No mold, pest activity, or gas odors observed." },
           { value: "potential", label: "Minor concern or potential",  subLabel: "Needs monitoring",              severity: "warning",  note: "Possible minor mold or pest activity noted — inspect and remediate as needed." },
