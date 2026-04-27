@@ -747,13 +747,41 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
     setListening(true);
   }
 
+  async function fetchContractors(mode: "choose" | "all") {
+    if (!result) return;
+    setContactMode(mode);
+    setLoadingContractors(true);
+    setContractors([]);
+    try {
+      const res = await fetch("/api/find-contractors", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ trade: result.category_label, address }),
+      });
+      const data = await res.json();
+      setContractors(data.contractors ?? []);
+    } catch { /* silent */ }
+    setLoadingContractors(false);
+  }
+
+  function buildMessage(contractor: ContractorResult): string {
+    const city = address?.split(",").slice(1, 2).join(",").trim() || "my area";
+    return `Hi ${contractor.name}, I'm a homeowner in ${city} looking for a ${result?.category_label ?? "contractor"} — I've put together a full job brief with all the details here: ${briefUrl}. Are you available to take a look?`;
+  }
+
+  function copyMessage(contractor: ContractorResult, index: number) {
+    navigator.clipboard.writeText(buildMessage(contractor));
+    setCopiedIndex(index);
+    setTimeout(() => setCopiedIndex(null), 2000);
+  }
+
   async function classifyIssue(text?: string) {
     const query = (text ?? input).trim();
     if (!query) return;
     // Keep ref current so the prefill useEffect can call this before render
     classifyRef.current = classifyIssue;
     setLoading(true); setResult(null); setSelectedCategory(null); setActiveIssue(null);
-    setBriefSent(false); setBriefUrl(null);
+    setBriefSent(false); setBriefUrl(null); setContactMode(null); setContractors([]);
     try {
       const res = await fetch("/api/classify-issue", {
         method: "POST",
@@ -1158,47 +1186,145 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
             </div>
           </a>
 
-          {/* Contractor brief email CTA */}
-          {result && (
-            <div style={{
-              padding: "16px 18px", borderRadius: 12,
-              background: briefSent ? C.greenBg : "#eff6ff",
-              border: `1px solid ${briefSent ? C.green + "40" : C.accent + "30"}`,
-            }}>
-              <p style={{ fontSize: 13, fontWeight: 700, color: briefSent ? C.green : C.accent, margin: "0 0 6px", display: "flex", alignItems: "center", gap: 6 }}>
-                {briefSent ? <><CheckCircle2 size={14}/> Contractor brief sent!</> : <><Send size={13}/> Email yourself the contractor brief</>}
-              </p>
-              {briefSent ? (
-                <div>
-                  <p style={{ fontSize: 13, color: C.text2, margin: "0 0 6px" }}>
-                    Check <strong>{userEmail}</strong> — it has everything: what to say, cost range, and questions to ask.
-                  </p>
-                  {briefUrl && (
-                    <a href={briefUrl} target="_blank" rel="noopener noreferrer"
-                      style={{ fontSize: 12, color: C.accent, textDecoration: "underline", display: "flex", alignItems: "center", gap: 4 }}>
-                      View shareable job brief <ChevronRight size={11}/>
-                    </a>
-                  )}
-                </div>
-              ) : (
-                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: 10 }}>
-                  <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>
-                    Get a ready-to-share brief with cost estimates, what to tell the contractor, and questions to ask — sent to {userEmail || "your email"}.
-                  </p>
-                  <button
-                    onClick={emailContractorBrief}
-                    disabled={sendingBrief}
-                    style={{
-                      padding: "10px 16px", borderRadius: 8, border: "none",
-                      cursor: "pointer", background: C.navyMid, color: "white",
-                      fontSize: 13, fontWeight: 600, flexShrink: 0,
-                      display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-                      opacity: sendingBrief ? 0.7 : 1,
+          {/* ── Contractor contact flow ── */}
+          {result && !briefSent && (
+            <div style={{ padding: "16px 18px", borderRadius: 12, background: "#eff6ff", border: `1px solid ${C.accent}30` }}>
+              <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "stretch" : "center", justifyContent: "space-between", gap: 10 }}>
+                <p style={{ fontSize: 13, color: C.text2, margin: 0 }}>
+                  Get a ready-to-share brief with cost estimates, what to tell the contractor, and questions to ask.
+                </p>
+                <button onClick={emailContractorBrief} disabled={sendingBrief} style={{
+                  padding: "10px 16px", borderRadius: 8, border: "none", cursor: "pointer",
+                  background: C.navyMid, color: "white", fontSize: 13, fontWeight: 600,
+                  flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                  opacity: sendingBrief ? 0.7 : 1,
+                }}>
+                  {sendingBrief ? <><Loader2 size={12} className="animate-spin"/> Sending…</> : <><Send size={12}/> Create Job Brief</>}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {result && briefSent && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+
+              {/* ── Step 1: Brief confirmed + choice ── */}
+              <div style={{ padding: "16px 18px", borderRadius: 12, background: C.greenBg, border: `1px solid ${C.green}40` }}>
+                <p style={{ fontSize: 13, fontWeight: 700, color: C.green, margin: "0 0 4px", display: "flex", alignItems: "center", gap: 6 }}>
+                  <CheckCircle2 size={14}/> Job brief created
+                </p>
+                {briefUrl && (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
+                    <input readOnly value={briefUrl} style={{ flex: 1, fontSize: 12, color: C.text3, background: "white", border: `1px solid ${C.border}`, borderRadius: 7, padding: "5px 10px", outline: "none" }}/>
+                    <button onClick={() => navigator.clipboard.writeText(briefUrl!)} style={{ padding: "5px 12px", borderRadius: 7, border: `1px solid ${C.border}`, background: "white", fontSize: 12, fontWeight: 600, color: C.text2, cursor: "pointer", flexShrink: 0 }}>
+                      Copy
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* ── Step 2: How to reach out ── */}
+              {!contactMode && (
+                <div style={{ padding: "16px 18px", borderRadius: 12, background: C.surface, border: `1px solid ${C.border}` }}>
+                  <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: "0 0 4px" }}>How would you like to reach out?</p>
+                  <p style={{ fontSize: 13, color: C.text3, margin: "0 0 14px" }}>BTLR will find the top 3 nearby {result.category_label} contractors.</p>
+                  <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", gap: 10 }}>
+                    <button onClick={() => fetchContractors("all")} style={{
+                      flex: 1, padding: "12px 16px", borderRadius: 10, border: "none",
+                      background: C.navy, color: "white", fontSize: 13, fontWeight: 700,
+                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
                     }}>
-                    {sendingBrief
-                      ? <><Loader2 size={12} className="animate-spin"/> Sending…</>
-                      : <><Send size={12}/> Email Brief</>}
-                  </button>
+                      🚀 Contact all 3 for me
+                    </button>
+                    <button onClick={() => fetchContractors("choose")} style={{
+                      flex: 1, padding: "12px 16px", borderRadius: 10,
+                      border: `1.5px solid ${C.border}`, background: C.surface,
+                      color: C.text, fontSize: 13, fontWeight: 700,
+                      cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
+                    }}>
+                      👤 Let me choose
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* ── Step 3: Contractor list ── */}
+              {contactMode && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0 }}>
+                      {contactMode === "all" ? "Ready to contact — copy each message and send" : "Pick who to contact"}
+                    </p>
+                    <button onClick={() => { setContactMode(null); setContractors([]); }} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.text3 }}>← Back</button>
+                  </div>
+
+                  {loadingContractors && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "16px", color: C.text3, fontSize: 13 }}>
+                      <Loader2 size={14} className="animate-spin"/> Finding nearby contractors…
+                    </div>
+                  )}
+
+                  {!loadingContractors && contractors.length === 0 && (
+                    <p style={{ fontSize: 13, color: C.text3, padding: "12px 0" }}>No contractors found nearby. Try adjusting your search or browse by trade above.</p>
+                  )}
+
+                  {contractors.map((c, i) => (
+                    <div key={i} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+                      {/* Header */}
+                      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8 }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <a href={c.mapsUrl} target="_blank" rel="noopener noreferrer" style={{ fontSize: 14, fontWeight: 700, color: C.text, textDecoration: "none", display: "flex", alignItems: "center", gap: 5 }}>
+                            {c.name} <ExternalLink size={11} color={C.text3}/>
+                          </a>
+                          {c.rating && (
+                            <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>
+                              ⭐ {c.rating.toFixed(1)}{c.reviewCount ? ` · ${c.reviewCount} reviews` : ""}
+                            </p>
+                          )}
+                          {c.address && <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>{c.address}</p>}
+                        </div>
+                      </div>
+
+                      {/* Actions */}
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {c.phone && (
+                          <a href={`tel:${c.phone}`} style={{
+                            display: "inline-flex", alignItems: "center", gap: 5,
+                            padding: "7px 14px", borderRadius: 8,
+                            border: `1.5px solid ${C.border}`, background: C.surface,
+                            fontSize: 13, fontWeight: 600, color: C.text2, textDecoration: "none",
+                          }}>
+                            <Phone size={13}/> {c.phone}
+                          </a>
+                        )}
+                        <button onClick={() => copyMessage(c, i)} style={{
+                          display: "inline-flex", alignItems: "center", gap: 5,
+                          padding: "7px 14px", borderRadius: 8,
+                          border: `1.5px solid ${copiedIndex === i ? C.green : C.accent}`,
+                          background: copiedIndex === i ? C.greenBg : "#eff6ff",
+                          fontSize: 13, fontWeight: 600,
+                          color: copiedIndex === i ? C.green : C.accent, cursor: "pointer",
+                        }}>
+                          {copiedIndex === i ? <><CheckCircle2 size={13}/> Copied!</> : <><Copy size={13}/> Copy Intro</>}
+                        </button>
+                        {!c.phone && (
+                          <a href={c.mapsUrl} target="_blank" rel="noopener noreferrer" style={{
+                            display: "inline-flex", alignItems: "center", gap: 5,
+                            padding: "7px 14px", borderRadius: 8,
+                            border: `1.5px solid ${C.border}`, background: C.surface,
+                            fontSize: 13, fontWeight: 600, color: C.text2, textDecoration: "none",
+                          }}>
+                            <MapPin size={13}/> View on Maps
+                          </a>
+                        )}
+                      </div>
+
+                      {/* Pre-written message preview */}
+                      <div style={{ background: C.bg, borderRadius: 8, padding: "10px 12px", fontSize: 12, color: C.text2, lineHeight: 1.5, fontStyle: "italic" }}>
+                        "{buildMessage(c)}"
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
             </div>
