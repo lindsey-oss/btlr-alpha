@@ -10,7 +10,7 @@ import {
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
   ExternalLink, ArrowRight, BarChart3, Clock, TrendingUp,
-  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera,
+  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera, Phone, Mail,
 } from "lucide-react";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
@@ -4045,6 +4045,13 @@ export default function Dashboard() {
         /* ── Button transitions ────────────────────────────── */
         button { transition: opacity 0.13s, background 0.13s, box-shadow 0.13s, transform 0.1s; }
         button:active:not(:disabled) { transform: scale(0.97); }
+        button:disabled { opacity: 0.52; cursor: not-allowed; }
+
+        /* ── Input / textarea placeholder ──────────────────── */
+        ::placeholder { color: rgba(99,99,88,0.42); }
+
+        /* ── Select appearance ─────────────────────────────── */
+        select { -webkit-appearance: none; appearance: none; }
 
         /* ── Toast entrance ────────────────────────────────── */
         @keyframes fadeInDown {
@@ -4353,28 +4360,30 @@ export default function Dashboard() {
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                 <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                  {/* Color key strip */}
-                  <div style={{ padding: "10px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, display: "flex", gap: 16, flexWrap: "wrap", alignItems: "center" }}>
-                    {[
-                      { color: C.red,    label: "High Impact" },
-                      { color: C.amber,  label: "Medium Impact" },
-                      { color: "#eab308", label: "Low Impact" },
-                      { color: C.text3,  label: "Informational" },
-                    ].map(({ color, label }) => (
-                      <div key={label} style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                        <span style={{ width: 3, height: 14, borderRadius: 2, background: color, display: "inline-block", flexShrink: 0 }}/>
-                        <span style={{ fontSize: 11, color: C.text3 }}>{label}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {/* Summary bar */}
-                  <div style={{ display: "flex", gap: 16, padding: "10px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, justifyContent: "space-between", alignItems: "center" }}>
-                    <div style={{ display: "flex", gap: 14 }}>
-                      <span style={{ fontSize: 12, color: C.red, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "critical").length} critical</span>
-                      <span style={{ fontSize: 12, color: C.amber, fontWeight: 600 }}>{allFindings.filter(f => f.severity === "warning").length} warnings</span>
-                      <span style={{ fontSize: 12, color: C.green, fontWeight: 600 }}>{completedFindings.length} resolved</span>
+                  {/* Combined header: counts + legend + action */}
+                  <div style={{ padding: "12px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "space-between" }}>
+                    {/* Left: severity counts */}
+                    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
+                      {allFindings.filter(f => f.severity === "critical").length > 0 && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: `${C.red}12`, color: C.red, border: `1px solid ${C.red}25` }}>
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, display: "inline-block" }}/>{allFindings.filter(f => f.severity === "critical").length} critical
+                        </span>
+                      )}
+                      {allFindings.filter(f => f.severity === "warning").length > 0 && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: `${C.amber}12`, color: C.amber, border: `1px solid ${C.amber}25` }}>
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.amber, display: "inline-block" }}/>{allFindings.filter(f => f.severity === "warning").length} warnings
+                        </span>
+                      )}
+                      {completedFindings.length > 0 && (
+                        <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: `${C.green}12`, color: C.green, border: `1px solid ${C.green}25` }}>
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.green, display: "inline-block" }}/>{completedFindings.length} resolved
+                        </span>
+                      )}
                     </div>
-                    <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category, f.description) && (f.severity === "critical" || f.severity === "warning")); const fallback = all.filter(f => isScoredFinding(f.category, f.description)); setReviewFindings(scored.length > 0 ? scored : fallback.length > 0 ? fallback : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: "none", border: "none", cursor: "pointer" }}>Review All →</button>
+                    {/* Right: action */}
+                    <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category, f.description) && (f.severity === "critical" || f.severity === "warning")); const fallback = all.filter(f => isScoredFinding(f.category, f.description)); setReviewFindings(scored.length > 0 ? scored : fallback.length > 0 ? fallback : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: `${C.accent}0d`, border: `1px solid ${C.accent}28`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flexShrink: 0 }}>
+                      Review All <ChevronRight size={13}/>
+                    </button>
                   </div>
                   {/* Category groups */}
                   {repGroups.map(({ gk, label, items }, gi) => {
@@ -4453,8 +4462,8 @@ export default function Dashboard() {
                                       )}
                                       {/* Completed state badge */}
                                       {isResolved && status === "completed" && (
-                                        <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: C.greenBg, color: C.green }}>
-                                          ✓ Completed{impact.affects ? " · Score Updated" : ""}
+                                        <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: C.greenBg, color: C.green, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                          <CheckCircle2 size={10}/> Completed{impact.affects ? " · Score Updated" : ""}
                                         </span>
                                       )}
                                       {isResolved && status === "not_needed" && (
@@ -4508,7 +4517,7 @@ export default function Dashboard() {
                         <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>Repair Archives</span>
                         <span style={{ fontSize: 11, fontWeight: 700, padding: "1px 9px", borderRadius: 20, background: C.greenBg, color: C.green }}>{repArchivedItems.length}</span>
                       </div>
-                      <span style={{ fontSize: 11, color: C.text3, transform: archivesExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s", display: "inline-block" }}>▼</span>
+                      <span style={{ display: "inline-flex", transform: archivesExpanded ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}><ChevronDown size={14} color={C.text3}/></span>
                     </button>
                     {archivesExpanded && (
                       <div style={{ borderTop: `1px solid ${C.border}`, background: C.bg }}>
@@ -4530,8 +4539,8 @@ export default function Dashboard() {
                                 <p style={{ fontSize: 13, color: C.text3, margin: 0, lineHeight: 1.5 }}>{f.description}</p>
                               )}
                               <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-                                <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: C.greenBg, color: C.green }}>
-                                  ✓ Completed{meta?.was_scorable ? " · Score Updated" : ""}
+                                <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: C.greenBg, color: C.green, display: "inline-flex", alignItems: "center", gap: 4 }}>
+                                  <CheckCircle2 size={10}/> Completed{meta?.was_scorable ? " · Score Updated" : ""}
                                 </span>
                                 {completedDate && (
                                   <span style={{ fontSize: 11, color: C.text3, display: "inline-flex", alignItems: "center", gap: 4 }}><Clock size={10}/> {completedDate}</span>
@@ -5033,8 +5042,8 @@ export default function Dashboard() {
                                     <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><Send size={11}/> File a Claim</p>
                                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                       {warranty.claimUrl && <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
-                                      {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>📞 {warranty.claimPhone}</a>}
-                                      {warranty.claimEmail && <a href={`mailto:${warranty.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>✉️ Email Claims</a>}
+                                      {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={12}/> {warranty.claimPhone}</a>}
+                                      {warranty.claimEmail && <a href={`mailto:${warranty.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Mail size={12}/> Email Claims</a>}
                                     </div>
                                     {warranty.responseTime && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>Typical response: {warranty.responseTime}</p>}
                                   </div>
@@ -5117,8 +5126,8 @@ export default function Dashboard() {
                                     <p style={{ fontSize: 12, fontWeight: 700, color: "#0891b2", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><Send size={11}/> File a Claim</p>
                                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                                       {insurance.claimUrl   && <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
-                                      {insurance.claimPhone && <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>📞 {insurance.claimPhone}</a>}
-                                      {insurance.claimEmail && <a href={`mailto:${insurance.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>✉️ Email Claims</a>}
+                                      {insurance.claimPhone && <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={12}/> {insurance.claimPhone}</a>}
+                                      {insurance.claimEmail && <a href={`mailto:${insurance.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Mail size={12}/> Email Claims</a>}
                                     </div>
                                     {insurance.claimHours && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>{insurance.claimHours}</p>}
                                   </div>
@@ -5388,8 +5397,8 @@ export default function Dashboard() {
                   }
                 `}</style>
 
-                {/* Circle icon / spinner */}
-                <div style={{ width: 134, height: 134, borderRadius: "50%",
+                {/* Circle icon / spinner — matches filled ring size */}
+                <div style={{ width: isMobile ? 130 : 160, height: isMobile ? 130 : 160, borderRadius: "50%",
                   border: inspecting ? "4px solid rgba(255,255,255,0.12)" : "4px dashed rgba(255,255,255,0.12)",
                   display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
                   position: "relative",
@@ -5637,8 +5646,8 @@ export default function Dashboard() {
                                     boxShadow: "0 1px 5px rgba(0,0,0,0.10)", letterSpacing: "0.01em" }}>
                                   {action.type === "find_vendor"   && <Users size={12}/>}
                                   {action.type === "open_url"      && <ExternalLink size={12}/>}
-                                  {action.type === "tel"           && <span style={{ fontSize: 11 }}>📞</span>}
-                                  {action.type === "email"         && <span style={{ fontSize: 11 }}>✉️</span>}
+                                  {action.type === "tel"           && <Phone size={11}/>}
+                                  {action.type === "email"         && <Mail size={11}/>}
                                   {action.type === "nav_documents" && <FileText size={12}/>}
                                   {action.label}
                                 </button>
