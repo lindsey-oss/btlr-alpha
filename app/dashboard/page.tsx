@@ -2541,7 +2541,7 @@ export default function Dashboard() {
         .from("properties")
         .select("id, address")
         .eq("user_id", u.id)          // explicit filter — belt-and-suspenders on top of RLS
-        .order("created_at", { ascending: true });
+        .order("id", { ascending: true });  // created_at may not exist on older schemas
       if (error) { console.error("[loadAllProperties] query failed:", error.message, error.code); return null; }
       if (!data?.length) return null;
       setAllProperties(data);
@@ -3142,7 +3142,7 @@ export default function Dashboard() {
               user_id:       uploadUserId,
               property_id:   activePropId,
               file_name:     file.name,
-              storage_path:  storagePath,
+              file_path:  storagePath,
               document_type: "inspection",
             });
           if (docInsertErr) {
@@ -3257,7 +3257,7 @@ export default function Dashboard() {
       // ── 1. General docs ("other") ──────────────────────────────────────────
       const { data: otherData, error: otherErr } = await supabase
         .from("documents")
-        .select("id, file_name, storage_path, document_type, created_at")
+        .select("id, file_name, file_path, document_type, created_at")
         .eq("user_id", uid)
         .eq("document_type", "other")
         .order("created_at", { ascending: false })
@@ -3272,11 +3272,11 @@ export default function Dashboard() {
           otherData.map(async (row) => {
             const { data: signed } = await supabase.storage
               .from("documents")
-              .createSignedUrl(row.storage_path, 3600);
+              .createSignedUrl(row.file_path, 3600);
             return {
               id:            row.id,
               name:          row.file_name,
-              path:          row.storage_path,
+              path:          row.file_path,
               document_type: row.document_type,
               url:           signed?.signedUrl ?? undefined,
             };
@@ -3299,7 +3299,7 @@ export default function Dashboard() {
       // loadProperty() → findings table + properties.inspection_findings JSONB.
       const { data: inspData, error: inspErr } = await supabase
         .from("documents")
-        .select("id, file_name, storage_path, document_type, created_at")
+        .select("id, file_name, file_path, document_type, created_at")
         .eq("user_id", uid)
         .eq("document_type", "inspection")
         .order("created_at", { ascending: false })
@@ -3311,11 +3311,11 @@ export default function Dashboard() {
         const row = inspData[0];
         const { data: signed } = await supabase.storage
           .from("documents")
-          .createSignedUrl(row.storage_path, 3600);
+          .createSignedUrl(row.file_path, 3600);
         setInspectionDoc({
           id:            row.id,
           name:          row.file_name,
-          path:          row.storage_path,
+          path:          row.file_path,
           document_type: "inspection",
           url:           signed?.signedUrl ?? undefined,
         });
@@ -3348,7 +3348,7 @@ export default function Dashboard() {
       user_id:       userId,
       property_id:   activePropertyIdRef.current ?? null,
       file_name:     file.name,
-      storage_path:  fullPath,
+      file_path:  fullPath,
       document_type: "other",
     }).select("id").maybeSingle();
 
@@ -3383,11 +3383,11 @@ export default function Dashboard() {
     // Remove from Storage
     const { error: storageErr } = await supabase.storage.from("documents").remove([inspectionDoc.path]);
     if (storageErr) console.warn("[deleteInspectionDoc] storage delete error:", storageErr.message);
-    // Remove from Postgres — by id if available, otherwise by storage_path
+    // Remove from Postgres — by id if available, otherwise by file_path
     if (inspectionDoc.id) {
       await supabase.from("documents").delete().eq("id", inspectionDoc.id);
     } else {
-      await supabase.from("documents").delete().eq("storage_path", inspectionDoc.path);
+      await supabase.from("documents").delete().eq("file_path", inspectionDoc.path);
     }
     setInspectionDoc(null);
     // Also clear last-seen filename so the duplicate guard doesn't block re-upload
