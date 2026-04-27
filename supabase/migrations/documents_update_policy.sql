@@ -9,7 +9,20 @@
 -- Safe to re-run (CREATE POLICY IF NOT EXISTS).
 -- ============================================================
 
-CREATE POLICY IF NOT EXISTS "users update own documents"
-  ON public.documents FOR UPDATE
-  USING (user_id = auth.uid())
-  WITH CHECK (user_id = auth.uid());
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_policies
+    WHERE schemaname = 'public'
+      AND tablename  = 'documents'
+      AND policyname = 'users update own documents'
+  ) THEN
+    EXECUTE $policy$
+      CREATE POLICY "users update own documents"
+        ON public.documents FOR UPDATE
+        USING (user_id = auth.uid())
+        WITH CHECK (user_id = auth.uid())
+    $policy$;
+  END IF;
+END
+$$;
