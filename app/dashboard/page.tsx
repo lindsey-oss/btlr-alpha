@@ -916,15 +916,26 @@ function SelfInspectionModal({
       const resp = await fetch("/api/analyze-photos", {
         method:  "POST",
         headers: reqHeaders,
-        body:    JSON.stringify({ photoUrls: [base64] }),
+        // Pass focusArea so the API uses the system-specific inspection prompt
+        body:    JSON.stringify({ photoUrls: [base64], focusArea: questionId }),
       });
       let suggestion = "Photo captured — use it as a reference when answering.";
       if (resp.ok) {
         const result = await resp.json();
+        // Prefer the photo_summary (holistic) over individual findings for in-modal display
+        const summary = result.photo_summary as string | undefined;
         const topFinding = (result.findings ?? [])[0];
-        if (topFinding?.description) {
+        // For label-reading questions, manufacture_year gives a direct answer
+        const mfgYear = result.manufacture_year as number | null | undefined;
+        if (mfgYear) {
+          const age = new Date().getFullYear() - mfgYear;
+          const baseSummary = summary ?? topFinding?.description ?? "";
+          suggestion = `Manufacture year: ${mfgYear} (${age} yr old). ${baseSummary}`.slice(0, 140);
+        } else if (summary) {
+          suggestion = summary.length > 130 ? summary.slice(0, 127) + "…" : summary;
+        } else if (topFinding?.description) {
           const raw = topFinding.description as string;
-          suggestion = raw.length > 100 ? raw.slice(0, 97) + "…" : raw;
+          suggestion = raw.length > 130 ? raw.slice(0, 127) + "…" : raw;
         }
       }
       setPhotoData(prev => ({ ...prev, [questionId]: { previewUrl, analyzing: false, suggestion } }));
@@ -6646,11 +6657,22 @@ export default function Dashboard() {
                 </div>
                 {warranty ? (
                   <>
-                    <p style={{ fontSize: 17, fontWeight: 700, color: C.text, margin: "0 0 2px", lineHeight: 1.3 }}>
-                      {warranty.provider ?? "Active Warranty"}
-                    </p>
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
+                      <p style={{ fontSize: 17, fontWeight: 700, color: C.text, margin: 0, lineHeight: 1.3 }}>
+                        {warranty.provider ?? "Active Warranty"}
+                      </p>
+                      {/* Expiry urgency badge */}
+                      {warranty.expirationDate && (() => {
+                        const days = Math.round((new Date(warranty.expirationDate).getTime() - Date.now()) / 86400000);
+                        if (days <= 0) return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontWeight: 700, flexShrink: 0 }}>Expired</span>;
+                        const color  = days < 30 ? "#dc2626" : days < 90 ? "#d97706" : "#7c3aed";
+                        const bg     = days < 30 ? "#fef2f2" : days < 90 ? "#fffbeb" : "#faf5ff";
+                        const border = days < 30 ? "#fca5a5" : days < 90 ? "#fcd34d" : "#e9d5ff";
+                        return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, background: bg, border: `1px solid ${border}`, color, fontWeight: 700, flexShrink: 0 }}>{days < 30 ? `${days}d left!` : days < 90 ? `${days} days left` : `${Math.round(days / 30)}mo left`}</span>;
+                      })()}
+                    </div>
                     {warranty.planName && (
-                      <p style={{ fontSize: 13, color: C.text3, margin: "0 0 14px" }}>{warranty.planName}</p>
+                      <p style={{ fontSize: 13, color: C.text3, margin: "0 0 10px" }}>{warranty.planName}</p>
                     )}
                     {(warranty.serviceFee || warranty.expirationDate) && (
                       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -6664,11 +6686,12 @@ export default function Dashboard() {
                           <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
                             <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Expires</div>
                             <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{warranty.expirationDate}</div>
+                            {warranty.autoRenews && <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 2 }}>Auto-renews</div>}
                           </div>
                         )}
                       </div>
                     )}
-                    <div style={{ display: "flex", gap: 8 }}>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button onClick={() => {
                         const raw = warranty.claimUrl;
                         const url = raw ? (raw.startsWith("http") ? raw : `https://${raw}`) : null;
@@ -6679,8 +6702,14 @@ export default function Dashboard() {
                       }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: C.navy, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         File Claim
                       </button>
-                      <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                        {showWarrantyDetail ? "Hide Details" : "View Details"}
+                      {warranty.claimUrl && (
+                        <a href={warranty.claimUrl.startsWith("http") ? warranty.claimUrl : `https://${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer"
+                          style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "#7c3aed", border: "none", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none", cursor: "pointer" }}>
+                          <RefreshCw size={12}/> Renew
+                        </a>
+                      )}
+                      <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid #e9d5ff", color: "#7c3aed", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        {showWarrantyDetail ? "Less" : "Details"}
                       </button>
                     </div>
                   </>
