@@ -84,6 +84,55 @@ function findingKey(findingOrCategory: Finding | string, index: number): string 
 // Supplemental systems (pool, spa, deck, fireplace, etc.) are excluded.
 const isScoredFinding = isScorable;
 
+// ── 3-Pass Finding Deduplicator ───────────────────────────────────────────
+// Pass 1: Drop identical normalized_finding_key (pipeline-stable ID).
+// Pass 2: Drop findings with same normalized category + identical description text.
+// Pass 3: Drop findings with same category where description shares >80% of
+//         tokens with an already-kept finding (catches rephrased duplicates).
+function deduplicateFindings(findings: Finding[]): Finding[] {
+  const seen = new Set<string>();
+  const kept: Finding[] = [];
+
+  // Normalize a string for comparison: lowercase, collapse whitespace, strip punctuation
+  const norm = (s: string) =>
+    (s ?? "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+
+  // Token-overlap ratio between two strings (Jaccard over word sets)
+  const overlap = (a: string, b: string): number => {
+    const sa = new Set(norm(a).split(" ").filter(Boolean));
+    const sb = new Set(norm(b).split(" ").filter(Boolean));
+    if (sa.size === 0 && sb.size === 0) return 1;
+    let inter = 0;
+    sa.forEach(t => { if (sb.has(t)) inter++; });
+    return inter / (sa.size + sb.size - inter);
+  };
+
+  for (const f of findings) {
+    // Pass 1: stable pipeline key
+    if (f.normalized_finding_key) {
+      if (seen.has(f.normalized_finding_key)) continue;
+      seen.add(f.normalized_finding_key);
+    }
+
+    // Pass 2: exact category + description match
+    const exactKey = `${norm(f.category)}||${norm(f.description ?? "")}`;
+    if (seen.has(exactKey)) continue;
+    seen.add(exactKey);
+
+    // Pass 3: fuzzy — same category, description >80% token overlap with a kept finding
+    const catKey = norm(f.category);
+    const similar = kept.find(k =>
+      norm(k.category) === catKey &&
+      overlap(k.description ?? "", f.description ?? "") > 0.80
+    );
+    if (similar) continue;
+
+    kept.push(f);
+  }
+
+  return kept;
+}
+
 // Returns score impact metadata for a finding — used in the Repairs tab
 // to badge, color-code, and explain why a repair affects the Home Health Score.
 type ScoreImpact =
@@ -1565,20 +1614,20 @@ function CostDetailModal({
           {warranty && (warranty.coverageItems?.length ?? 0) > 0 &&
             isLikelyCovered(item.tradeCategory ?? item.label, warranty.coverageItems!) && (
             <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 10, padding: "10px 14px", marginBottom: 4 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "${C.accent}", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
                 <Shield size={12}/> This may be covered by your {warranty.provider ?? "home warranty"}
                 {warranty.serviceFee ? ` — $${warranty.serviceFee} service fee` : ""}
               </p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {warranty.claimUrl && (
                   <a href={`${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "${C.accent}", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
                     <ExternalLink size={11}/> File a Claim
                   </a>
                 )}
                 {warranty.claimPhone && (
                   <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
                     📞 Call Claims
                   </a>
                 )}
@@ -3128,14 +3177,17 @@ export default function Dashboard() {
         // but are too minor to surface in the initial popup.
         // All findings remain visible in the Repairs tab regardless.
         if (newFindings.length > 0) {
-          const scoredOnly = newFindings.filter(f =>
+          // Deduplicate before showing the review modal — triple-pass removes
+          // exact matches, same-category duplicates, and near-identical rephrases.
+          const dedupedFindings = deduplicateFindings(newFindings);
+          const scoredOnly = dedupedFindings.filter(f =>
             isScoredFinding(f.category, f.description) &&
             (f.severity === "critical" || f.severity === "warning")
           );
           // Fall back to all scored findings if nothing meets the severity threshold,
           // then fall back to all findings so the modal is never empty.
-          const fallback = newFindings.filter(f => isScoredFinding(f.category, f.description));
-          setReviewFindings(scoredOnly.length > 0 ? scoredOnly : fallback.length > 0 ? fallback : newFindings);
+          const fallback = dedupedFindings.filter(f => isScoredFinding(f.category, f.description));
+          setReviewFindings(scoredOnly.length > 0 ? scoredOnly : fallback.length > 0 ? fallback : dedupedFindings);
           setShowReviewModal(true);
         } else {
           // No findings — tell the user so they know something may be wrong
@@ -3828,15 +3880,17 @@ export default function Dashboard() {
 
   // Only count ACTIVE findings (repair_needed or monitored) in costs list
   // Completed/not_needed findings reflect resolved items
-  // Merge inspection + photo findings so photo evidence also drives cost estimates
-  const allFindings       = [...(inspectionResult?.findings ?? []), ...photoFindings];
+  // Merge inspection + photo findings, then deduplicate so the Repairs tab
+  // never shows the same issue twice (parser sometimes extracts duplicates).
+  const allFindings       = deduplicateFindings([...(inspectionResult?.findings ?? []), ...photoFindings]);
   const activeFindings    = allFindings.filter((f, i) =>  isActiveFinding(f, i, findingStatuses));
   const completedFindings = allFindings.filter((f, i) => !isActiveFinding(f, i, findingStatuses));
 
   // Merge inspection + photo findings for scoring.
   // Photo findings tagged with source:"photo" are visually-derived — same
   // weight as inspection findings in the deterministic score.
-  const allFindingsForScore = [...(inspectionResult?.findings ?? []), ...photoFindings];
+  // allFindings already deduped above — reuse it so scoring uses the same clean set
+  const allFindingsForScore = allFindings;
 
   // Deterministic score — pure function, same inputs = same score every time
   const breakdown    = computeHealthScore(allFindingsForScore, findingStatuses, roofYear, hvacYear, year);
@@ -4381,7 +4435,7 @@ export default function Dashboard() {
                       )}
                     </div>
                     {/* Right: action */}
-                    <button onClick={() => { const all = inspectionResult?.findings ?? []; const scored = all.filter(f => isScoredFinding(f.category, f.description) && (f.severity === "critical" || f.severity === "warning")); const fallback = all.filter(f => isScoredFinding(f.category, f.description)); setReviewFindings(scored.length > 0 ? scored : fallback.length > 0 ? fallback : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: `${C.accent}0d`, border: `1px solid ${C.accent}28`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flexShrink: 0 }}>
+                    <button onClick={() => { const all = deduplicateFindings(inspectionResult?.findings ?? []); const scored = all.filter(f => isScoredFinding(f.category, f.description) && (f.severity === "critical" || f.severity === "warning")); const fallback = all.filter(f => isScoredFinding(f.category, f.description)); setReviewFindings(scored.length > 0 ? scored : fallback.length > 0 ? fallback : all); setShowReviewModal(true); }} style={{ fontSize: 12, fontWeight: 600, color: C.accent, background: `${C.accent}0d`, border: `1px solid ${C.accent}28`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flexShrink: 0 }}>
                       Review All <ChevronRight size={13}/>
                     </button>
                   </div>
@@ -4858,9 +4912,9 @@ export default function Dashboard() {
               {
                 id: "warranty",
                 label: "Home Warranty",
-                icon: <Shield size={15} color="#7c3aed"/>,
+                icon: <Shield size={15} color="${C.accent}"/>,
                 iconBg: "#faf5ff",
-                accentColor: "#7c3aed",
+                accentColor: "${C.accent}",
                 status: warranty
                   ? `${warranty.provider ?? "Uploaded"} · ${warranty.expirationDate ? `Expires ${warranty.expirationDate}` : "Active"}`
                   : "No document uploaded",
@@ -5013,17 +5067,17 @@ export default function Dashboard() {
                               Upload your home warranty or maintenance policy. BTLR will extract your coverage, exclusions, service fee, and claim contact info.
                             </p>
                             {!warranty ? (
-                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingWarranty ? "#7c3aed" : C.border}`, background: parsingWarranty ? "#faf5ff" : C.bg }}>
+                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingWarranty ? "${C.accent}" : C.border}`, background: parsingWarranty ? "#faf5ff" : C.bg }}>
                                 {parsingWarranty
-                                  ? <><Loader2 size={20} color="#7c3aed" className="animate-spin"/><span style={{ fontSize: 14, color: "#7c3aed" }}>Parsing warranty document…</span></>
-                                  : <><Shield size={20} color="#7c3aed"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
+                                  ? <><Loader2 size={20} color="${C.accent}" className="animate-spin"/><span style={{ fontSize: 14, color: "${C.accent}" }}>Parsing warranty document…</span></>
+                                  : <><Shield size={20} color="${C.accent}"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
                                 }
                                 <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
                               </label>
                             ) : (
                               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #7c3aed", color: "#7c3aed", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid ${C.accent}", color: "${C.accent}", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                                     {parsingWarranty ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
                                     {parsingWarranty ? "Parsing…" : "Replace"}
                                     <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
@@ -5041,9 +5095,9 @@ export default function Dashboard() {
                                   <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px" }}>
                                     <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><Send size={11}/> File a Claim</p>
                                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                      {warranty.claimUrl && <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
-                                      {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={12}/> {warranty.claimPhone}</a>}
-                                      {warranty.claimEmail && <a href={`mailto:${warranty.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Mail size={12}/> Email Claims</a>}
+                                      {warranty.claimUrl && <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "${C.accent}", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
+                                      {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={12}/> {warranty.claimPhone}</a>}
+                                      {warranty.claimEmail && <a href={`mailto:${warranty.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Mail size={12}/> Email Claims</a>}
                                     </div>
                                     {warranty.responseTime && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>Typical response: {warranty.responseTime}</p>}
                                   </div>
@@ -6158,14 +6212,14 @@ export default function Dashboard() {
 
               {/* Home Warranty */}
               <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                <div style={{ height: 4, background: "#7c3aed", borderRadius: "16px 16px 0 0" }}/>
+                <div style={{ height: 4, background: "${C.accent}", borderRadius: "16px 16px 0 0" }}/>
                 <div style={{ padding: "20px 22px 22px" }}>
                 {/* Header row */}
                 <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 9, background: "#7c3aed18", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Shield size={15} color="#7c3aed"/>
+                  <div style={{ width: 32, height: 32, borderRadius: 9, background: "${C.accent}18", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                    <Shield size={15} color="${C.accent}"/>
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", letterSpacing: "0.08em", textTransform: "uppercase", marginLeft: 8 }}>Home Warranty</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "${C.accent}", letterSpacing: "0.08em", textTransform: "uppercase", marginLeft: 8 }}>Home Warranty</span>
                 </div>
                 {warranty ? (
                   <>
@@ -6179,13 +6233,13 @@ export default function Dashboard() {
                       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
                         {warranty.serviceFee && (
                           <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
-                            <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Service Fee</div>
+                            <div style={{ fontSize: 10, color: "${C.accent}", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Service Fee</div>
                             <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>${warranty.serviceFee}<span style={{ fontSize: 11, fontWeight: 500, color: C.text3 }}>/claim</span></div>
                           </div>
                         )}
                         {warranty.expirationDate && (
                           <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
-                            <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Expires</div>
+                            <div style={{ fontSize: 10, color: "${C.accent}", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Expires</div>
                             <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{warranty.expirationDate}</div>
                           </div>
                         )}
@@ -6202,7 +6256,7 @@ export default function Dashboard() {
                       }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: C.navy, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         File Claim
                       </button>
-                      <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {showWarrantyDetail ? "Hide Details" : "View Details"}
                       </button>
                     </div>
@@ -6210,7 +6264,7 @@ export default function Dashboard() {
                 ) : (
                   <>
                     <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "0 0 14px" }}>—</p>
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid ${C.accent}", background: "transparent", color: "${C.accent}", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                       {parsingWarranty ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
                       {parsingWarranty ? "Parsing…" : "Upload Warranty"}
                       <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
@@ -6230,13 +6284,13 @@ export default function Dashboard() {
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       {warranty.claimUrl && (
                         <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, background: "#7c3aed", color: "white", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, background: "${C.accent}", color: "white", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
                           <ExternalLink size={13}/> File a Claim Online
                         </a>
                       )}
                       {warranty.claimPhone && (
                         <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
-                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 13, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 13, fontWeight: 700, textDecoration: "none", background: "white" }}>
                           📞 {warranty.claimPhone}
                         </a>
                       )}
@@ -6254,7 +6308,7 @@ export default function Dashboard() {
                   {/* Coverage */}
                   {(warranty.coverageItems?.length ?? 0) > 0 && (
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "${C.accent}", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered</p>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {warranty.coverageItems!.map((item, i) => (
                           <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
