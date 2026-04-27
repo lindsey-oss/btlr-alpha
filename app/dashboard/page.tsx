@@ -3471,26 +3471,31 @@ export default function Dashboard() {
       }
 
       // ── 4. Warranty PDF URL ────────────────────────────────────────────────
-      const { data: warrData } = await supabase
+      const currentPropId = activePropertyIdRef.current;
+      const warrQuery = supabase
         .from("documents")
         .select("file_path")
         .eq("user_id", uid)
         .eq("document_type", "warranty")
         .order("created_at", { ascending: false })
         .limit(1);
+      if (currentPropId) warrQuery.eq("property_id", currentPropId);
+      const { data: warrData } = await warrQuery;
       if (warrData?.length) {
         const { data: signedWarr } = await supabase.storage.from("documents").createSignedUrl(warrData[0].file_path, 3600);
         if (signedWarr?.signedUrl) setWarrantyDocUrl(signedWarr.signedUrl);
       }
 
       // ── 5. Insurance PDF URLs ──────────────────────────────────────────────
-      const { data: insData } = await supabase
+      const insQuery = supabase
         .from("documents")
         .select("file_path")
         .eq("user_id", uid)
         .eq("document_type", "insurance")
         .order("created_at", { ascending: false })
         .limit(5);
+      if (currentPropId) insQuery.eq("property_id", currentPropId);
+      const { data: insData } = await insQuery;
       if (insData?.length) {
         const urls: string[] = [];
         for (const row of insData) {
@@ -5470,10 +5475,12 @@ export default function Dashboard() {
                                         <RefreshCw size={10}/> Renew
                                       </a>
                                     )}
-                                    {warrantyDocUrl && (
+                                    {warrantyDocUrl ? (
                                       <a href={warrantyDocUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 7, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 11, fontWeight: 700, textDecoration: "none", background: "white" }}>
                                         <FileText size={10}/> View PDF
                                       </a>
+                                    ) : (
+                                      <span style={{ fontSize: 11, color: C.text3 }}>Re-upload to enable PDF view</span>
                                     )}
                                   </div>
                                 </div>
@@ -5557,15 +5564,17 @@ export default function Dashboard() {
                                   <p style={{ fontSize: 13, color: C.text3, margin: "0 0 8px" }}>
                                     {[insurance.policyNumber ? `#${insurance.policyNumber}` : null, (insurance.annualPremium ?? insurance.premium) ? `$${(insurance.annualPremium ?? insurance.premium)?.toLocaleString()}/yr` : null, insurance.deductibleStandard ? `$${insurance.deductibleStandard.toLocaleString()} deductible` : null, insurance.expirationDate ? `Renews ${insurance.expirationDate}` : null].filter(Boolean).join(" · ")}
                                   </p>
-                                  {insuranceDocUrls.length > 0 && (
-                                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                      {insuranceDocUrls.map((url, i) => (
+                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    {insuranceDocUrls.length > 0 ? (
+                                      insuranceDocUrls.map((url, i) => (
                                         <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 7, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 700, textDecoration: "none", background: "white" }}>
                                           <FileText size={10}/> {insuranceDocUrls.length > 1 ? `View PDF ${i + 1}` : "View PDF"}
                                         </a>
-                                      ))}
-                                    </div>
-                                  )}
+                                      ))
+                                    ) : (
+                                      <span style={{ fontSize: 11, color: C.text3 }}>Re-upload to enable PDF view</span>
+                                    )}
+                                  </div>
                                 </div>
                                 {(insurance.dwellingCoverage || insurance.personalProperty || insurance.liabilityCoverage) && (
                                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
@@ -6674,23 +6683,21 @@ export default function Dashboard() {
                     {warranty.planName && (
                       <p style={{ fontSize: 13, color: C.text3, margin: "0 0 10px" }}>{warranty.planName}</p>
                     )}
-                    {(warranty.serviceFee || warranty.expirationDate) && (
-                      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-                        {warranty.serviceFee && (
-                          <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
-                            <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Service Fee</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>${warranty.serviceFee}<span style={{ fontSize: 11, fontWeight: 500, color: C.text3 }}>/claim</span></div>
-                          </div>
-                        )}
-                        {warranty.expirationDate && (
-                          <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
-                            <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Expires</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{warranty.expirationDate}</div>
-                            {warranty.autoRenews && <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 2 }}>Auto-renews</div>}
-                          </div>
-                        )}
+                    <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                      {warranty.serviceFee && (
+                        <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
+                          <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Service Fee</div>
+                          <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>${warranty.serviceFee}<span style={{ fontSize: 11, fontWeight: 500, color: C.text3 }}>/claim</span></div>
+                        </div>
+                      )}
+                      <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
+                        <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Expires</div>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: warranty.expirationDate ? C.text : C.text3 }}>
+                          {warranty.expirationDate ?? "—"}
+                        </div>
+                        {warranty.autoRenews && <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 2 }}>Auto-renews</div>}
                       </div>
-                    )}
+                    </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       <button onClick={() => {
                         const raw = warranty.claimUrl;

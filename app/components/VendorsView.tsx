@@ -183,6 +183,8 @@ function VendorContactPanel({
 
   const mailtoHref = `mailto:?subject=${encodeURIComponent(`Repair Quote Request — ${vendor.name}`)}&body=${encodeURIComponent(message)}`;
   const telHref    = vendor.phone ? `tel:${vendor.phone.replace(/\D/g, "")}` : null;
+  // SMS link — opens native Messages app pre-filled with vendor's number and the contact message
+  const smsHref    = vendor.phone ? `sms:${vendor.phone.replace(/\D/g, "")}?body=${encodeURIComponent(message)}` : null;
 
   return (
     <div style={{
@@ -263,7 +265,20 @@ function VendorContactPanel({
               fontSize: 13, fontWeight: 700, textDecoration: "none",
               boxShadow: "0 2px 8px rgba(15,31,61,0.18)",
             }}>
-            <Phone size={13}/> Call Vendor
+            <Phone size={13}/> Call
+          </a>
+        )}
+
+        {/* SMS — opens native Messages app pre-filled with the contact message */}
+        {smsHref && (
+          <a href={smsHref} onClick={() => setContacted("email")}
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6,
+              padding: "9px 16px", borderRadius: 9,
+              background: "#16a34a", color: "white",
+              fontSize: 13, fontWeight: 700, textDecoration: "none",
+            }}>
+            <MessageSquare size={13}/> Send SMS
           </a>
         )}
 
@@ -274,7 +289,7 @@ function VendorContactPanel({
             background: C.accent, color: "white",
             fontSize: 13, fontWeight: 700, textDecoration: "none",
           }}>
-          <Mail size={13}/> Send Request
+          <Mail size={13}/> Email
         </a>
 
         <button onClick={handleCopy}
@@ -885,13 +900,26 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
         {/* Find vendors button — full width on mobile */}
         <button onClick={() => classifyIssue()} disabled={loading || !input.trim()} style={{
           width: "100%", height: 48, borderRadius: 12, border: "none", cursor: "pointer",
-          background: C.navyMid, color: "white", fontSize: 15, fontWeight: 600,
+          background: loading ? C.accent : C.navyMid, color: "white", fontSize: 15, fontWeight: 600,
           display: "flex", alignItems: "center", justifyContent: "center", gap: 7,
-          opacity: loading || !input.trim() ? 0.5 : 1, transition: "opacity 0.2s",
+          opacity: !input.trim() && !loading ? 0.5 : 1, transition: "all 0.2s",
         }}>
           {loading ? <Loader2 size={15} className="animate-spin"/> : <Search size={15}/>}
-          {loading ? "Finding…" : "Find Vendors"}
+          {loading ? "Searching for vendors…" : "Find Vendors"}
         </button>
+
+        {/* Animated searching state card */}
+        {loading && (
+          <div style={{ marginTop: 10, background: "#eff6ff", border: `1px solid ${C.accent}30`, borderRadius: 10, padding: "12px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+              <Loader2 size={16} color="white" className="animate-spin"/>
+            </div>
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 700, color: C.accent, margin: "0 0 2px" }}>Analyzing your issue…</p>
+              <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>AI is classifying the trade, estimating cost, and preparing a contractor brief.</p>
+            </div>
+          </div>
+        )}
 
         {listening && (
           <p style={{ fontSize: 14, color: C.red, marginTop: 8, display: "flex", alignItems: "center", gap: 6 }}>
@@ -1056,7 +1084,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
                           const isActive = activeIssue === f;
                           return (
                             <button key={i} onClick={() => handleFindingClick(f)} style={{
-                              display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+                              display: "flex", alignItems: "center", gap: 10, padding: "11px 14px",
                               border: "none", borderTop: i > 0 ? `1px solid ${C.border}` : "none",
                               background: isActive ? "#eff6ff" : "white", cursor: "pointer", textAlign: "left",
                               transition: "background 0.15s",
@@ -1067,13 +1095,8 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
                                   {f.description}
                                 </span>
                               </div>
-                              {f.estimated_cost != null && (
-                                <span style={{ fontSize: 13, fontWeight: 700, color: dotColor, flexShrink: 0 }}>
-                                  ${f.estimated_cost.toLocaleString()}
-                                </span>
-                              )}
-                              <span style={{ fontSize: 12, color: C.accent, fontWeight: 600, flexShrink: 0 }}>
-                                Find <ChevronRight size={11} style={{ verticalAlign: "middle" }}/>
+                              <span style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 700, color: "white", background: C.accent, borderRadius: 20, padding: "4px 10px", flexShrink: 0, whiteSpace: "nowrap" }}>
+                                Find Vendors <ChevronRight size={10}/>
                               </span>
                             </button>
                           );
