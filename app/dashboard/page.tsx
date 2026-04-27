@@ -6283,7 +6283,7 @@ export default function Dashboard() {
                 <div style={{ padding: "20px 22px 22px" }}>
                 {/* Header row */}
                 <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 9, background: "${C.accent}18", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <div style={{ width: 32, height: 32, borderRadius: 9, background: "#7c3aed18", display: "flex", alignItems: "center", justifyContent: "center" }}>
                     <Shield size={15} color="#7c3aed"/>
                   </div>
                   <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", letterSpacing: "0.08em", textTransform: "uppercase", marginLeft: 8 }}>Home Warranty</span>
@@ -6416,7 +6416,7 @@ export default function Dashboard() {
             <div style={{ ...card({ padding: 0, overflow: "hidden" }), border: `1px solid ${C.border}` }}>
 
               {/* Dark header strip */}
-              <div style={{ background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accentDk} 80%, ${C.accent} 100%)`, padding: "20px 24px" }}>
+              <div style={{ background: "linear-gradient(135deg, #134e4a 0%, #0f766e 60%, #0d9488 100%)", padding: "20px 24px" }}>
                 <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Projected 12-Month Costs</p>
                 <p style={{ fontSize: 32, fontWeight: 800, color: "white", margin: "4px 0 2px", letterSpacing: "-0.02em" }}>
                   ~${repairFundNeeded.toLocaleString()}
