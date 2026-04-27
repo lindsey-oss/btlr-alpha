@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createClient } from "@supabase/supabase-js";
 import { Loader2, ExternalLink, Clock, CheckCircle2, XCircle, Wrench, Phone, RefreshCw,
   DollarSign, Home, Droplets, Zap, Thermometer, Bug, Layers, Wind, Paintbrush, AlignLeft,
@@ -59,14 +59,19 @@ interface Job {
 }
 
 export default function MyJobsView() {
-  const [jobs, setJobs]       = useState<Job[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [userId, setUserId]   = useState<string | null>(null);
+  const [jobs, setJobs]         = useState<Job[]>([]);
+  const [loading, setLoading]   = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [userId, setUserId]     = useState<string | null>(null);
+  const userIdRef               = useRef<string | null>(null);
 
   useEffect(() => {
+    let channel: ReturnType<typeof supabase.channel> | null = null;
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       const uid = session?.user?.id ?? null;
       setUserId(uid);
+      userIdRef.current = uid;
       loadJobs(uid);
 
       if (!uid) return;
@@ -78,7 +83,7 @@ export default function MyJobsView() {
       // match UPDATE payloads and the callback would never fire for status
       // changes (e.g. vendor accepting a job). loadJobs() handles user-scoping
       // via .eq("user_id", uid) in the actual query.
-      const channel = supabase
+      channel = supabase
         .channel("my-jobs")
         .on("postgres_changes", {
           event: "*",
@@ -86,9 +91,12 @@ export default function MyJobsView() {
           table: "job_requests",
         }, () => loadJobs(uid))
         .subscribe();
-
-      return () => { supabase.removeChannel(channel); };
     });
+
+    // Proper cleanup — runs when component unmounts
+    return () => {
+      if (channel) supabase.removeChannel(channel);
+    };
   }, []);
 
   async function deleteJob(jobId: string) {
@@ -99,7 +107,7 @@ export default function MyJobsView() {
   }
 
   async function loadJobs(uid?: string | null) {
-    const filterUid = uid ?? userId;
+    const filterUid = uid ?? userIdRef.current;
     // Do not query at all if there is no authenticated user.
     if (!filterUid) { setLoading(false); return; }
 
@@ -111,6 +119,12 @@ export default function MyJobsView() {
 
     setJobs(data ?? []);
     setLoading(false);
+    setRefreshing(false);
+  }
+
+  async function handleRefresh() {
+    setRefreshing(true);
+    await loadJobs(userIdRef.current);
   }
 
   if (loading) return (
@@ -129,12 +143,14 @@ export default function MyJobsView() {
             {jobs.length} job{jobs.length !== 1 ? "s" : ""} submitted
           </p>
         </div>
-        <button onClick={() => loadJobs(userId)} style={{
+        <button onClick={handleRefresh} disabled={refreshing} style={{
           display: "flex", alignItems: "center", gap: 6, padding: "7px 14px",
           borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface,
-          color: C.text2, fontSize: 13, fontWeight: 600, cursor: "pointer",
+          color: C.text2, fontSize: 13, fontWeight: 600, cursor: refreshing ? "default" : "pointer",
+          opacity: refreshing ? 0.6 : 1,
         }}>
-          <RefreshCw size={13}/> Refresh
+          <RefreshCw size={13} style={refreshing ? { animation: "spin 0.8s linear infinite" } : {}}/>
+          {refreshing ? "Refreshing…" : "Refresh"}
         </button>
       </div>
 

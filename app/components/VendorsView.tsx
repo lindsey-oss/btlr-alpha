@@ -350,7 +350,12 @@ function NearbyVendorsMap({
   const [error,    setError]    = useState<string | null>(null);
 
   useEffect(() => {
-    if (!searchTerm || !location) { setLoading(false); return; }
+    // Don't search if we don't have a real search term or a usable location
+    if (!searchTerm || !location || location === "your area") {
+      setLoading(false);
+      setError(null);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError(null);
@@ -371,6 +376,7 @@ function NearbyVendorsMap({
         if (!g?.maps?.places) { setError("Maps library not available — reload the page."); setLoading(false); finish(); return; }
         if (!mapRef.current) { setLoading(false); finish(); return; }
 
+        // Default center based on location string until geocode resolves
         const defaultCenter = { lat: 33.17, lng: -117.25 };
         const map = new g.maps.Map(mapRef.current, {
           center: defaultCenter, zoom: 12,
@@ -384,16 +390,22 @@ function NearbyVendorsMap({
 
         const service = new g.maps.places.PlacesService(map);
 
-        // Silent geocode to re-center map on user's actual location
+        // Geocode using the full property address first (most precise),
+        // falling back to city+state. This centers the map on the actual home.
+        const geocodeQuery = vendorAddress && vendorAddress !== "My Home"
+          ? vendorAddress
+          : `${location}, USA`;
         try {
-          new g.maps.Geocoder().geocode({ address: `${location}, USA` }, (geoRes: any, geoSt: any) => {
+          new g.maps.Geocoder().geocode({ address: geocodeQuery }, (geoRes: any, geoSt: any) => {
             if (!cancelled && geoSt === "OK" && geoRes?.[0])
               map.setCenter(geoRes[0].geometry.location);
           });
         } catch { /* non-blocking */ }
 
-        // Use location as-is — already city+state or zip; Google geocodes both correctly
-        const locSuffix = location.trim();
+        // Use full address for the nearby search when available — more precise results
+        const locSuffix = (vendorAddress && vendorAddress !== "My Home")
+          ? vendorAddress
+          : location.trim();
         const searchQuery = `${searchTerm} contractor near ${locSuffix}`;
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -580,6 +592,16 @@ interface Finding {
   estimated_cost: number | null;
 }
 
+interface ContractorResult {
+  name:        string;
+  phone:       string | null;
+  address:     string | null;
+  rating:      number | null;
+  reviewCount: number | null;
+  website:     string | null;
+  mapsUrl:     string;
+}
+
 interface ClassifyResult {
   category_label: string;
   category_emoji: string;
@@ -611,12 +633,18 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   const [result, setResult]           = useState<ClassifyResult | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [activeIssue, setActiveIssue] = useState<Finding | null>(null);
-  const [briefSent, setBriefSent]     = useState(false);
-  const [sendingBrief, setSendingBrief] = useState(false);
-  const [briefUrl, setBriefUrl]       = useState<string | null>(null);
-  const [isMobile, setIsMobile]       = useState(false);
+  const [openInspectionCategories, setOpenInspectionCategories] = useState<Set<string>>(new Set());
+  const [briefSent, setBriefSent]         = useState(false);
+  const [sendingBrief, setSendingBrief]   = useState(false);
+  const [briefUrl, setBriefUrl]           = useState<string | null>(null);
+  const [isMobile, setIsMobile]           = useState(false);
   const [contactingVendor, setContactingVendor] = useState<VendorResult | null>(null);
   const [contactMessage, setContactMessage]     = useState("");
+  // Contractor contact flow
+  const [contactMode, setContactMode]     = useState<"choose" | "all" | null>(null);
+  const [contractors, setContractors]     = useState<ContractorResult[]>([]);
+  const [loadingContractors, setLoadingContractors] = useState(false);
+  const [copiedIndex, setCopiedIndex]     = useState<number | null>(null);
 
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
@@ -937,43 +965,92 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
       )}
 
       {/* ── Issues from Inspection ──────────────────────────────────── */}
-      {inspectionFindings.length > 0 && (
-        <div style={card()}>
-          <p style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
-            <Search size={15} color={C.accent}/> Issues from Your Inspection
-          </p>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {inspectionFindings.map((f, i) => {
-              const dotColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
-              const isActive = activeIssue === f;
-              return (
-                <button key={i} onClick={() => handleFindingClick(f)} style={{
-                  display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
-                  borderRadius: 10, border: `1.5px solid ${isActive ? C.accent : C.border}`,
-                  background: isActive ? "#eff6ff" : C.bg, cursor: "pointer", textAlign: "left",
-                  transition: "all 0.15s",
-                }}>
-                  <span style={{ width: 9, height: 9, borderRadius: "50%", background: dotColor, flexShrink: 0 }}/>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{formatCategory(f.category)}</span>
-                    <span style={{ fontSize: 13, color: C.text2, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {f.description}
-                    </span>
+      {inspectionFindings.length > 0 && (() => {
+        // Group findings by formatted category label
+        const grouped: Record<string, Finding[]> = {};
+        inspectionFindings.forEach(f => {
+          const label = formatCategory(f.category);
+          if (!grouped[label]) grouped[label] = [];
+          grouped[label].push(f);
+        });
+        const categoryKeys = Object.keys(grouped).sort();
+
+        return (
+          <div style={card()}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 14, display: "flex", alignItems: "center", gap: 7 }}>
+              <Search size={15} color={C.accent}/> Issues from Your Inspection
+            </p>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {categoryKeys.map(catLabel => {
+                const findings = grouped[catLabel];
+                const isOpen = openInspectionCategories.has(catLabel);
+                const hasCritical = findings.some(f => f.severity === "critical");
+                const hasWarning  = findings.some(f => f.severity === "warning");
+                const headerColor = hasCritical ? C.red : hasWarning ? C.amber : C.text3;
+                return (
+                  <div key={catLabel} style={{ borderRadius: 10, border: `1.5px solid ${isOpen ? C.accent : C.border}`, overflow: "hidden" }}>
+                    {/* Category header — click to expand */}
+                    <button
+                      onClick={() => {
+                        setOpenInspectionCategories(prev => {
+                          const next = new Set(prev);
+                          next.has(catLabel) ? next.delete(catLabel) : next.add(catLabel);
+                          return next;
+                        });
+                      }}
+                      style={{
+                        width: "100%", display: "flex", alignItems: "center", gap: 10,
+                        padding: "11px 14px", background: isOpen ? "#eff6ff" : C.bg,
+                        border: "none", cursor: "pointer", textAlign: "left",
+                      }}
+                    >
+                      <span style={{ width: 9, height: 9, borderRadius: "50%", background: headerColor, flexShrink: 0 }}/>
+                      <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{catLabel}</span>
+                        <span style={{ fontSize: 12, color: C.text3 }}>{findings.length} issue{findings.length !== 1 ? "s" : ""}</span>
+                      </div>
+                      <ChevronDown size={14} color={C.text3} style={{ transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s", flexShrink: 0 }}/>
+                    </button>
+
+                    {/* Expanded findings list */}
+                    {isOpen && (
+                      <div style={{ borderTop: `1px solid ${C.border}`, display: "flex", flexDirection: "column", gap: 0 }}>
+                        {findings.map((f, i) => {
+                          const dotColor = f.severity === "critical" ? C.red : f.severity === "warning" ? C.amber : C.text3;
+                          const isActive = activeIssue === f;
+                          return (
+                            <button key={i} onClick={() => handleFindingClick(f)} style={{
+                              display: "flex", alignItems: "center", gap: 12, padding: "10px 14px",
+                              border: "none", borderTop: i > 0 ? `1px solid ${C.border}` : "none",
+                              background: isActive ? "#eff6ff" : "white", cursor: "pointer", textAlign: "left",
+                              transition: "background 0.15s",
+                            }}>
+                              <span style={{ width: 7, height: 7, borderRadius: "50%", background: dotColor, flexShrink: 0 }}/>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <span style={{ fontSize: 13, color: C.text2, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                  {f.description}
+                                </span>
+                              </div>
+                              {f.estimated_cost != null && (
+                                <span style={{ fontSize: 13, fontWeight: 700, color: dotColor, flexShrink: 0 }}>
+                                  ${f.estimated_cost.toLocaleString()}
+                                </span>
+                              )}
+                              <span style={{ fontSize: 12, color: C.accent, fontWeight: 600, flexShrink: 0 }}>
+                                Find <ChevronRight size={11} style={{ verticalAlign: "middle" }}/>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
-                  {f.estimated_cost != null && (
-                    <span style={{ fontSize: 14, fontWeight: 700, color: dotColor, flexShrink: 0 }}>
-                      ${f.estimated_cost.toLocaleString()}
-                    </span>
-                  )}
-                  <span style={{ fontSize: 13, color: C.accent, fontWeight: 600, flexShrink: 0 }}>
-                    Find Vendors <ChevronRight size={12} style={{ verticalAlign: "middle" }}/>
-                  </span>
-                </button>
-              );
-            })}
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Category Grid ──────────────────────────────────────────── */}
       <div style={card()}>
@@ -1021,21 +1098,30 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
               {selectedCategory} Contractors Near You
             </p>
             <p style={{ fontSize: 14, color: C.text3, display: "flex", alignItems: "center", gap: 4, marginTop: 3 }}>
-              <MapPin size={12}/> Searching near {city || zip}
+              <MapPin size={12}/> Searching near {city !== "your area" ? (city || zip) : "your property"}
             </p>
           </div>
 
-          {/* Embedded Google Map — top 3 nearby */}
-          <NearbyVendorsMap
-            searchTerm={searchTerm}
-            location={city || zip}
-            result={result}
-            address={address}
-            onContact={(v) => {
-              setContactingVendor(v);
-              setContactMessage(generateContactMessage(v.name, result, address));
-            }}
-          />
+          {/* Embedded Google Map — top 3 nearby.
+              Only render when we have a real location so the map doesn't
+              error out on load with a fallback "your area" string. */}
+          {(city !== "your area" || zip) ? (
+            <NearbyVendorsMap
+              searchTerm={searchTerm}
+              location={city || zip}
+              result={result}
+              address={address}
+              onContact={(v) => {
+                setContactingVendor(v);
+                setContactMessage(generateContactMessage(v.name, result, address));
+              }}
+            />
+          ) : (
+            <div style={{ background: C.bg, borderRadius: 12, padding: "20px 16px", textAlign: "center", marginBottom: 12 }}>
+              <MapPin size={20} color={C.text3} style={{ marginBottom: 8 }}/>
+              <p style={{ fontSize: 14, color: C.text2, margin: 0 }}>Add your property address in Settings to see contractors on the map.</p>
+            </div>
+          )}
 
           {/* Vendor contact panel — shown when user taps "Contact" on a vendor card */}
           {contactingVendor && (

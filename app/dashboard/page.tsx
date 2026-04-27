@@ -1734,6 +1734,32 @@ export default function Dashboard() {
   const [timeline, setTimeline] = useState<TimelineEvent[]>([]);
   const [docs, setDocs]         = useState<Doc[]>([]);
   const [inspectionDoc, setInspectionDoc] = useState<Doc | null>(null); // last uploaded inspection file reference
+  const [confirmDeleteInspection, setConfirmDeleteInspection] = useState(false); // score-reset warning modal
+
+  // ── Maintenance checklist "done" state ──────────────────────────────────
+  // Keyed by season+year so it auto-resets each new season.
+  // Stored in localStorage so it survives page refreshes within the season.
+  const maintenanceDoneKey = (() => {
+    const mo = new Date().getMonth();
+    const yr = new Date().getFullYear();
+    const s = mo <= 1 || mo === 11 ? "winter" : mo <= 4 ? "spring" : mo <= 7 ? "summer" : "fall";
+    return `btlr-maintenance-done-${s}-${yr}`;
+  })();
+  const [doneTasks, setDoneTasks] = useState<Set<string>>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(maintenanceDoneKey) : null;
+      return raw ? new Set(JSON.parse(raw)) : new Set();
+    } catch { return new Set(); }
+  });
+  function toggleDoneTask(key: string) {
+    setDoneTasks(prev => {
+      const next = new Set(prev);
+      next.has(key) ? next.delete(key) : next.add(key);
+      try { localStorage.setItem(maintenanceDoneKey, JSON.stringify([...next])); } catch { /* silent */ }
+      return next;
+    });
+  }
+
   const [q, setQ]               = useState("");
   type ButlerAction = {
     label: string;
@@ -3379,7 +3405,13 @@ export default function Dashboard() {
 
   async function deleteInspectionDoc() {
     if (!inspectionDoc) return;
-    if (!confirm(`Remove "${inspectionDoc.name}"? The file will be deleted and you can upload a new report.`)) return;
+    // Show the custom confirmation modal — don't use browser confirm()
+    setConfirmDeleteInspection(true);
+  }
+
+  async function confirmAndDeleteInspectionDoc() {
+    if (!inspectionDoc) return;
+    setConfirmDeleteInspection(false);
     // Remove from Storage
     const { error: storageErr } = await supabase.storage.from("documents").remove([inspectionDoc.path]);
     if (storageErr) console.warn("[deleteInspectionDoc] storage delete error:", storageErr.message);
@@ -3393,6 +3425,27 @@ export default function Dashboard() {
     // Also clear last-seen filename so the duplicate guard doesn't block re-upload
     setLastInspectionFilename(null);
     showToast("Inspection report removed — upload a new one to re-analyze", "success");
+  }
+
+  // Clear inspection analysis data without a file record (inspectDone=true but no file saved)
+  async function clearInspectionAnalysis() {
+    if (!confirm("Clear this inspection analysis? Your Home Health Score will be reset. You can re-upload at any time.")) return;
+    const propId = activePropertyIdRef.current;
+    if (propId) {
+      await supabase.from("properties").update({
+        inspection_findings: [],
+        inspection_summary: null,
+        inspection_type: null,
+        inspection_date: null,
+        total_estimated_cost: null,
+      }).eq("id", propId);
+      await supabase.from("findings").delete().eq("property_id", propId);
+    }
+    setInspectDone(false);
+    setInspectionResult(null);
+    setHomeHealthReport(null);
+    setLastInspectionFilename(null);
+    showToast("Inspection cleared — upload a new report to re-analyze", "success");
   }
 
   // ── Load repair history from DB on mount ────────────────────────────────
@@ -4820,47 +4873,72 @@ export default function Dashboard() {
                     {predictions.map((pred, i) => {
                       const um = UM[pred.urgency] ?? UM.monitor;
                       const isUrgent = pred.urgency === "critical" || pred.urgency === "high";
+                      const predKey = `pred-${pred.category}-${pred.system_label}`;
+                      const isDone  = doneTasks.has(predKey);
                       return (
                         <div key={i} style={{
                           display: "flex", alignItems: "center", gap: 12,
                           padding: "13px 18px",
                           borderBottom: i < predictions.length - 1 ? `1px solid ${C.border}` : "none",
-                          background: isUrgent ? `${um.bg}` : "transparent",
-                          transition: "background 0.15s",
+                          background: isDone ? C.greenBg : isUrgent ? `${um.bg}` : "transparent",
+                          transition: "background 0.2s",
+                          opacity: isDone ? 0.7 : 1,
                         }}>
+                          {/* Done checkbox */}
+                          <button
+                            onClick={() => toggleDoneTask(predKey)}
+                            title={isDone ? "Mark as not done" : "Mark as done"}
+                            style={{
+                              width: 22, height: 22, borderRadius: 6, flexShrink: 0, cursor: "pointer",
+                              border: `2px solid ${isDone ? C.green : C.border}`,
+                              background: isDone ? C.green : "white",
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              transition: "all 0.15s",
+                            }}>
+                            {isDone && <Check size={11} color="white" strokeWidth={3}/>}
+                          </button>
                           {/* System icon */}
-                          <div style={{ width: 36, height: 36, borderRadius: 9, background: `${um.color}18`, border: `1px solid ${um.color}30`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            {sysIcon(pred.category, um.color)}
+                          <div style={{ width: 36, height: 36, borderRadius: 9, background: isDone ? `${C.green}18` : `${um.color}18`, border: `1px solid ${isDone ? C.green : um.color}30`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                            {sysIcon(pred.category, isDone ? C.green : um.color)}
                           </div>
                           {/* Label + driver */}
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
-                              <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0, whiteSpace: "nowrap" }}>{pred.system_label}</p>
-                              <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: um.bg, color: um.color, border: `1px solid ${um.border}`, whiteSpace: "nowrap" }}>
-                                {um.label}
-                              </span>
+                              <p style={{ fontSize: 13, fontWeight: 700, color: isDone ? C.text3 : C.text, margin: 0, whiteSpace: "nowrap", textDecoration: isDone ? "line-through" : "none" }}>{pred.system_label}</p>
+                              {!isDone && (
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: um.bg, color: um.color, border: `1px solid ${um.border}`, whiteSpace: "nowrap" }}>
+                                  {um.label}
+                                </span>
+                              )}
+                              {isDone && (
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40`, whiteSpace: "nowrap" }}>
+                                  Done
+                                </span>
+                              )}
                             </div>
                             <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                               {pred.not_assessed ? "Not yet assessed — self-inspect or upload report" : pred.driver}
                             </p>
                           </div>
                           {/* Cost + action */}
-                          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
-                            {!pred.not_assessed && (
-                              <span style={{ fontSize: 12, fontWeight: 700, color: isUrgent ? um.color : C.text2 }}>
-                                {pred.cost_range_formatted.replace(" (estimated)", "")}
-                              </span>
-                            )}
-                            {isUrgent ? (
-                              <button
-                                onClick={() => { handleFindVendors(pred.system_label, pred.driver); }}
-                                style={{ padding: "5px 12px", borderRadius: 8, background: um.color, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                Find Pro
-                              </button>
-                            ) : (
-                              <span style={{ fontSize: 11, color: C.text3 }}>{pred.failure_window_label}</span>
-                            )}
-                          </div>
+                          {!isDone && (
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
+                              {!pred.not_assessed && (
+                                <span style={{ fontSize: 12, fontWeight: 700, color: isUrgent ? um.color : C.text2 }}>
+                                  {pred.cost_range_formatted.replace(" (estimated)", "")}
+                                </span>
+                              )}
+                              {isUrgent ? (
+                                <button
+                                  onClick={() => { handleFindVendors(pred.system_label, pred.driver); }}
+                                  style={{ padding: "5px 12px", borderRadius: 8, background: um.color, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                                  Find Pro
+                                </button>
+                              ) : (
+                                <span style={{ fontSize: 11, color: C.text3 }}>{pred.failure_window_label}</span>
+                              )}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -4899,30 +4977,66 @@ export default function Dashboard() {
 
                 {/* ── SEASONAL CHECKLIST ───────────────────────────────── */}
                 <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                  <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 8 }}>
-                    <span style={{ fontSize: 16 }}>{season === "spring" ? "🌱" : season === "summer" ? "☀️" : season === "fall" ? "🍂" : "❄️"}</span>
-                    <div>
-                      <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>{seasonLabel} Maintenance Checklist</p>
-                      <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>Proactive tasks for this season</p>
-                    </div>
-                  </div>
-                  {seasonTasks.map((item, i) => (
-                    <div key={i} style={{
-                      display: "flex", alignItems: "center", gap: 12, padding: "12px 18px",
-                      borderBottom: i < seasonTasks.length - 1 ? `1px solid ${C.border}` : "none",
-                    }}>
-                      <div style={{ width: 28, height: 28, borderRadius: 7, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>{item.icon}</div>
-                      <div style={{ flex: 1, minWidth: 0 }}>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: 0 }}>{item.task}</p>
-                        <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>{item.system} · {item.freq}</p>
+                  <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 16 }}>{season === "spring" ? "🌱" : season === "summer" ? "☀️" : season === "fall" ? "🍂" : "❄️"}</span>
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>{seasonLabel} Maintenance Checklist</p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>Proactive tasks for this season</p>
                       </div>
-                      <button
-                        onClick={() => handleFindVendors(item.system, item.task)}
-                        style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
-                        Find Pro
-                      </button>
                     </div>
-                  ))}
+                    {/* Progress summary */}
+                    {seasonTasks.filter(t => doneTasks.has(`${season}-${t.task}`)).length > 0 && (
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
+                        {seasonTasks.filter(t => doneTasks.has(`${season}-${t.task}`)).length}/{seasonTasks.length} done
+                      </span>
+                    )}
+                  </div>
+                  {seasonTasks.map((item, i) => {
+                    const taskKey = `${season}-${item.task}`;
+                    const isDone  = doneTasks.has(taskKey);
+                    return (
+                      <div key={i} style={{
+                        display: "flex", alignItems: "center", gap: 12, padding: "12px 18px",
+                        borderBottom: i < seasonTasks.length - 1 ? `1px solid ${C.border}` : "none",
+                        background: isDone ? C.greenBg : "transparent",
+                        transition: "background 0.2s",
+                      }}>
+                        {/* Done toggle checkbox */}
+                        <button
+                          onClick={() => toggleDoneTask(taskKey)}
+                          title={isDone ? "Mark as not done" : "Mark as done"}
+                          style={{
+                            width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: "pointer",
+                            border: `2px solid ${isDone ? C.green : C.border}`,
+                            background: isDone ? C.green : "white",
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                            transition: "all 0.15s",
+                          }}>
+                          {isDone && <Check size={13} color="white" strokeWidth={3}/>}
+                        </button>
+                        <div style={{ width: 28, height: 28, borderRadius: 7, background: isDone ? `${C.green}18` : C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          {isDone
+                            ? <CheckCircle2 size={13} color={C.green}/>
+                            : item.icon}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <p style={{ fontSize: 13, fontWeight: 600, color: isDone ? C.text3 : C.text, margin: 0, textDecoration: isDone ? "line-through" : "none" }}>{item.task}</p>
+                          <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>{item.system} · {item.freq}</p>
+                        </div>
+                        {!isDone && (
+                          <button
+                            onClick={() => handleFindVendors(item.system, item.task)}
+                            style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                            Find Pro
+                          </button>
+                        )}
+                        {isDone && (
+                          <span style={{ fontSize: 11, fontWeight: 700, color: C.green, flexShrink: 0 }}>✓ Done</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* ── STAY AHEAD CTA ───────────────────────────────────── */}
@@ -5078,6 +5192,30 @@ export default function Dashboard() {
                                     </button>
                                   </div>
                                 </div>
+
+                                {/* ── Score-reset confirmation banner ── */}
+                                {confirmDeleteInspection && (
+                                  <div style={{ background: "#fef2f2", border: `1.5px solid ${C.red}40`, borderRadius: 10, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
+                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                                      <AlertTriangle size={16} color={C.red} style={{ flexShrink: 0, marginTop: 1 }}/>
+                                      <div>
+                                        <p style={{ fontSize: 13, fontWeight: 700, color: C.red, margin: "0 0 3px" }}>Are you sure?</p>
+                                        <p style={{ fontSize: 13, color: "#7f1d1d", margin: 0, lineHeight: 1.5 }}>
+                                          This will delete your inspection report and <strong>reset your Home Health Score</strong>. You can re-upload a report at any time.
+                                        </p>
+                                      </div>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 8 }}>
+                                      <button onClick={() => setConfirmDeleteInspection(false)} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "white", fontSize: 13, fontWeight: 600, color: C.text2, cursor: "pointer" }}>
+                                        Cancel
+                                      </button>
+                                      <button onClick={confirmAndDeleteInspectionDoc} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: C.red, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                                        Yes, Delete Report
+                                      </button>
+                                    </div>
+                                  </div>
+                                )}
+
                                 <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", width: "fit-content" }}>
                                   {inspecting ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Upload size={11}/> Upload New Report</>}
                                   <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
@@ -5088,10 +5226,15 @@ export default function Dashboard() {
                                 <div style={{ background: "#fefce8", border: "1.5px solid #fde68a", borderRadius: 10, padding: "12px 14px" }}>
                                   <p style={{ fontSize: 13, color: "#92400e", margin: 0 }}>Report was analyzed but the original file is not on record. Re-upload to save a permanent copy.</p>
                                 </div>
-                                <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", width: "fit-content" }}>
-                                  {inspecting ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Upload size={11}/> Upload Report</>}
-                                  <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
-                                </label>
+                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                                    {inspecting ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Upload size={11}/> Upload Report</>}
+                                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
+                                  </label>
+                                  <button onClick={clearInspectionAnalysis} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.border}`, background: "white", color: C.red, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                                    <Trash2 size={11}/> Clear Analysis
+                                  </button>
+                                </div>
                               </div>
                             ) : (
                               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>

@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS public.documents (
   user_id       uuid        NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   property_id   bigint,                        -- nullable: matches properties.id (integer/bigint)
   file_name     text        NOT NULL,          -- original filename shown in the UI
-  storage_path  text        NOT NULL UNIQUE,   -- full path inside the "documents" bucket
+  file_path     text        NOT NULL UNIQUE,   -- full path inside the "documents" bucket
   document_type text        NOT NULL DEFAULT 'other',
                                                -- 'inspection' | 'insurance' | 'mortgage'
                                                -- | 'warranty' | 'repair' | 'other'
