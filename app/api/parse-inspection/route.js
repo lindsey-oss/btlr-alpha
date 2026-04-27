@@ -1,39 +1,81 @@
 import OpenAI from "openai";
 import { createHash } from "crypto";
+import { createClient } from "@supabase/supabase-js";
 import { extractPdfTextAsync } from "../../../lib/extractPdfText";
 import { normalizeLegacyFindings, computeHomeHealthReport } from "../../../lib/scoring-engine";
 import { normalizeFindings } from "../../../lib/findings/normalizeFinding";
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IN-PROCESS PARSE CACHE
-//
-// Stores the last N parse results keyed by SHA-256 of the text sent to AI.
-// Survives within a single server process lifetime — not across restarts.
-// Prevents re-parsing the exact same report and guarantees identical results
-// when the same file is re-uploaded in the same session.
+// SUPABASE ADMIN CLIENT — used for persistent parse cache (survives restarts)
 // ─────────────────────────────────────────────────────────────────────────────
-const parseCache = new Map();   // hash → { result, ts }
-const CACHE_MAX  = 50;          // evict oldest when full
-const CACHE_TTL  = 1000 * 60 * 60 * 24; // 24 hours
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+);
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TWO-TIER PARSE CACHE
+//
+// Tier 1 (L1): In-process Map — zero-latency for same-session re-uploads.
+// Tier 2 (L2): Supabase parse_cache table — survives server restarts and
+//   redeployments. Same PDF = same SHA-256 = identical result forever.
+//
+// Read order:  L1 → L2 → AI (on miss)
+// Write order: AI result → L1 + L2
+// ─────────────────────────────────────────────────────────────────────────────
+const l1Cache = new Map();      // hash → result (in-process, no TTL needed)
+const L1_MAX  = 100;
 
 function cacheKey(text) {
   return createHash("sha256").update(text).digest("hex");
 }
 
-function cacheGet(key) {
-  const entry = parseCache.get(key);
-  if (!entry) return null;
-  if (Date.now() - entry.ts > CACHE_TTL) { parseCache.delete(key); return null; }
-  return entry.result;
+// L1 read/write
+function l1Get(key)        { return l1Cache.get(key) ?? null; }
+function l1Set(key, result) {
+  if (l1Cache.size >= L1_MAX) l1Cache.delete(l1Cache.keys().next().value);
+  l1Cache.set(key, result);
 }
 
-function cacheSet(key, result) {
-  if (parseCache.size >= CACHE_MAX) {
-    // Evict the oldest entry
-    const oldestKey = parseCache.keys().next().value;
-    parseCache.delete(oldestKey);
+// L2 read/write — Supabase parse_cache table
+async function l2Get(hash) {
+  try {
+    const { data } = await supabaseAdmin
+      .from("parse_cache")
+      .select("result")
+      .eq("text_hash", hash)
+      .maybeSingle();
+    return data?.result ?? null;
+  } catch { return null; }
+}
+
+async function l2Set(hash, result) {
+  try {
+    await supabaseAdmin
+      .from("parse_cache")
+      .upsert({ text_hash: hash, result }, { onConflict: "text_hash" });
+  } catch (e) {
+    console.warn("[parse-inspection] L2 cache write failed (non-fatal):", e?.message);
   }
-  parseCache.set(key, { result, ts: Date.now() });
+}
+
+// Combined cache lookup — L1 first, then L2
+async function cacheGet(hash) {
+  const l1 = l1Get(hash);
+  if (l1) { console.log(`[parse-inspection] Cache L1 HIT (${hash.slice(0,10)}…)`); return l1; }
+  const l2 = await l2Get(hash);
+  if (l2) {
+    console.log(`[parse-inspection] Cache L2 HIT (${hash.slice(0,10)}…) — promoting to L1`);
+    l1Set(hash, l2); // promote to L1
+    return l2;
+  }
+  return null;
+}
+
+// Write result to both tiers
+async function cacheSet(hash, result) {
+  l1Set(hash, result);
+  await l2Set(hash, result);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -415,10 +457,12 @@ function mergeFindings(pass1, pass2) {
   const merged = [...pass1];
 
   for (const f2 of pass2) {
-    // Find a duplicate: same-topic category AND similar description
+    // Find a duplicate: same-topic category AND similar description.
+    // Threshold raised from 0.40 → 0.55 to prevent near-misses leaking through
+    // as new findings and inflating the count on re-upload.
     const dupIdx = merged.findIndex(f1 =>
       categoriesMatch(f1.category, f2.category) &&
-      similarity(f1.description, f2.description) >= 0.40
+      similarity(f1.description, f2.description) >= 0.55
     );
 
     if (dupIdx === -1) {
@@ -565,6 +609,12 @@ export async function POST(req) {
 
   if (isLikelyImagePdf) {
     if (pdfBuffer) {
+      // Check cache by PDF buffer hash before hitting OpenAI vision
+      const bufHash = createHash("sha256").update(pdfBuffer).digest("hex");
+      _parseHash = bufHash;
+      const cachedVision = await cacheGet(bufHash);
+      if (cachedVision) return Response.json(cachedVision);
+
       console.log("[parse-inspection] Sparse text — trying Files API vision fallback");
       try {
         const candidates = []; // no text to pre-scan
@@ -595,12 +645,11 @@ export async function POST(req) {
     const textForAI = smartExtractSection(inspectionText);
     console.log(`[parse-inspection] Sending ${textForAI.length} chars to gpt-4o`);
 
-    // ── Cache check — same text always returns same result ────────────────
+    // ── Cache check — same text always returns same result (L1 + L2) ───────
     const hash = cacheKey(textForAI);
-    _parseHash = hash; // hoist into outer scope for cacheSet below
-    const cached = cacheGet(hash);
+    _parseHash = hash;
+    const cached = await cacheGet(hash);
     if (cached) {
-      console.log(`[parse-inspection] Cache HIT (${hash.slice(0, 12)}…) — returning stored result`);
       return Response.json(cached);
     }
 
@@ -636,7 +685,7 @@ export async function POST(req) {
         model: "gpt-4o",
         response_format: { type: "json_object" },
         temperature: AI_TEMPERATURE,
-        seed: AI_SEED + 1, // offset by 1 so pass2 explores slightly different coverage
+        seed: AI_SEED, // same seed as pass1 — full determinism, no "explore" drift
         messages: [
           {
             role: "system",
@@ -728,8 +777,8 @@ export async function POST(req) {
       home_health_report,
     };
 
-    // Store in cache so re-uploads of the same report return identical results
-    if (_parseHash) cacheSet(_parseHash, finalResult);
+    // Persist to both cache tiers — L2 (Supabase) write is fire-and-forget
+    if (_parseHash) cacheSet(_parseHash, finalResult); // async, intentionally not awaited
 
     return Response.json(finalResult);
   } catch {
