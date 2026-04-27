@@ -37,6 +37,41 @@ function card(extra?: React.CSSProperties): React.CSSProperties {
   };
 }
 
+// ── Category label formatter ─────────────────────────────────────────────────
+// Maps canonical BTLR category keys and raw AI strings to human-readable labels.
+function formatCategory(raw: string): string {
+  const t = (raw || "").toLowerCase().trim();
+  // Exact canonical BTLR keys
+  const EXACT: Record<string, string> = {
+    electrical:               "Electrical",
+    plumbing:                 "Plumbing",
+    hvac:                     "HVAC",
+    roof_drainage_exterior:   "Roof & Exterior",
+    structure_foundation:     "Foundation",
+    interior_windows_doors:   "Interior",
+    appliances_water_heater:  "Appliances",
+    safety_environmental:     "Safety",
+    site_grading_drainage:    "Site & Drainage",
+    maintenance_upkeep:       "Maintenance",
+    pool_spa:                 "Pool & Spa",
+    general:                  "General",
+  };
+  if (EXACT[t]) return EXACT[t];
+  // Substring fallbacks for raw AI strings
+  if (t.includes("roof") || t.includes("gutter"))    return "Roof";
+  if (t.includes("electric") || t.includes("panel")) return "Electrical";
+  if (t.includes("plumb") || t.includes("pipe"))     return "Plumbing";
+  if (t.includes("hvac") || t.includes("heat") || t.includes("furnace") || t.includes("cool")) return "HVAC";
+  if (t.includes("found") || t.includes("struct") || t.includes("crawl")) return "Foundation";
+  if (t.includes("window") || t.includes("door"))    return "Windows & Doors";
+  if (t.includes("interior") || t.includes("ceil") || t.includes("floor") || t.includes("wall")) return "Interior";
+  if (t.includes("applian") || t.includes("washer") || t.includes("dryer")) return "Appliances";
+  if (t.includes("safety") || t.includes("smoke") || t.includes("mold"))   return "Safety";
+  if (t.includes("pool") || t.includes("spa"))       return "Pool & Spa";
+  // Generic fallback: title-case the raw string
+  return raw.replace(/[_-]/g, " ").replace(/\b\w/g, c => c.toUpperCase()).trim() || "General";
+}
+
 // ── Trade icon lookup ─────────────────────────────────────────────────────────
 function getTradeIcon(key: string, size = 18, color = C.text3): React.ReactNode {
   const k = key.toLowerCase();
@@ -919,7 +954,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
                 }}>
                   <span style={{ width: 9, height: 9, borderRadius: "50%", background: dotColor, flexShrink: 0 }}/>
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{f.category}</span>
+                    <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{formatCategory(f.category)}</span>
                     <span style={{ fontSize: 13, color: C.text2, display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                       {f.description}
                     </span>
