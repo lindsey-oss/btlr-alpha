@@ -308,11 +308,14 @@ function loadGoogleMaps(): Promise<void> {
     const key = process.env.NEXT_PUBLIC_GOOGLE_MAPS_JS_KEY;
     if (!key) { reject(new Error("No Maps API key configured")); return; }
     const s = document.createElement("script");
-    // loading=async required for newer Maps JS API behaviour
-    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&loading=async&v=weekly`;
+    // Use callback pattern — with loading=async, the script load event fires BEFORE
+    // google.maps.places is initialized. The callback fires after full initialization.
+    const cbName = `__btlrMapsReady_${Date.now()}`;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (window as any)[cbName] = () => { resolve(); delete (window as any)[cbName]; };
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${key}&libraries=places&callback=${cbName}&v=weekly`;
     s.async = true;
     s.defer = true;
-    s.onload  = () => resolve();
     s.onerror = () => { _mapsPromise = null; reject(new Error("Maps script failed to load — check API key restrictions")); };
     document.head.appendChild(s);
   });

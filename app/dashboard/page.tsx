@@ -10,7 +10,7 @@ import {
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
   ExternalLink, ArrowRight, BarChart3, Clock, TrendingUp,
-  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera, Phone, Mail, Trash2,
+  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera, Phone, Mail, Trash2, RefreshCw,
 } from "lucide-react";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
@@ -1921,6 +1921,8 @@ export default function Dashboard() {
   const [editingContribution, setEditingContribution] = useState(false);
   const [contributionInput, setContributionInput] = useState("");
   const warrantyRef = useRef<HTMLInputElement>(null);
+  const [warrantyDocUrl, setWarrantyDocUrl]   = useState<string | null>(null);
+  const [insuranceDocUrls, setInsuranceDocUrls] = useState<string[]>([]);
 
   const inspRef  = useRef<HTMLInputElement>(null);
   const docRef   = useRef<HTMLInputElement>(null);
@@ -2120,11 +2122,19 @@ export default function Dashboard() {
       // Parse each file and collect results
       const results: NonNullable<typeof insurance>[] = [];
       for (const file of files) {
-        // Upload to storage
+        // Upload to storage and save document row
         if (uid) {
           const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
           const storagePath = `${uid}/insurance-${Date.now()}-${safeName}`;
           await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
+          if (propId) {
+            await supabase.from("documents").insert({
+              user_id: uid, property_id: propId,
+              file_name: file.name, file_path: storagePath, document_type: "insurance",
+            });
+          }
+          const { data: signedIns } = await supabase.storage.from("documents").createSignedUrl(storagePath, 3600);
+          if (signedIns?.signedUrl) setInsuranceDocUrls(prev => [...prev, signedIns.signedUrl]);
         }
         // Parse
         const res  = await fetch(`/api/parse-insurance?${params}`, {
@@ -2309,6 +2319,15 @@ export default function Dashboard() {
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
         const storagePath = `${uid}/warranty-${Date.now()}-${safeName}`;
         await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
+        // Save document row so the original PDF is viewable
+        if (propId) {
+          await supabase.from("documents").insert({
+            user_id: uid, property_id: propId,
+            file_name: file.name, file_path: storagePath, document_type: "warranty",
+          });
+        }
+        const { data: signedWarr } = await supabase.storage.from("documents").createSignedUrl(storagePath, 3600);
+        if (signedWarr?.signedUrl) setWarrantyDocUrl(signedWarr.signedUrl);
       }
 
       const params = new URLSearchParams();
@@ -2450,6 +2469,7 @@ export default function Dashboard() {
     setFindingStatuses({}); setRepairDocs([]); setPhotoFindings([]);
     setHomeHealthReport(null); setHomeValue(null); setPropertyTax(null);
     setTimeline([]); setInsuranceDocCount(0);
+    setWarrantyDocUrl(null); setInsuranceDocUrls([]);
     setParseDebug(null); setMortgageForm({ lender: "loanDepot", balance: "", payment: "", due_day: "1", rate: "" });
     setInspectionSource(null);
   }
@@ -3346,6 +3366,36 @@ export default function Dashboard() {
           url:           signed?.signedUrl ?? undefined,
         });
         console.log("[loadDocs] ✓ Restored inspection file reference:", row.file_name);
+      }
+
+      // ── 4. Warranty PDF URL ────────────────────────────────────────────────
+      const { data: warrData } = await supabase
+        .from("documents")
+        .select("file_path")
+        .eq("user_id", uid)
+        .eq("document_type", "warranty")
+        .order("created_at", { ascending: false })
+        .limit(1);
+      if (warrData?.length) {
+        const { data: signedWarr } = await supabase.storage.from("documents").createSignedUrl(warrData[0].file_path, 3600);
+        if (signedWarr?.signedUrl) setWarrantyDocUrl(signedWarr.signedUrl);
+      }
+
+      // ── 5. Insurance PDF URLs ──────────────────────────────────────────────
+      const { data: insData } = await supabase
+        .from("documents")
+        .select("file_path")
+        .eq("user_id", uid)
+        .eq("document_type", "insurance")
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (insData?.length) {
+        const urls: string[] = [];
+        for (const row of insData) {
+          const { data: s } = await supabase.storage.from("documents").createSignedUrl(row.file_path, 3600);
+          if (s?.signedUrl) urls.push(s.signedUrl);
+        }
+        if (urls.length) setInsuranceDocUrls(urls);
       }
 
     } catch (err) {
@@ -5294,12 +5344,36 @@ export default function Dashboard() {
                                   </label>
                                 </div>
                                 <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 12, padding: "14px 16px" }}>
-                                  <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
-                                    {warranty.provider ?? "Warranty"}{warranty.planName ? ` — ${warranty.planName}` : ""}
+                                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
+                                    <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>
+                                      {warranty.provider ?? "Warranty"}{warranty.planName ? ` — ${warranty.planName}` : ""}
+                                    </p>
+                                    {/* Expiry badge */}
+                                    {warranty.expirationDate && (() => {
+                                      const exp  = new Date(warranty.expirationDate);
+                                      const days = Math.round((exp.getTime() - Date.now()) / 86400000);
+                                      if (days <= 0) return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontWeight: 700 }}>Expired</span>;
+                                      const color  = days < 30 ? "#dc2626" : days < 90 ? "#d97706" : "#16a34a";
+                                      const bg     = days < 30 ? "#fef2f2" : days < 90 ? "#fffbeb" : "#f0fdf4";
+                                      const border = days < 30 ? "#fca5a5" : days < 90 ? "#fcd34d" : "#86efac";
+                                      return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, background: bg, border: `1px solid ${border}`, color, fontWeight: 700 }}>{days} days left</span>;
+                                    })()}
+                                  </div>
+                                  <p style={{ fontSize: 13, color: C.text3, margin: "0 0 8px" }}>
+                                    {[warranty.policyNumber ? `#${warranty.policyNumber}` : null, warranty.serviceFee ? `$${warranty.serviceFee} service fee` : null, warranty.expirationDate ? `Expires ${warranty.expirationDate}` : null, warranty.autoRenews ? "Auto-renews" : null].filter(Boolean).join(" · ")}
                                   </p>
-                                  <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
-                                    {[warranty.policyNumber ? `#${warranty.policyNumber}` : null, warranty.serviceFee ? `$${warranty.serviceFee} service fee` : null, warranty.expirationDate ? `Expires ${warranty.expirationDate}` : null].filter(Boolean).join(" · ")}
-                                  </p>
+                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                    {warranty.claimUrl && (
+                                      <a href={warranty.claimUrl.startsWith("http") ? warranty.claimUrl : `https://${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 7, background: "#7c3aed", color: "white", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
+                                        <RefreshCw size={10}/> Renew
+                                      </a>
+                                    )}
+                                    {warrantyDocUrl && (
+                                      <a href={warrantyDocUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 7, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 11, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                                        <FileText size={10}/> View PDF
+                                      </a>
+                                    )}
+                                  </div>
                                 </div>
                                 {(warranty.claimUrl || warranty.claimPhone || warranty.claimEmail) && (
                                   <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px" }}>
@@ -5363,9 +5437,14 @@ export default function Dashboard() {
                                   )}
                                   <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
                                     <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                                      {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}
+                                      {parsingInsurance ? "…" : "Add Policy"}
+                                      <input key={`doc-add-${insuranceFileKey}`} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={addSecondaryPolicy} disabled={parsingInsurance}/>
+                                    </label>
+                                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                                       {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
-                                      {parsingInsurance ? "Parsing…" : "Add / Replace"}
-                                      <input key={insuranceFileKey} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                                      {parsingInsurance ? "Parsing…" : "Replace"}
+                                      <input key={`doc-rep-${insuranceFileKey}`} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                                     </label>
                                   </div>
                                 </div>
@@ -5373,9 +5452,18 @@ export default function Dashboard() {
                                   <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
                                     {insurance.provider ?? "Insurance"}{insurance.policyType ? ` — ${insurance.policyType}` : ""}
                                   </p>
-                                  <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
+                                  <p style={{ fontSize: 13, color: C.text3, margin: "0 0 8px" }}>
                                     {[insurance.policyNumber ? `#${insurance.policyNumber}` : null, (insurance.annualPremium ?? insurance.premium) ? `$${(insurance.annualPremium ?? insurance.premium)?.toLocaleString()}/yr` : null, insurance.deductibleStandard ? `$${insurance.deductibleStandard.toLocaleString()} deductible` : null, insurance.expirationDate ? `Renews ${insurance.expirationDate}` : null].filter(Boolean).join(" · ")}
                                   </p>
+                                  {insuranceDocUrls.length > 0 && (
+                                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                      {insuranceDocUrls.map((url, i) => (
+                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 7, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                                          <FileText size={10}/> {insuranceDocUrls.length > 1 ? `View PDF ${i + 1}` : "View PDF"}
+                                        </a>
+                                      ))}
+                                    </div>
+                                  )}
                                 </div>
                                 {(insurance.dwellingCoverage || insurance.personalProperty || insurance.liabilityCoverage) && (
                                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
@@ -5420,6 +5508,40 @@ export default function Dashboard() {
                                     </div>
                                   </div>
                                 )}
+                                {/* Additional / stacked policies */}
+                                {(insurance.additionalPolicies ?? []).map((ap, i) => (
+                                  <div key={i} style={{ borderTop: "1.5px solid #bae6fd", paddingTop: 12, marginTop: 4 }}>
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                                      <div>
+                                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
+                                          {ap.provider ?? "Additional Policy"}{ap.policyType ? ` · ${ap.policyType}` : ""}
+                                        </span>
+                                        {ap.policyNumber && <span style={{ fontSize: 11, color: C.text3, marginLeft: 8, fontFamily: "monospace" }}>#{ap.policyNumber}</span>}
+                                      </div>
+                                      <button onClick={async () => {
+                                        if (!confirm("Remove this policy?")) return;
+                                        const propId = activePropertyIdRef.current;
+                                        if (!propId) return;
+                                        const updated = (insurance?.additionalPolicies ?? []).filter((_, j) => j !== i);
+                                        await supabase.from("home_insurance").update({ additional_policies: updated }).eq("property_id", propId);
+                                        setInsurance(prev => prev ? { ...prev, additionalPolicies: updated } : prev);
+                                        showToast("Policy removed", "success");
+                                      }} style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, padding: 2 }}><X size={13}/></button>
+                                    </div>
+                                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                                      {ap.annualPremium && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}><div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Premium</div><div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>${ap.annualPremium.toLocaleString()}<span style={{ fontSize: 10, color: C.text3 }}>/yr</span></div></div>}
+                                      {ap.expirationDate && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}><div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Renews</div><div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{ap.expirationDate}</div></div>}
+                                    </div>
+                                    {(ap.claimPhone || ap.claimUrl) && (
+                                      <button onClick={() => {
+                                        if (ap.claimUrl) window.open(ap.claimUrl);
+                                        else if (ap.claimPhone) window.location.href = `tel:${ap.claimPhone.replace(/\D/g, "")}`;
+                                      }} style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 7, background: C.navy, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                                        File Claim
+                                      </button>
+                                    )}
+                                  </div>
+                                ))}
                               </div>
                             )}
                           </>)}
