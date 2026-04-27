@@ -810,13 +810,18 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   }
 
   const urgencyInfo = result ? (URGENCY_STYLE[result.urgency] ?? URGENCY_STYLE.normal) : null;
-  const city    = address?.split(",").slice(1).join(",").trim() || "your area";
-  const zip     = address?.match(/\d{5}/)?.[0] || "";
+  const cityParsed  = address?.split(",").slice(1).join(",").trim() ?? "";
+  const city        = cityParsed || "your area";  // display only
+  const zip         = address?.match(/\d{5}/)?.[0] ?? "";
+  // Real location used for searches — never the "your area" placeholder
+  const locationForSearch = (address && address !== "My Home") ? address : (cityParsed || zip || "");
   // Use AI-generated search terms when available, otherwise fall back to category label
   const searchTerm = result?.search_terms?.[0] ?? selectedCategory ?? "";
 
   function yelpLink(term: string) {
-    return `https://www.yelp.com/search?find_desc=${encodeURIComponent(term)}&find_loc=${encodeURIComponent(city || zip)}`;
+    const loc = cityParsed || zip;
+    if (!loc) return `https://www.yelp.com/search?find_desc=${encodeURIComponent(term)}`;
+    return `https://www.yelp.com/search?find_desc=${encodeURIComponent(term)}&find_loc=${encodeURIComponent(loc)}`;
   }
 
   return (
@@ -1136,7 +1141,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
           {(city !== "your area" || zip) ? (
             <NearbyVendorsMap
               searchTerm={searchTerm}
-              location={city || zip}
+              location={locationForSearch}
               result={result}
               address={address}
               onContact={(v) => {

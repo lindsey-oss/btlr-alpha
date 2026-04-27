@@ -30,14 +30,12 @@ function cacheKey(text) {
   return createHash("sha256").update(text).digest("hex");
 }
 
-// L1 read/write
 function l1Get(key)        { return l1Cache.get(key) ?? null; }
 function l1Set(key, result) {
   if (l1Cache.size >= L1_MAX) l1Cache.delete(l1Cache.keys().next().value);
   l1Cache.set(key, result);
 }
 
-// L2 read/write — Supabase parse_cache table
 async function l2Get(hash) {
   try {
     const { data } = await supabaseAdmin
@@ -59,20 +57,18 @@ async function l2Set(hash, result) {
   }
 }
 
-// Combined cache lookup — L1 first, then L2
 async function cacheGet(hash) {
   const l1 = l1Get(hash);
   if (l1) { console.log(`[parse-inspection] Cache L1 HIT (${hash.slice(0,10)}…)`); return l1; }
   const l2 = await l2Get(hash);
   if (l2) {
     console.log(`[parse-inspection] Cache L2 HIT (${hash.slice(0,10)}…) — promoting to L1`);
-    l1Set(hash, l2); // promote to L1
+    l1Set(hash, l2);
     return l2;
   }
   return null;
 }
 
-// Write result to both tiers
 async function cacheSet(hash, result) {
   l1Set(hash, result);
   await l2Set(hash, result);
@@ -81,120 +77,157 @@ async function cacheSet(hash, result) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
-const CHAR_LIMIT = 48000;        // ~12k tokens — plenty for gpt-4o context
-const MIN_TEXT_LENGTH = 80;      // below this = likely image/scanned PDF
+const CHAR_LIMIT     = 48000;   // ~12k tokens — plenty for gpt-4o context
+const MIN_TEXT_LENGTH = 80;     // below this = likely image/scanned PDF
 
-// Determinism settings — critical for consistent results across re-uploads
-// temperature: 0  → fully greedy decoding, no sampling randomness
-// seed: fixed int → OpenAI uses same internal RNG state each call
 const AI_TEMPERATURE = 0;
-const AI_SEED = 91472;  // arbitrary fixed value — never change this
+const AI_SEED = 91472;          // fixed — never change
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
 //
 // Scans the ENTIRE document for address-like patterns before sending to AI.
-// Candidates are injected into the prompt as hints so the model doesn't have
-// to hunt through noisy text — they're handed to it directly.
-//
-// Looks for:
-//   1. Labeled patterns: "Property Address: 123 Main St"
-//   2. Street address patterns anywhere in the doc
-//   3. Common inspection software header blocks (Spectora, HomeGauge, etc.)
+// Supports: CBHI, HomeGauge, Spectora, HouseMaster, WIN, Palm-Tech, 3D Inspect,
+//           iReport, ReportHost, Home Inspector Pro, and custom text exports.
 // ─────────────────────────────────────────────────────────────────────────────
 function extractAddressCandidates(fullText) {
   const candidates = [];
   const seen = new Set();
 
   function add(candidate) {
-    const clean = candidate.trim().replace(/\s+/g, " ");
+    const clean = candidate.trim().replace(/\s+/g, " ")
+      // Strip trailing junk often appended (page numbers, dates)
+      .replace(/\s+(?:Page|Pg|p\.)\s*\d+.*$/i, "")
+      .replace(/\s+\d{1,2}\/\d{1,2}\/\d{2,4}.*$/, "")
+      .trim();
     if (clean.length < 8 || seen.has(clean.toLowerCase())) return;
     seen.add(clean.toLowerCase());
     candidates.push(clean);
   }
 
-  // ── Labeled patterns (highest confidence) ────────────────────────────────
+  // ── 1. Labeled patterns (highest confidence) ─────────────────────────────
   const labelPatterns = [
-    /(?:property|subject|inspection|site|service)\s+address\s*[:\-–]\s*([^\n\r]{8,120})/gi,
-    /(?:address of (?:inspection|inspected property|property))\s*[:\-–]\s*([^\n\r]{8,120})/gi,
-    /(?:property (?:is )?(?:located|situated) at|located at)\s*[:\-–]?\s*([^\n\r]{8,120})/gi,
-    /(?:subject property|property being inspected)\s*[:\-–]\s*([^\n\r]{8,120})/gi,
-    /(?:home|house|building) address\s*[:\-–]\s*([^\n\r]{8,120})/gi,
-    // Spectora / HomeGauge: address on its own line after a label
-    /^(?:Address|Location)[:\s]+([^\n\r]{8,120})$/gim,
-    // "Prepared for: ... Property: 123 Main St"
-    /Property:\s*([^\n\r]{8,120})/gi,
-    // Common "Inspected By" adjacent line patterns
-    /(?:Inspected|Report)\s+for[:\s]+[^\n\r]*\n([^\n\r]{8,120})/gi,
+    // Standard labels
+    /(?:property|subject|inspection|site|service|inspected)\s+address\s*[:\-–]\s*([^\n\r]{8,150})/gi,
+    /(?:address of (?:inspection|inspected property|property))\s*[:\-–]\s*([^\n\r]{8,150})/gi,
+    /(?:property (?:is )?(?:located|situated) at|located at)\s*[:\-–]?\s*([^\n\r]{8,150})/gi,
+    /(?:subject property|property being inspected|inspected property)\s*[:\-–]\s*([^\n\r]{8,150})/gi,
+    /(?:home|house|building|structure) address\s*[:\-–]\s*([^\n\r]{8,150})/gi,
+    // Spectora / HomeGauge / 3D Inspect: standalone label lines
+    /^(?:Address|Location|Property|Site)[:\s]+([^\n\r]{8,150})$/gim,
+    // Palm-Tech style: "Property:" or "Property Location:"
+    /^Property(?:\s+Location)?\s*:\s*([^\n\r]{8,150})$/gim,
+    // WIN / HouseMaster: "Prepared for ... at address"
+    /(?:Prepared for|Inspection for|Report for)[^\n\r]*\n+([^\n\r]{8,150})/gi,
+    // iReport: "Client Property Address:"
+    /Client\s+Property\s+(?:Address)?\s*[:\-–]\s*([^\n\r]{8,150})/gi,
+    // ReportHost / custom: "Inspection Location:"
+    /Inspection\s+Location\s*[:\-–]\s*([^\n\r]{8,150})/gi,
+    // "Home / Property at:"
+    /(?:home|property)\s+at\s*[:\-–]?\s*([^\n\r]{8,150})/gi,
+    // Common "for the property located at" phrase
+    /for\s+the\s+property\s+(?:located\s+)?at\s+([^\n\r,.]{10,150})/gi,
+    // Address in parens after buyer name: "John Smith (123 Main St)"
+    /\((\d{2,6}\s+[A-Z][A-Za-z0-9\s]{4,80}(?:Street|St|Avenue|Ave|Blvd|Boulevard|Drive|Dr|Road|Rd|Lane|Ln|Way|Court|Ct|Place|Pl|Circle|Cir|Trail|Trl|Terrace|Ter|Highway|Hwy|Pkwy)[^\)]{0,50})\)/g,
+    // "Service Address" label
+    /^Service\s+Address\s*:\s*([^\n\r]{8,150})$/gim,
+    // CBHI style: address on line right after "Report Date" block
+    /Report\s+Date[^\n]*\n+([^\n\r]{10,150})/gi,
   ];
 
   for (const pattern of labelPatterns) {
     let match;
-    while ((match = pattern.exec(fullText)) !== null) {
+    const resetPattern = new RegExp(pattern.source, pattern.flags);
+    while ((match = resetPattern.exec(fullText)) !== null) {
       add(match[1]);
-      if (candidates.length >= 8) break;
+      if (candidates.length >= 10) break;
     }
+    if (candidates.length >= 10) break;
   }
 
-  // ── Street address pattern: number + street name + type ──────────────────
-  // Search entire doc (not just cover page) since address can appear anywhere.
-  const streetRe = /\b(\d{2,6}\s+(?:[NSEW]\s+)?[A-Z][A-Za-z0-9\s]{2,40}(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Lane|Ln|Way|Court|Ct|Place|Pl|Circle|Cir|Trail|Trl|Terrace|Ter|Highway|Hwy|Parkway|Pkwy)\.?)(?:[,\s]+(?:[A-Za-z\s]{2,30})[,\s]+(?:[A-Z]{2})\s+(?:\d{5}(?:-\d{4})?))?/g;
+  // ── 2. Street number + street name pattern ───────────────────────────────
+  // Matches addresses like "1234 N Main Street, Tucson, AZ 85701"
+  // or just "1234 Main St" (partial address still useful as hint)
+  const streetRe = /\b(\d{2,6}\s+(?:[NSEW](?:orth|outh|ast|est)?\s+)?[A-Z][A-Za-z0-9\s]{2,50}(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Lane|Ln|Way|Court|Ct|Place|Pl|Circle|Cir|Trail|Trl|Terrace|Ter|Highway|Hwy|Parkway|Pkwy)\.?)(?:[,\s]+(?:[A-Za-z\s]{2,35})[,\s]+(?:[A-Z]{2})\s+(?:\d{5}(?:-\d{4})?))?/g;
 
   let streetMatch;
   let searchCount = 0;
-  while ((streetMatch = streetRe.exec(fullText)) !== null && searchCount < 20) {
+  while ((streetMatch = streetRe.exec(fullText)) !== null && searchCount < 25) {
     add(streetMatch[0]);
     searchCount++;
-    if (candidates.length >= 8) break;
+    if (candidates.length >= 10) break;
   }
 
-  // Return top 5 candidates — more than that dilutes the hint
-  return candidates.slice(0, 5);
+  // ── 3. ZIP-anchored fallback ─────────────────────────────────────────────
+  // If we still have < 2 candidates, search for any line containing a 5-digit ZIP
+  // (very common in inspection reports — the property address always has one)
+  if (candidates.length < 2) {
+    const zipLineRe = /^([^\n\r]{10,120}\b\d{5}(?:-\d{4})?\b[^\n\r]{0,40})$/gm;
+    let zipMatch;
+    while ((zipMatch = zipLineRe.exec(fullText)) !== null) {
+      const line = zipMatch[1].trim();
+      // Exclude lines that look like phone numbers, dates, or pure numbers
+      if (!/^\d{3}[-.\s]\d{3}[-.\s]\d{4}/.test(line) &&
+          !/^\d{1,2}\/\d{1,2}\/\d{2,4}/.test(line) &&
+          /[A-Za-z]/.test(line)) {
+        add(line);
+        if (candidates.length >= 10) break;
+      }
+    }
+  }
+
+  console.log(`[parse-inspection] Address candidates (${candidates.length}):`, candidates);
+  return candidates.slice(0, 6);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SMART SECTION EXTRACTOR
 //
 // Builds the text blob sent to the AI by combining:
-//   A) Full document address context (first 3000 chars, ANY address-labelled
-//      section, and last 500 chars — covers edge cases like address in footer)
-//   B) Findings-dense section: General Summary, deficiency list, or first
-//      findings block — up to CHAR_LIMIT chars
+//   A) Full document address context (first 3000 chars, any address sections,
+//      and last 500 chars for footer addresses)
+//   B) Findings-dense section: looks for summary sections or first dense
+//      block of deficiencies
 //
 // Handles report styles:
-//   • CBHI / HomeGauge: 70-100 pages, summary at the end
+//   • CBHI / HomeGauge: 70-100 pages, summary at the END of the document
 //   • HouseMaster / WIN: findings inline from page 1
-//   • Spectora / Home Inspector Pro: single-page digital reports
-//   • Custom / text exports: free-form structure
+//   • Spectora / Home Inspector Pro: single-page digital reports, ALL inline
+//   • Palm-Tech / 3D Inspect: findings in numbered sections throughout
+//   • iReport / ReportHost: custom narrative format
+//   • Short custom reports: < 10 pages, send everything
 // ─────────────────────────────────────────────────────────────────────────────
 function smartExtractSection(fullText) {
   const len = fullText.length;
 
   // ── A. Address context block ─────────────────────────────────────────────
-  // Cover page (first 3000 chars) + last 500 chars (some reports put address
-  // in the footer) + any paragraph containing an address label anywhere in doc
-  const coverPage = fullText.slice(0, 3000);
-  const footer    = len > 3000 ? fullText.slice(-500) : "";
+  const coverPage = fullText.slice(0, 3500);
+  const footer    = len > 3500 ? fullText.slice(-600) : "";
 
-  // Find any paragraph (up to 400 chars) surrounding an address label
+  // Find paragraphs containing address labels anywhere in the doc
   let addressSection = "";
-  const addressLabelRe = /(?:property|subject|site|inspection)\s+address/gi;
+  const addressLabelRe = /(?:property|subject|site|inspection|client\s+property|service)\s+address/gi;
   let m;
   while ((m = addressLabelRe.exec(fullText)) !== null) {
-    const start = Math.max(0, m.index - 100);
-    const end   = Math.min(len, m.index + 400);
+    const start   = Math.max(0, m.index - 100);
+    const end     = Math.min(len, m.index + 500);
     const snippet = fullText.slice(start, end);
-    if (!coverPage.includes(snippet.slice(0, 40))) {
-      // Only add if it's not already covered by the cover page
+    if (!coverPage.includes(snippet.slice(0, 50))) {
       addressSection += "\n\n---ADDRESS SECTION---\n" + snippet;
     }
-    if (addressSection.length > 1200) break; // cap at ~3 snippets
+    if (addressSection.length > 1500) break;
   }
 
-  const contextBlock = coverPage + (footer ? "\n\n---FOOTER---\n" + footer : "") + addressSection;
+  const contextBlock = coverPage
+    + (footer       ? "\n\n---FOOTER---\n"         + footer       : "")
+    + (addressSection                                              );
 
   // ── B. Summary / findings section ────────────────────────────────────────
+  //
+  // More markers than before — covers many more software formats:
+  //
   const summaryPatterns = [
+    // Standard
     "General Summary",
     "GENERAL SUMMARY",
     "Summary of Findings",
@@ -205,73 +238,121 @@ function smartExtractSection(fullText) {
     "INSPECTION SUMMARY",
     "DEFICIENCY SUMMARY",
     "Deficiency Summary",
+    // HomeGauge
     "CONCERNS AND RECOMMENDATIONS",
     "Concerns and Recommendations",
     "Items Requiring Attention",
     "ITEMS REQUIRING ATTENTION",
+    // HouseMaster / WIN
     "Significant Findings",
     "SIGNIFICANT FINDINGS",
     "Key Findings",
     "KEY FINDINGS",
     "Action Required",
     "ACTION REQUIRED",
+    // Spectora
+    "Major Concerns",
+    "MAJOR CONCERNS",
+    "Minor Concerns",
+    "MINOR CONCERNS",
+    "Safety Issues",
+    "SAFETY ISSUES",
+    "Repair Items",
+    "REPAIR ITEMS",
+    // Palm-Tech
+    "Repair or Replace",
+    "REPAIR OR REPLACE",
+    "Immediate Attention",
+    "IMMEDIATE ATTENTION",
+    "Monitor",
+    "MONITOR",
+    // 3D Inspect / iReport
+    "Critical Items",
+    "CRITICAL ITEMS",
+    "Priority Items",
+    "PRIORITY ITEMS",
+    "Items of Note",
+    "ITEMS OF NOTE",
+    // ReportHost / custom
+    "Findings Summary",
+    "FINDINGS SUMMARY",
+    "Maintenance Items",
+    "MAINTENANCE ITEMS",
+    "Recommended Actions",
+    "RECOMMENDED ACTIONS",
+    "Action Items",
+    "ACTION ITEMS",
+    // CBHI
+    "SECTION SUMMARIES",
+    "Section Summaries",
+    "OVERALL ASSESSMENT",
+    "Overall Assessment",
   ];
+
+  // For short documents (< 15k chars ≈ ~5 pages), lower the TOC-skip threshold
+  // so we don't accidentally skip the ONLY occurrence of the section header.
+  const tocThresholdFraction = len < 15000 ? 0.10 : 0.20;
 
   for (const pattern of summaryPatterns) {
     let idx = fullText.indexOf(pattern);
     if (idx === -1) continue;
 
-    // Skip likely TOC entries (real section is usually past 25% of the document)
-    const threshold = len * 0.25;
+    const threshold = len * tocThresholdFraction;
     if (idx < threshold) {
+      // Try second occurrence (the real section, not a TOC entry)
       const secondIdx = fullText.indexOf(pattern, idx + pattern.length);
       if (secondIdx !== -1 && secondIdx >= threshold) {
         idx = secondIdx;
-      } else if (idx < threshold) {
+      } else if (idx < threshold && len > 5000) {
+        // For longer docs only skip; for short docs use the first occurrence
         continue;
       }
     }
 
     const section = fullText.slice(idx, idx + CHAR_LIMIT);
-    console.log(`[parse-inspection] Using "${pattern}" at char ${idx} (${section.length} chars)`);
+    console.log(`[parse-inspection] Using summary pattern "${pattern}" at char ${idx} (${section.length} chars)`);
     return contextBlock + "\n\n---SUMMARY SECTION---\n\n" + section;
   }
 
   // ── Strategy 2: Find first dense findings block ───────────────────────────
   const findingMarkers = [
-    "Repair or Replace",
-    "REPAIR OR REPLACE",
-    "Repair/Replace",
-    "REPAIR/REPLACE",
-    "DEFICIENCY",
-    "Deficiency",
-    "Safety Concern",
-    "SAFETY CONCERN",
-    "Further Evaluation",
-    "FURTHER EVALUATION",
-    "Immediate Action",
-    "IMMEDIATE ACTION",
-    "Recommended Repair",
-    "RECOMMENDED REPAIR",
+    // Classic severity labels
+    "Repair or Replace",   "REPAIR OR REPLACE",
+    "Repair/Replace",      "REPAIR/REPLACE",
+    "DEFICIENCY",          "Deficiency",
+    "Safety Concern",      "SAFETY CONCERN",
+    "Safety Issue",        "SAFETY ISSUE",
+    "Further Evaluation",  "FURTHER EVALUATION",
+    "Immediate Action",    "IMMEDIATE ACTION",
+    "Recommended Repair",  "RECOMMENDED REPAIR",
+    // Spectora checkbox-style
+    "Major Concern",       "MAJOR CONCERN",
+    "Minor Concern",       "MINOR CONCERN",
+    // Palm-Tech / 3D Inspect icon labels
+    "IN2",  "RR",  "FE",  "SC",  "MO",   // common abbreviations
+    // Numbered finding blocks
+    "1. ",                 // many reports start finding #1 after the cover
+    // Any line starting "Finding:"
+    "Finding:",            "FINDING:",
+    // Narrative flags
+    "was found",           "was observed",
+    "requires repair",     "recommend",
   ];
 
-  // Search after first 10% (skip pure cover/intro pages)
-  const searchStart = Math.floor(len * 0.10);
+  // Search after first 8% (skip pure cover/intro pages for larger docs)
+  const searchStart = Math.floor(len * (len < 15000 ? 0.03 : 0.08));
 
   for (const marker of findingMarkers) {
     const idx = fullText.indexOf(marker, searchStart);
     if (idx === -1) continue;
 
-    // Back up to capture the section header
-    const start = Math.max(searchStart, idx - 500);
+    const start   = Math.max(searchStart, idx - 600);
     const section = fullText.slice(start, start + CHAR_LIMIT);
     console.log(`[parse-inspection] Using findings block at char ${idx} via "${marker}" (${section.length} chars)`);
     return contextBlock + "\n\n---FINDINGS SECTION---\n\n" + section;
   }
 
-  // ── Strategy 3: Short report — send everything ────────────────────────────
-  // If we still haven't found a structure, the report is probably short or
-  // non-standard — just send the full document up to CHAR_LIMIT.
+  // ── Strategy 3: Short / unstructured report — send everything ────────────
   console.log(`[parse-inspection] No structure found — sending full document (${Math.min(len, CHAR_LIMIT)} chars)`);
   return fullText.slice(0, CHAR_LIMIT);
 }
@@ -281,7 +362,7 @@ function smartExtractSection(fullText) {
 // ─────────────────────────────────────────────────────────────────────────────
 function buildPrompt(addressCandidates) {
   const addressHint = addressCandidates.length > 0
-    ? `\nADDRESS CANDIDATES (pre-extracted from document — choose the one that is the inspected property address):\n${addressCandidates.map((a, i) => `  ${i + 1}. ${a}`).join("\n")}\n`
+    ? `\nADDRESS CANDIDATES (pre-extracted from document — pick the inspected PROPERTY address):\n${addressCandidates.map((a, i) => `  ${i + 1}. ${a}`).join("\n")}\n`
     : "";
 
   return `Extract structured data from this home inspection report. Respond ONLY with valid JSON in exactly this shape:
@@ -310,12 +391,17 @@ ${addressHint}
 FIELD RULES:
 
 property_address:
-  - The street address of the INSPECTED PROPERTY (not the inspector's office)
-  - Look for: "Property Address:", "Subject Property:", "Inspection Address:", "Site Address:", "Property:", "Location:", "Address:"
-  - It may appear anywhere in the document — not just the cover page
+  - The street address of the INSPECTED PROPERTY (not the inspector's office or buyer's home)
+  - Look for labels: "Property Address", "Subject Property", "Inspection Address",
+    "Site Address", "Property", "Location", "Address", "Client Property Address",
+    "Inspection Location", "Service Address" — in any format
+  - May appear ANYWHERE — cover page, header, footer, or body
   - Use the address candidates above as strong hints if present
+  - Prefer the candidate with a recognizable street number + street name + city + state + zip
+  - If multiple candidates exist, choose the one that looks like the inspected home
+    (not the inspector's office or the report recipient's mailing address)
   - Include city, state, zip if visible
-  - Return null only if absolutely no address can be found anywhere
+  - Return null ONLY if absolutely no address can be found anywhere in the document
 
 inspection_date:
   - Date the inspection was performed (not the report date or purchase date)
@@ -339,21 +425,22 @@ roof_year:
   - Return null if only the home's build year is mentioned
 
 hvac_year:
-  - Year the HVAC was last REPLACED or INSTALLED — NOT the home's construction year
+  - Year the HVAC was last REPLACED or INSTALLED
   - Only populate if explicitly mentioned as a replacement/installation
 
 findings:
-  - Extract ALL deficiencies, repair items, maintenance issues, and observations
-  - Include pool, spa, deck, outbuilding findings if present
-  - Report formats vary widely — look for ALL of these marker types:
-      • "Repair or Replace" / "RR"
+  - Extract ALL deficiencies, repair items, maintenance items, and observations
+  - Include pool, spa, deck, outbuilding, and detached garage findings if present
+  - Report formats vary widely — look for ALL of these severity markers:
+      • "Repair or Replace" / "RR" / "R/R"
       • "Further Evaluation" / "FE"
-      • "Safety Concern" / "SC"
-      • "Deficiency" / numbered items
-      • "Recommended" / "Noted" / "Observed"
-      • Items in a General Summary or deficiency list
-  - category: choose the MOST SPECIFIC label that fits from the list below.
-    Use EXACTLY one of these strings (spelling matters):
+      • "Safety Concern" / "Safety Issue" / "SC"
+      • "Major Concern" / "Minor Concern" (Spectora)
+      • "Deficiency" / numbered items / checkboxes
+      • "Recommended" / "Noted" / "Observed" / "Monitor"
+      • Items in any summary, deficiency list, or findings list
+      • Inline narrative text: "was found to be...", "requires repair", "recommend..."
+  - category: use EXACTLY one of these strings:
       Roof | Gutters | Siding | Exterior | Deck | Patio | Chimney | Fireplace
       HVAC | Furnace | Air Conditioning | Ductwork | Thermostat
       Plumbing | Water Heater
@@ -365,34 +452,29 @@ findings:
       Safety | Environmental | Pest | Mold | Radon | Asbestos
       Pool | Spa | Hot Tub | Pool Equipment
       Garage | General
-    CRITICAL CATEGORY RULES — always follow these:
-      • Acoustic/popcorn ceiling texture, ceiling stains, drywall damage, wall cracks,
-        floor issues, interior paint → use "Interior" or the specific label (Ceilings, Walls, Floors)
-      • Window glass, window seals, window sashes, window frames → use "Windows"
-      • Entry doors, interior doors, sliding doors, screen doors → use "Doors"
-      • NEVER use "Windows" for ceilings, floors, walls, drywall, or interior surfaces
-      • NEVER use "Exterior" for indoor observations
-      • If a category does not fit any label above, use "General"
+    CRITICAL CATEGORY RULES:
+      • Ceiling texture/stains, drywall, wall cracks, floor issues, interior paint → "Interior" or specific label
+      • Window glass/seals/sashes/frames → "Windows"
+      • Entry/interior/sliding/screen doors → "Doors"
+      • NEVER use "Windows" for ceilings, floors, walls, or interior surfaces
+      • NEVER use "Exterior" for purely indoor observations
+      • If nothing fits, use "General"
   - severity:
-      "critical" = immediate safety hazard, structural failure, active leak, mold, pest infestation
-      "warning"  = significant repair needed, system nearing end of life, inspector recommends repair
-      "info"     = maintenance tip, minor cosmetic issue, monitor only
-  - estimated_cost: dollar amount only if stated in the report; otherwise null
+      "critical" = immediate safety hazard, structural failure, active leak, mold, pest infestation, open wiring, gas leak
+      "warning"  = significant repair needed, system nearing end of life, inspector recommends repair soon
+      "info"     = maintenance tip, minor cosmetic issue, monitor only, advisory note
+  - estimated_cost: dollar amount only if stated; otherwise null
   - age_years: years old if mentioned; null otherwise
   - remaining_life_years: inspector's stated remaining useful life; null if not stated
-  - lifespan_years: use these defaults when relevant — Roof 25, HVAC 15, Water Heater 12,
-    Electrical Panel 40, Plumbing 50, Foundation 100, Windows 20, Deck 15, Siding 20,
-    Pool Equipment 10; null if not applicable
+  - lifespan_years defaults (use when relevant):
+      Roof 25, HVAC 15, Water Heater 12, Electrical Panel 40, Plumbing 50,
+      Foundation 100, Windows 20, Deck 15, Siding 20, Pool Equipment 10; null if not applicable
   - Return up to 30 findings, most critical first
-  - Omit findings with empty descriptions`;
+  - Omit findings with empty or whitespace-only descriptions`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECOND-PASS PROMPT
-//
-// The second pass uses a different system instruction to encourage the model
-// to find anything the first pass missed — especially minor/info findings and
-// systems not covered in the main summary section.
 // ─────────────────────────────────────────────────────────────────────────────
 function buildSecondPassPrompt(firstPassFindings, addressCandidates) {
   const addressHint = addressCandidates.length > 0
@@ -401,13 +483,16 @@ function buildSecondPassPrompt(firstPassFindings, addressCandidates) {
 
   const systemCategories = [...new Set(firstPassFindings.map(f => f.category))].join(", ");
 
-  return `You are doing a SECOND REVIEW of this home inspection report. A first pass already found findings in these categories: ${systemCategories || "none yet"}.
+  return `You are doing a SECOND REVIEW of this home inspection report. Pass 1 found findings in: ${systemCategories || "none yet"}.
 
-Your job is to find ANYTHING that was missed — report every finding regardless of system type, including:
-- Additional findings within already-identified categories
-- Systems not yet represented: pool, spa, deck, garage, fireplace, attic, crawlspace, chimney, gutters, grading/drainage, water heater, doors, windows, appliances, insulation, ventilation, environmental hazards
-- Minor maintenance items (info-level findings)
+Your job: find ANYTHING missed. Cover every system regardless of whether pass 1 touched it:
+- Additional findings within already-found categories
+- Systems not yet covered: pool, spa, deck, garage, fireplace, attic, crawlspace,
+  chimney, gutters, grading/drainage, water heater, doors, windows, appliances,
+  insulation, ventilation, environmental hazards, radon, mold, pest
+- Minor maintenance/info-level items
 - Age or condition notes for any system not yet captured
+- Findings embedded in narrative paragraphs (not just summary lists)
 
 Respond ONLY with valid JSON in exactly this shape:
 {
@@ -431,30 +516,23 @@ Respond ONLY with valid JSON in exactly this shape:
   ]
 }
 ${addressHint}
-Use the same CRITICAL CATEGORY RULES as pass 1:
-  • Ceilings, walls, floors, drywall, interior paint, acoustic/popcorn texture → "Interior" or specific (Ceilings, Walls, Floors)
+Same CRITICAL CATEGORY RULES as pass 1:
+  • Ceilings/walls/floors/drywall/interior paint → "Interior" or specific
   • Window glass/seals/frames → "Windows"  |  Doors → "Doors"
-  • NEVER use "Windows" for interior surfaces, ceilings, or walls
-Return ALL findings you see across all systems. The merger will deduplicate against pass 1. Return up to 30 findings.`;
+  • NEVER use "Windows" for interior surfaces
+Return ALL findings you find. The merger deduplicates against pass 1. Return up to 30 findings.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
 // FINDINGS MERGER
-//
-// Combines two sets of findings, deduplicating by semantic similarity.
-// A finding is considered a duplicate if it has the same category AND
-// its description overlaps significantly with an existing finding.
-// Always keeps the higher-severity version when there's a conflict.
 // ─────────────────────────────────────────────────────────────────────────────
 function mergeFindings(pass1, pass2) {
   const SEVERITY_RANK = { critical: 3, warning: 2, info: 1 };
 
-  // Normalise a string for fuzzy comparison
   function norm(s) {
     return (s || "").toLowerCase().replace(/[^a-z0-9\s]/g, "").replace(/\s+/g, " ").trim();
   }
 
-  // Word-overlap ratio between two strings (Jaccard on word sets, words > 3 chars)
   function similarity(a, b) {
     const wa = new Set(norm(a).split(" ").filter(w => w.length > 3));
     const wb = new Set(norm(b).split(" ").filter(w => w.length > 3));
@@ -465,9 +543,6 @@ function mergeFindings(pass1, pass2) {
     return inter / Math.max(wa.size, wb.size);
   }
 
-  // Two categories are considered the same topic when:
-  //  - one string contains the other ("Pool" ⊂ "Pool, Spa, Equipment & Safety"), OR
-  //  - their word-overlap is ≥ 50% ("Electrical Panel" ~ "Electrical Panel & Wiring")
   function categoriesMatch(c1, c2) {
     const a = norm(c1);
     const b = norm(c2);
@@ -479,17 +554,12 @@ function mergeFindings(pass1, pass2) {
   const merged = [...pass1];
 
   for (const f2 of pass2) {
-    // Find a duplicate: same-topic category AND similar description.
-    // Threshold raised from 0.40 → 0.55 to prevent near-misses leaking through
-    // as new findings and inflating the count on re-upload.
     const dupIdx = merged.findIndex(f1 =>
       categoriesMatch(f1.category, f2.category) &&
       similarity(f1.description, f2.description) >= 0.55
     );
 
     if (dupIdx === -1) {
-      // Also check: same-topic category with very short / empty descriptions
-      // (parser sometimes returns a header-only finding the second time)
       const catOnlyDup = merged.findIndex(f1 =>
         categoriesMatch(f1.category, f2.category) &&
         (!f2.description || f2.description.trim().length < 20)
@@ -497,16 +567,13 @@ function mergeFindings(pass1, pass2) {
       if (catOnlyDup === -1) {
         merged.push(f2);
       }
-      // else: second pass added a thin duplicate of an existing category — skip it
     } else {
-      // Duplicate — keep the higher-severity version, prefer the longer category name
       const existing = merged[dupIdx];
       const existRank = SEVERITY_RANK[existing.severity] ?? 0;
-      const newRank   = SEVERITY_RANK[f2.severity] ?? 0;
+      const newRank   = SEVERITY_RANK[f2.severity]       ?? 0;
       const betterCategory =
         (f2.category || "").length > (existing.category || "").length
-          ? f2.category
-          : existing.category;
+          ? f2.category : existing.category;
       if (newRank > existRank) {
         merged[dupIdx] = { ...existing, ...f2, category: betterCategory };
       } else {
@@ -522,15 +589,14 @@ function mergeFindings(pass1, pass2) {
     }
   }
 
-  // Sort: critical first, then warning, then info; within tier sort by category
   const order = f => `${3 - (SEVERITY_RANK[f.severity] ?? 0)}_${(f.category || "").toLowerCase()}`;
   merged.sort((a, b) => order(a).localeCompare(order(b)));
 
-  return merged.slice(0, 30); // cap at 30
+  return merged.slice(0, 30);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// IMAGE/SCANNED PDF FALLBACK
+// IMAGE / SCANNED PDF FALLBACK
 //
 // If text extraction yields too little (scanned PDF, image-based report),
 // upload the raw PDF buffer to OpenAI Files API and let gpt-4o read it
@@ -540,7 +606,6 @@ async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
   console.log("[parse-inspection] Attempting vision fallback via OpenAI Files API");
   let fileId = null;
   try {
-    // Upload PDF to OpenAI
     const file = await openai.files.create({
       file: new File([pdfBuffer], filename || "inspection.pdf", { type: "application/pdf" }),
       purpose: "user_data",
@@ -548,7 +613,6 @@ async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
     fileId = file.id;
     console.log(`[parse-inspection] Uploaded to OpenAI Files: ${fileId}`);
 
-    // Use the file in a completion — gpt-4o can read PDFs via file content type
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       response_format: { type: "json_object" },
@@ -557,20 +621,13 @@ async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
       messages: [
         {
           role: "system",
-          content: "You extract structured data from home inspection reports. Respond only with valid JSON.",
+          content: "You extract structured data from home inspection reports in any format. Respond only with valid JSON.",
         },
         {
           role: "user",
           content: [
-            {
-              type: "text",
-              text: prompt,
-            },
-            {
-              // OpenAI file content reference
-              type: "file",
-              file: { file_id: fileId },
-            },
+            { type: "text", text: prompt },
+            { type: "file", file: { file_id: fileId } },
           ],
         },
       ],
@@ -578,11 +635,42 @@ async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
 
     return completion.choices[0].message.content;
   } finally {
-    // Always clean up the uploaded file
     if (fileId) {
-      try { await openai.files.delete(fileId); } catch { /* ignore cleanup errors */ }
+      try { await openai.files.delete(fileId); } catch { /* ignore */ }
     }
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ADDRESS RESOLVER
+//
+// After both AI passes run, consolidate the best property_address from:
+//   1. Pass 1 AI result
+//   2. Pass 2 AI result
+//   3. Pre-extracted candidates (regex-based)
+//
+// Preference order: AI address with city+state+zip > AI address with city/state >
+//   AI address (any) > best regex candidate with zip > best regex candidate (any)
+// ─────────────────────────────────────────────────────────────────────────────
+function resolveAddress(pass1Address, pass2Address, candidates) {
+  const hasZipCity = (s) => s && /\b\d{5}\b/.test(s) && /,\s*[A-Z]{2}\b/.test(s);
+  const hasState   = (s) => s && /,\s*[A-Z]{2}\b/.test(s);
+  const isValid    = (s) => s && s.trim().length > 8;
+
+  const options = [
+    pass1Address,
+    pass2Address,
+    ...candidates,
+  ].filter(isValid);
+
+  // Prefer address with ZIP + state, then state only, then any
+  const withZipCity = options.filter(hasZipCity);
+  if (withZipCity.length > 0) return withZipCity[0];
+
+  const withState = options.filter(hasState);
+  if (withState.length > 0) return withState[0];
+
+  return options[0] ?? null;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -592,8 +680,8 @@ export async function POST(req) {
   const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
   let inspectionText = "";
-  let pdfBuffer = null;
-  let filename = "";
+  let pdfBuffer      = null;
+  let filename       = "";
 
   try {
     const body = await req.json();
@@ -621,17 +709,14 @@ export async function POST(req) {
 
   const charCount = inspectionText.trim().length;
   console.log(`[parse-inspection] Extracted ${charCount} chars from document`);
-  let _parseHash = null; // hoisted so cacheSet can reference it after the if block
+  let _parseHash = null;
 
   // ── Image / scanned PDF detection ────────────────────────────────────────
-  // If text extraction produced almost nothing, the PDF is likely scanned.
-  // Try the OpenAI Files API vision fallback if we have the raw buffer.
   const isLikelyImagePdf = charCount < MIN_TEXT_LENGTH;
   let message = null;
 
   if (isLikelyImagePdf) {
     if (pdfBuffer) {
-      // Check cache by PDF buffer hash before hitting OpenAI vision
       const bufHash = createHash("sha256").update(pdfBuffer).digest("hex");
       _parseHash = bufHash;
       const cachedVision = await cacheGet(bufHash);
@@ -639,7 +724,7 @@ export async function POST(req) {
 
       console.log("[parse-inspection] Sparse text — trying Files API vision fallback");
       try {
-        const candidates = []; // no text to pre-scan
+        const candidates = [];
         const prompt = buildPrompt(candidates);
         message = await parseViaFileUpload(openai, pdfBuffer, filename, prompt);
       } catch (visionErr) {
@@ -658,22 +743,18 @@ export async function POST(req) {
   }
 
   // ── Text-based PDF path ───────────────────────────────────────────────────
-  if (!message) {
-    // Pre-extract address candidates from full document
-    const addressCandidates = extractAddressCandidates(inspectionText);
-    console.log(`[parse-inspection] Address candidates: ${JSON.stringify(addressCandidates)}`);
+  let addressCandidates = [];
 
-    // Extract the most relevant sections
+  if (!message) {
+    addressCandidates = extractAddressCandidates(inspectionText);
+
     const textForAI = smartExtractSection(inspectionText);
     console.log(`[parse-inspection] Sending ${textForAI.length} chars to gpt-4o`);
 
-    // ── Cache check — same text always returns same result (L1 + L2) ───────
     const hash = cacheKey(textForAI);
     _parseHash = hash;
     const cached = await cacheGet(hash);
-    if (cached) {
-      return Response.json(cached);
-    }
+    if (cached) return Response.json(cached);
 
     const prompt = buildPrompt(addressCandidates);
 
@@ -685,7 +766,7 @@ export async function POST(req) {
       messages: [
         {
           role: "system",
-          content: "You are an expert at reading home inspection reports in any format — CBHI, HomeGauge, Spectora, HouseMaster, WIN, and custom formats. Extract structured data precisely. Respond only with valid JSON.",
+          content: "You are an expert at reading home inspection reports in any format — CBHI, HomeGauge, Spectora, HouseMaster, WIN, Palm-Tech, 3D Inspect, iReport, ReportHost, and custom formats. Extract structured data precisely and completely. Respond only with valid JSON.",
         },
         {
           role: "user",
@@ -696,9 +777,7 @@ export async function POST(req) {
 
     message = completion.choices[0].message.content;
 
-    // ── Second pass — find anything missed ───────────────────────────────
-    // Run a second AI call with a gap-focused prompt, then merge results.
-    // Both calls use temperature=0 + same seed so each pass is itself stable.
+    // ── Second pass — find anything missed ────────────────────────────────
     try {
       const pass1Findings = JSON.parse(message).findings ?? [];
       const pass2Prompt   = buildSecondPassPrompt(pass1Findings, addressCandidates);
@@ -707,7 +786,7 @@ export async function POST(req) {
         model: "gpt-4o",
         response_format: { type: "json_object" },
         temperature: AI_TEMPERATURE,
-        seed: AI_SEED, // same seed as pass1 — full determinism, no "explore" drift
+        seed: AI_SEED,
         messages: [
           {
             role: "system",
@@ -720,35 +799,45 @@ export async function POST(req) {
         ],
       });
 
-      const pass2Raw     = JSON.parse(completion2.choices[0].message.content);
+      const pass2Raw      = JSON.parse(completion2.choices[0].message.content);
       const pass2Findings = Array.isArray(pass2Raw.findings) ? pass2Raw.findings : [];
-      console.log(`[parse-inspection] Pass 1: ${pass1Findings.length} findings | Pass 2: ${pass2Findings.length} findings`);
+      console.log(`[parse-inspection] Pass 1: ${pass1Findings.length} | Pass 2: ${pass2Findings.length}`);
 
-      // Merge and replace the message with a combined payload
       const mergedFindings = mergeFindings(pass1Findings, pass2Findings);
       console.log(`[parse-inspection] After merge: ${mergedFindings.length} findings`);
 
+      // ── Resolve best address across both passes + regex candidates ────────
       const pass1Parsed = JSON.parse(message);
-      message = JSON.stringify({ ...pass1Parsed, findings: mergedFindings });
+      const bestAddress = resolveAddress(
+        pass1Parsed.property_address,
+        pass2Raw.property_address,
+        addressCandidates
+      );
+      console.log(`[parse-inspection] Resolved address: "${bestAddress}"`);
+
+      message = JSON.stringify({
+        ...pass1Parsed,
+        property_address: bestAddress,
+        findings: mergedFindings,
+      });
     } catch (pass2Err) {
-      // Second pass failed — first pass result still used
       console.error("[parse-inspection] Second pass failed (using first pass):", pass2Err?.message);
     }
   }
 
   try {
-    const parsed = JSON.parse(message);
+    const parsed   = JSON.parse(message);
     const findings = Array.isArray(parsed.findings) ? parsed.findings : [];
-    console.log(`[parse-inspection] Extracted ${findings.length} findings, address="${parsed.property_address}"`);
+    console.log(`[parse-inspection] ${findings.length} findings, address="${parsed.property_address}"`);
 
     // ── Sanitize years ────────────────────────────────────────────────────
-    const currentYear = new Date().getFullYear();
-    const rawRoofYear = parsed.roof_year;
-    const rawHvacYear = parsed.hvac_year;
-    const safeRoofYear = rawRoofYear && (currentYear - rawRoofYear) <= 50 ? rawRoofYear : null;
-    const safeHvacYear = rawHvacYear && (currentYear - rawHvacYear) <= 30 ? rawHvacYear : null;
-    if (rawRoofYear && !safeRoofYear) console.warn(`[parse-inspection] Discarded implausible roof_year ${rawRoofYear}`);
-    if (rawHvacYear && !safeHvacYear) console.warn(`[parse-inspection] Discarded implausible hvac_year ${rawHvacYear}`);
+    const currentYear   = new Date().getFullYear();
+    const rawRoofYear   = parsed.roof_year;
+    const rawHvacYear   = parsed.hvac_year;
+    const safeRoofYear  = rawRoofYear  && (currentYear - rawRoofYear)  <= 50 ? rawRoofYear  : null;
+    const safeHvacYear  = rawHvacYear  && (currentYear - rawHvacYear)  <= 30 ? rawHvacYear  : null;
+    if (rawRoofYear  && !safeRoofYear)  console.warn(`[parse-inspection] Discarded implausible roof_year ${rawRoofYear}`);
+    if (rawHvacYear  && !safeHvacYear)  console.warn(`[parse-inspection] Discarded implausible hvac_year ${rawHvacYear}`);
 
     // ── Scoring engine ────────────────────────────────────────────────────
     const roofAgeYears = safeRoofYear ? currentYear - safeRoofYear : null;
@@ -756,35 +845,25 @@ export async function POST(req) {
 
     let home_health_report = null;
     try {
-      const normalizedItems = normalizeLegacyFindings(findings, roofAgeYears, hvacAgeYears);
-      home_health_report = computeHomeHealthReport(normalizedItems);
+      const normalizedItems  = normalizeLegacyFindings(findings, roofAgeYears, hvacAgeYears);
+      home_health_report     = computeHomeHealthReport(normalizedItems);
     } catch (engineErr) {
       console.error("[parse-inspection] Scoring engine error:", engineErr?.message);
     }
 
-    // ── PASS 2: NORMALIZATION + DEDUP ────────────────────────────────────────
-    // Each raw finding goes through:
-    //   categoryMap.toCategoryKey()          → canonical category
-    //   normalizeFinding.deriveIssueType()   → pattern-matched issue_type
-    //   normalizeFinding.deriveLocation()    → pattern-matched location
-    //   normalizeFinding.deriveComponentAndSystem() → component + system slugs
-    //   generateNormalizedFindingKey()       → stable 5-part identity key
-    // Deduplication: same key → keep highest severity, then highest confidence.
+    // ── Normalization + dedup ─────────────────────────────────────────────
     const normalizedFindings = normalizeFindings(findings);
 
-    // ── PASS 3: VALIDATION + CONFIDENCE AUDIT ────────────────────────────────
-    // classifyFinding() (called inside normalizeFinding) has already computed
-    // confidence_score and classification_reason on each finding.
-    // Here we log the distribution and surface any unconfirmed findings.
+    // ── Confidence audit ─────────────────────────────────────────────────
     const confidenceCounts = { high: 0, medium: 0, low: 0, unconfirmed: 0 };
     const needsReviewItems = [];
     for (const nf of normalizedFindings) {
       confidenceCounts[nf.confidence_score] = (confidenceCounts[nf.confidence_score] ?? 0) + 1;
       if (nf.needs_review) needsReviewItems.push({ category: nf.category, reason: nf.classification_reason, desc: nf.description.slice(0, 80) });
     }
-    console.log(`[parse-inspection] Pass 3 confidence distribution:`, confidenceCounts);
+    console.log(`[parse-inspection] Confidence:`, confidenceCounts);
     if (needsReviewItems.length > 0) {
-      console.warn(`[parse-inspection] ${needsReviewItems.length} unconfirmed finding(s) flagged needs_review:`, needsReviewItems);
+      console.warn(`[parse-inspection] ${needsReviewItems.length} findings flagged needs_review:`, needsReviewItems);
     }
 
     const finalResult = {
@@ -799,8 +878,7 @@ export async function POST(req) {
       home_health_report,
     };
 
-    // Persist to both cache tiers — L2 (Supabase) write is fire-and-forget
-    if (_parseHash) cacheSet(_parseHash, finalResult); // async, intentionally not awaited
+    if (_parseHash) cacheSet(_parseHash, finalResult);
 
     return Response.json(finalResult);
   } catch {

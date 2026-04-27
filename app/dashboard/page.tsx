@@ -5730,9 +5730,8 @@ export default function Dashboard() {
               </div>
             )}
 
-            {/* Hidden inputs — inspection upload + photo capture */}
-            <input ref={inspRef}  type="file" accept=".pdf,.txt"   style={{ display: "none" }} onChange={uploadInspection}    disabled={inspecting}/>
-            <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoCapture} disabled={photoAnalyzing}/>
+            {/* Hidden inspection upload input (Dashboard) */}
+            <input ref={inspRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
 
             {/* ── Renewal prompt banner — shown when inspection data is aging/stale/expired ── */}
             {inspectDone && homeHealthReport?.decay?.label && ["Aging", "Stale", "Expired"].includes(homeHealthReport.decay.label) && (
@@ -6211,7 +6210,8 @@ export default function Dashboard() {
                     )}
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => {
-                        const url = insurance.claimUrl?.startsWith("http") ? insurance.claimUrl : null;
+                        const rawIns = insurance.claimUrl;
+                        const url = rawIns ? (rawIns.startsWith("http") ? rawIns : `https://${rawIns}`) : null;
                         const phone = insurance.claimPhone;
                         const email = insurance.claimEmail;
                         if (url) { window.open(url, "_blank"); return; }
@@ -6457,8 +6457,8 @@ export default function Dashboard() {
                     )}
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => {
-                        // Only open URLs that look like real external links — not relative paths that 401
-                        const url = warranty.claimUrl?.startsWith("http") ? warranty.claimUrl : null;
+                        const raw = warranty.claimUrl;
+                        const url = raw ? (raw.startsWith("http") ? raw : `https://${raw}`) : null;
                         const phone = warranty.claimPhone;
                         if (url) { window.open(url, "_blank"); return; }
                         if (phone) { window.location.href = `tel:${phone.replace(/\D/g, "")}`; return; }
@@ -7163,6 +7163,9 @@ export default function Dashboard() {
           ))}
         </nav>
       )}
+
+      {/* Always-rendered hidden photo input — needed by both Dashboard and Documents tabs */}
+      <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoCapture} disabled={photoAnalyzing}/>
     </div>
   );
 }
