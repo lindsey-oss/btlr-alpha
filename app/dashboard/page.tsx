@@ -1629,20 +1629,20 @@ function CostDetailModal({
           {warranty && (warranty.coverageItems?.length ?? 0) > 0 &&
             isLikelyCovered(item.tradeCategory ?? item.label, warranty.coverageItems!) && (
             <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 10, padding: "10px 14px", marginBottom: 4 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: "${C.accent}", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
                 <Shield size={12}/> This may be covered by your {warranty.provider ?? "home warranty"}
                 {warranty.serviceFee ? ` — $${warranty.serviceFee} service fee` : ""}
               </p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {warranty.claimUrl && (
                   <a href={`${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "${C.accent}", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
                     <ExternalLink size={11}/> File a Claim
                   </a>
                 )}
                 {warranty.claimPhone && (
                   <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
                     📞 Call Claims
                   </a>
                 )}
@@ -3037,18 +3037,40 @@ export default function Dashboard() {
             console.log(`[uploadInspection] ✓ Saved ${newFindings.length} findings to property ${activePropId}`);
           }
         } else {
-          // No active property yet — create one; capture new row's ID for findings upsert
-          const { data: inserted, error: insertErr } = await supabase
-            .from("properties").insert({ ...inspectionPayload, address: address || "My Home", user_id: uploadUserId }).select("id").single();
-          if (insertErr) {
-            console.error("[uploadInspection] insert failed:", insertErr.message, insertErr.code);
-            showToast(`Inspection analyzed but could not save to database (${insertErr.message}). Your results will disappear on refresh.`, "error");
+          // activePropId is null in React state — but a property row may already exist in DB
+          // (happens when state is cleared after refresh/logout while DB row persists).
+          // Always check DB first to avoid hitting the user_id unique constraint.
+          const { data: existing } = await supabase
+            .from("properties").select("id").eq("user_id", uploadUserId).maybeSingle();
+
+          if (existing?.id) {
+            // Row already exists — update it instead of inserting
+            activePropId = existing.id;
+            activePropertyIdRef.current = existing.id;
+            setActivePropertyId(existing.id);
+            localStorage.setItem("btlr_active_property_id", String(existing.id));
+            const { error: updateErr } = await supabase
+              .from("properties").update(inspectionPayload).eq("id", existing.id);
+            if (updateErr) {
+              console.error("[uploadInspection] update (recovered) failed:", updateErr.message, updateErr.code);
+              showToast(`Inspection analyzed but could not save findings (${updateErr.message}). Try refreshing.`, "error");
+            } else {
+              console.log(`[uploadInspection] ✓ Recovered existing property ${existing.id}, saved ${newFindings.length} findings`);
+            }
           } else {
-            activePropId = inserted.id;
-            activePropertyIdRef.current = inserted.id;
-            setActivePropertyId(inserted.id);
-            localStorage.setItem("btlr_active_property_id", String(inserted.id));
-            console.log(`[uploadInspection] ✓ Created property ${inserted.id} with ${newFindings.length} findings`);
+            // Truly no property yet — insert a new row
+            const { data: inserted, error: insertErr } = await supabase
+              .from("properties").insert({ ...inspectionPayload, address: address || "My Home", user_id: uploadUserId }).select("id").single();
+            if (insertErr) {
+              console.error("[uploadInspection] insert failed:", insertErr.message, insertErr.code);
+              showToast(`Inspection analyzed but could not save to database (${insertErr.message}). Your results will disappear on refresh.`, "error");
+            } else {
+              activePropId = inserted.id;
+              activePropertyIdRef.current = inserted.id;
+              setActivePropertyId(inserted.id);
+              localStorage.setItem("btlr_active_property_id", String(inserted.id));
+              console.log(`[uploadInspection] ✓ Created property ${inserted.id} with ${newFindings.length} findings`);
+            }
           }
         }
 
@@ -4731,7 +4753,7 @@ export default function Dashboard() {
 
                 {/* ── PROACTIVE HEADLINE CARD ──────────────────────────── */}
                 <div style={{
-                  background: `linear-gradient(135deg, ${C.navy} 0%, ${C.accentDk} 70%, ${C.accent} 100%)`,
+                  background: "linear-gradient(135deg, #134e4a 0%, #0f766e 60%, #0d9488 100%)",
                   borderRadius: 18, padding: isMobile ? "18px 18px" : "22px 28px",
                   position: "relative", overflow: "hidden",
                 }}>
@@ -4948,9 +4970,9 @@ export default function Dashboard() {
               {
                 id: "warranty",
                 label: "Home Warranty",
-                icon: <Shield size={15} color="${C.accent}"/>,
+                icon: <Shield size={15} color="#7c3aed"/>,
                 iconBg: "#faf5ff",
-                accentColor: "${C.accent}",
+                accentColor: "#7c3aed",
                 status: warranty
                   ? `${warranty.provider ?? "Uploaded"} · ${warranty.expirationDate ? `Expires ${warranty.expirationDate}` : "Active"}`
                   : "No document uploaded",
@@ -5112,17 +5134,17 @@ export default function Dashboard() {
                               Upload your home warranty or maintenance policy. BTLR will extract your coverage, exclusions, service fee, and claim contact info.
                             </p>
                             {!warranty ? (
-                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingWarranty ? "${C.accent}" : C.border}`, background: parsingWarranty ? "#faf5ff" : C.bg }}>
+                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingWarranty ? "#7c3aed" : C.border}`, background: parsingWarranty ? "#faf5ff" : C.bg }}>
                                 {parsingWarranty
-                                  ? <><Loader2 size={20} color="${C.accent}" className="animate-spin"/><span style={{ fontSize: 14, color: "${C.accent}" }}>Parsing warranty document…</span></>
-                                  : <><Shield size={20} color="${C.accent}"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
+                                  ? <><Loader2 size={20} color="#7c3aed" className="animate-spin"/><span style={{ fontSize: 14, color: "#7c3aed" }}>Parsing warranty document…</span></>
+                                  : <><Shield size={20} color="#7c3aed"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
                                 }
                                 <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
                               </label>
                             ) : (
                               <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
                                 <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid ${C.accent}", color: "${C.accent}", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid ${C.accent}", color: "#7c3aed", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                                     {parsingWarranty ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
                                     {parsingWarranty ? "Parsing…" : "Replace"}
                                     <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
@@ -5140,9 +5162,9 @@ export default function Dashboard() {
                                   <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px" }}>
                                     <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><Send size={11}/> File a Claim</p>
                                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                      {warranty.claimUrl && <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "${C.accent}", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
-                                      {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={12}/> {warranty.claimPhone}</a>}
-                                      {warranty.claimEmail && <a href={`mailto:${warranty.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Mail size={12}/> Email Claims</a>}
+                                      {warranty.claimUrl && <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
+                                      {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={12}/> {warranty.claimPhone}</a>}
+                                      {warranty.claimEmail && <a href={`mailto:${warranty.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Mail size={12}/> Email Claims</a>}
                                     </div>
                                     {warranty.responseTime && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>Typical response: {warranty.responseTime}</p>}
                                   </div>
@@ -6257,14 +6279,14 @@ export default function Dashboard() {
 
               {/* Home Warranty */}
               <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                <div style={{ height: 4, background: "${C.accent}", borderRadius: "16px 16px 0 0" }}/>
+                <div style={{ height: 4, background: "#7c3aed", borderRadius: "16px 16px 0 0" }}/>
                 <div style={{ padding: "20px 22px 22px" }}>
                 {/* Header row */}
                 <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
                   <div style={{ width: 32, height: 32, borderRadius: 9, background: "${C.accent}18", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Shield size={15} color="${C.accent}"/>
+                    <Shield size={15} color="#7c3aed"/>
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: "${C.accent}", letterSpacing: "0.08em", textTransform: "uppercase", marginLeft: 8 }}>Home Warranty</span>
+                  <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", letterSpacing: "0.08em", textTransform: "uppercase", marginLeft: 8 }}>Home Warranty</span>
                 </div>
                 {warranty ? (
                   <>
@@ -6278,13 +6300,13 @@ export default function Dashboard() {
                       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
                         {warranty.serviceFee && (
                           <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
-                            <div style={{ fontSize: 10, color: "${C.accent}", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Service Fee</div>
+                            <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Service Fee</div>
                             <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>${warranty.serviceFee}<span style={{ fontSize: 11, fontWeight: 500, color: C.text3 }}>/claim</span></div>
                           </div>
                         )}
                         {warranty.expirationDate && (
                           <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
-                            <div style={{ fontSize: 10, color: "${C.accent}", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Expires</div>
+                            <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Expires</div>
                             <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{warranty.expirationDate}</div>
                           </div>
                         )}
@@ -6301,7 +6323,7 @@ export default function Dashboard() {
                       }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: C.navy, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         File Claim
                       </button>
-                      <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {showWarrantyDetail ? "Hide Details" : "View Details"}
                       </button>
                     </div>
@@ -6309,7 +6331,7 @@ export default function Dashboard() {
                 ) : (
                   <>
                     <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "0 0 14px" }}>—</p>
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid ${C.accent}", background: "transparent", color: "${C.accent}", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid ${C.accent}", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                       {parsingWarranty ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
                       {parsingWarranty ? "Parsing…" : "Upload Warranty"}
                       <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
@@ -6329,13 +6351,13 @@ export default function Dashboard() {
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                       {warranty.claimUrl && (
                         <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer"
-                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, background: "${C.accent}", color: "white", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, background: "#7c3aed", color: "white", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
                           <ExternalLink size={13}/> File a Claim Online
                         </a>
                       )}
                       {warranty.claimPhone && (
                         <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
-                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid ${C.accent}", color: "${C.accent}", fontSize: 13, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 13, fontWeight: 700, textDecoration: "none", background: "white" }}>
                           📞 {warranty.claimPhone}
                         </a>
                       )}
@@ -6353,7 +6375,7 @@ export default function Dashboard() {
                   {/* Coverage */}
                   {(warranty.coverageItems?.length ?? 0) > 0 && (
                     <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: "${C.accent}", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered</p>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered</p>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                         {warranty.coverageItems!.map((item, i) => (
                           <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>
