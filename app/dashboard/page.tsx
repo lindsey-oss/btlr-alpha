@@ -7142,9 +7142,9 @@ export default function Dashboard() {
                         See how your Acorns, savings, or investment balance covers your repair fund.
                       </p>
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <button disabled
-                          style={{ padding: "9px 14px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text3, fontSize: 13, fontWeight: 700, cursor: "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: 0.7 }}>
-                          <LinkIcon size={13}/>Connect via Plaid — Coming Soon
+                        <button onClick={connectPlaid} disabled={connectingPlaid}
+                          style={{ padding: "9px 14px", borderRadius: 9, border: `1px solid ${C.accent}`, background: C.accent, color: "white", fontSize: 13, fontWeight: 700, cursor: connectingPlaid ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: connectingPlaid ? 0.7 : 1 }}>
+                          {connectingPlaid ? <><Loader2 size={13} className="animate-spin"/>Connecting…</> : <><LinkIcon size={13}/>Connect via Plaid</>}
                         </button>
                         {!editingManualSavings ? (
                           <button onClick={() => setEditingManualSavings(true)}
