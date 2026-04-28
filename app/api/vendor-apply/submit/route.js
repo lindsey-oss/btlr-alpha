@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { getPostHogClient } from "../../../../lib/posthog-server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -41,6 +42,17 @@ export async function POST(req) {
       .update({ status: "pending_review", submitted_at: new Date().toISOString(), final_confirmation: true })
       .eq("id", id);
     if (updateErr) throw updateErr;
+
+    // Track vendor application submission server-side
+    const posthog = getPostHogClient();
+      distinctId: app.business_email ?? id,
+      event: "vendor_application_submitted",
+      properties: {
+        application_id:    id,
+        primary_specialty: app.primary_specialty ?? null,
+        years_in_business: app.years_in_business ?? null,
+      },
+    });
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://btlrai.com";
     const notifyEmail = process.env.VENDOR_NOTIFY_EMAIL || "lindsey@eatplayloveot.com";

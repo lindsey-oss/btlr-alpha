@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { phCapture } from "../../../lib/monitoring";
 
 // ── Design tokens ──────────────────────────────────────────────
 const C = {
@@ -262,6 +263,7 @@ export default function VendorApplicationForm() {
     }
     const next = step + 1;
     await saveDraft(next);
+    phCapture("vendor_application_step_completed", { from_step: step, to_step: next, step_title: STEPS[step - 1]?.title ?? "" });
     setStep(next);
     window.scrollTo({ top: 0, behavior: "smooth" });
   }

@@ -10,6 +10,7 @@ import {
   Plus, UserCircle2,
 } from "lucide-react";
 import { supabase } from "../../lib/supabase";
+import { phCapture } from "../../lib/monitoring";
 
 const C = {
   bg:      "#f0f4f8",
@@ -827,6 +828,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
     setContactMode(mode);
     setLoadingContractors(true);
     setContractors([]);
+    phCapture("contractor_search_started", { trade: result.category_label, mode });
     try {
       const res = await fetch("/api/find-contractors", {
         method: "POST",

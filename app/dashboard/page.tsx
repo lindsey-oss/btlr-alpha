@@ -12,7 +12,7 @@ import {
   ExternalLink, ArrowRight, BarChart3, Clock, TrendingUp,
   Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera, Phone, Mail, Trash2, RefreshCw,
 } from "lucide-react";
-import posthog from "posthog-js";
+import { phCapture, phIdentify, phReset } from "../../lib/monitoring";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
 import type { HomeHealthReport } from "../../lib/scoring-engine";
@@ -1946,7 +1946,7 @@ export default function Dashboard() {
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewFindings, setReviewFindings]   = useState<Finding[]>([]);
   const [savingStatuses, setSavingStatuses]   = useState(false);
-  const [repairDocs, setRepairDocs]           = useState<Array<{ vendor?: string; date?: string; summary?: string; category?: string; cost?: number; autoResolved?: string[] }>>([]);
+  const [repairDocs, setRepairDocs]           = useState<Array<{ id?: string; vendor?: string; date?: string; summary?: string; category?: string; cost?: number; autoResolved?: string[]; storagePath?: string; fileUrl?: string; filename?: string }>>([]);
   const [uploadingRepair, setUploadingRepair] = useState(false);
   const repairRef = useRef<HTMLInputElement>(null);
 
@@ -2820,7 +2820,7 @@ export default function Dashboard() {
       setActivePropertyId(data.id);
       activePropertyIdRef.current = data.id;
       localStorage.setItem("btlr_active_property_id", String(data.id));
-      posthog.capture("property_created", { property_id: data.id, method: "blank" });
+      phCapture("property_created", { property_id: data.id, method: "blank" });
       showToast("New property created — upload an inspection report to get started", "success");
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Failed to create property.", "error");
@@ -2848,7 +2848,7 @@ export default function Dashboard() {
       setNewPropForm({ address: "", nickname: "", home_type: "single_family", year_built: "" });
       setNav("Documents");
       await switchProperty(data.id);
-      posthog.capture("property_created", { property_id: data.id, address: data.address, method: "form", home_type: newPropForm.home_type || null, year_built: newPropForm.year_built || null });
+      phCapture("property_created", { property_id: data.id, address: data.address, method: "form", home_type: newPropForm.home_type || null, year_built: newPropForm.year_built || null });
       showToast(`✓ Property added: ${data.address}`, "success");
     } catch (err: unknown) {
       setNewPropError(err instanceof Error ? err.message : "Failed to save property.");
@@ -3425,9 +3425,9 @@ export default function Dashboard() {
             inspectionDate: result.inspection_date ?? null,
           });
           setHomeHealthReport(mergedReport);
-          posthog.capture("home_health_score_calculated", {
-            overall_score:    mergedReport.overallScore,
-            grade:            mergedReport.grade,
+          phCapture("home_health_score_calculated", {
+            overall_score:    mergedReport.home_health_score,
+            grade:            mergedReport.score_band,
             confidence_score: mergedReport.confidence_score,
             property_id:      savePropId,
           });
@@ -3446,7 +3446,7 @@ export default function Dashboard() {
         }
         if (result._debug) setParseDebug(result._debug);
         const findingCount = newFindings.length;
-        posthog.capture("inspection_report_uploaded", {
+        phCapture("inspection_report_uploaded", {
           finding_count:     findingCount,
           inspection_type:   result.inspection_type ?? "Home Inspection",
           total_cost_estimate: result.total_estimated_cost ?? null,
@@ -3733,19 +3733,44 @@ export default function Dashboard() {
     try {
       const { data, error } = await supabase
         .from("repair_documents")
-        .select("vendor_name, service_date, repair_summary, system_category, cost, resolved_finding_keys")
+        .select("id, vendor_name, service_date, repair_summary, system_category, cost, resolved_finding_keys, storage_path, filename")
         .order("created_at", { ascending: false })
         .limit(50);
       if (error || !data) return;
-      setRepairDocs(data.map(r => ({
-        vendor:       r.vendor_name       ?? undefined,
-        date:         r.service_date      ?? undefined,
-        summary:      r.repair_summary    ?? undefined,
-        category:     r.system_category   ?? undefined,
-        cost:         r.cost              ?? undefined,
-        autoResolved: Array.isArray(r.resolved_finding_keys) ? r.resolved_finding_keys : [],
-      })));
+      const mapped = await Promise.all(data.map(async r => {
+        let fileUrl: string | undefined;
+        if (r.storage_path) {
+          const { data: su } = await supabase.storage.from("documents").createSignedUrl(r.storage_path, 3600);
+          fileUrl = su?.signedUrl ?? undefined;
+        }
+        return {
+          id:           r.id              ?? undefined,
+          vendor:       r.vendor_name     ?? undefined,
+          date:         r.service_date    ?? undefined,
+          summary:      r.repair_summary  ?? undefined,
+          category:     r.system_category ?? undefined,
+          cost:         r.cost            ?? undefined,
+          autoResolved: Array.isArray(r.resolved_finding_keys) ? r.resolved_finding_keys : [],
+          storagePath:  r.storage_path    ?? undefined,
+          fileUrl,
+          filename:     r.filename        ?? undefined,
+        };
+      }));
+      setRepairDocs(mapped);
     } catch { /* silent */ }
+  }
+
+  // ── Delete a repair document record and its storage file ────────────────
+  async function deleteRepairDoc(doc: { id?: string; storagePath?: string; filename?: string }) {
+    if (!confirm(`Remove "${doc.filename ?? "this repair document"}"?`)) return;
+    if (doc.id) {
+      await supabase.from("repair_documents").delete().eq("id", doc.id);
+    }
+    if (doc.storagePath) {
+      await supabase.storage.from("documents").remove([doc.storagePath]);
+    }
+    setRepairDocs(prev => prev.filter(r => r.id !== doc.id));
+    showToast("Repair document removed", "success");
   }
 
   // ── Repair document upload and parsing ──────────────────────────────────
@@ -3779,14 +3804,24 @@ export default function Dashboard() {
         alert(result.error || "Could not parse repair document — please try again.");
         return;
       }
-      // Record the repair doc in local state
+      // Patch DB row with storage_path so PDF is viewable on reload
+      if (result.repair_doc_id) {
+        await supabase.from("repair_documents")
+          .update({ storage_path: storagePath })
+          .eq("id", result.repair_doc_id);
+      }
+      // Record the repair doc in local state (include fileUrl so PDF link works immediately)
       setRepairDocs(prev => [{
-        vendor: result.vendor_name,
-        date: result.service_date,
-        summary: result.repair_summary,
-        category: result.system_category,
-        cost: result.cost,
+        id:          result.repair_doc_id ?? undefined,
+        vendor:      result.vendor_name,
+        date:        result.service_date,
+        summary:     result.repair_summary,
+        category:    result.system_category,
+        cost:        result.cost,
         autoResolved: result.auto_resolved,
+        storagePath: storagePath,
+        fileUrl:     signed.signedUrl,
+        filename:    file.name,
       }, ...prev]);
       // Apply auto-resolved finding statuses
       if (result.auto_resolved?.length > 0) {
@@ -4784,6 +4819,10 @@ export default function Dashboard() {
             const repGroupMap = new Map<string, { label: string; items: { f: Finding; globalIdx: number }[] }>();
             for (let gi = 0; gi < allFindings.length; gi++) {
               const f = allFindings[gi];
+              const fk = findingKey(f, gi);
+              const status = findingStatuses[fk] ?? "repair_needed";
+              // Completed / not-needed items belong in the archives, not the active list
+              if (status === "completed" || status === "not_needed") continue;
               const gk = toGroupKey(f.category);
               const meta = GROUP_META[gk] ?? GROUP_META.general;
               if (!repGroupMap.has(gk)) repGroupMap.set(gk, { label: meta.label, items: [] });
@@ -4894,7 +4933,15 @@ export default function Dashboard() {
                       Review All <ChevronRight size={13}/>
                     </button>
                   </div>
-                  {/* Category groups */}
+                  {/* Empty state — all repairs resolved */}
+                  {repGroups.length === 0 && (
+                    <div style={{ padding: "24px 18px", textAlign: "center" }}>
+                      <CheckCircle2 size={28} color={C.green} style={{ margin: "0 auto 10px" }}/>
+                      <p style={{ fontSize: 14, fontWeight: 600, color: C.text, margin: "0 0 4px" }}>All repairs resolved</p>
+                      <p style={{ fontSize: 13, color: C.text3 }}>Completed items are in the Repair Archives below.</p>
+                    </div>
+                  )}
+                  {/* Category groups — active (non-completed) repairs only */}
                   {repGroups.map(({ gk, label, items }, gi) => {
                     const isGrpOpen = expandedGroups.has(gk);
                     const meta = GROUP_META[gk] ?? GROUP_META.general;
@@ -5912,11 +5959,25 @@ export default function Dashboard() {
                               <div style={{ marginTop: 16 }}>
                                 <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Repair History</p>
                                 {repairDocs.map((r, i) => (
-                                  <div key={i} style={{ background: C.greenBg, border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
+                                  <div key={r.id ?? i} style={{ background: C.greenBg, border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                                       <CheckCircle2 size={13} color={C.green}/>
-                                      <span style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{formatLabel(r.category) || "Repair"}{r.vendor ? ` — ${r.vendor}` : ""}</span>
-                                      {r.cost ? <span style={{ marginLeft: "auto", fontSize: 13, fontWeight: 700, color: C.green }}>${r.cost.toLocaleString()}</span> : null}
+                                      <span style={{ fontSize: 14, fontWeight: 600, color: C.text, flex: 1 }}>{formatLabel(r.category) || "Repair"}{r.vendor ? ` — ${r.vendor}` : ""}</span>
+                                      {r.cost ? <span style={{ fontSize: 13, fontWeight: 700, color: C.green }}>${r.cost.toLocaleString()}</span> : null}
+                                      {/* View PDF */}
+                                      {r.fileUrl && (
+                                        <a href={r.fileUrl} target="_blank" rel="noopener noreferrer"
+                                          style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 600, color: C.accent, textDecoration: "none", padding: "2px 8px", borderRadius: 6, background: "#eff6ff", border: `1px solid ${C.accent}30` }}>
+                                          <FileText size={10}/> PDF
+                                        </a>
+                                      )}
+                                      {/* Delete */}
+                                      <button onClick={() => deleteRepairDoc(r)} title="Remove this repair record"
+                                        style={{ display: "inline-flex", alignItems: "center", padding: "2px 4px", borderRadius: 5, background: "transparent", border: "none", cursor: "pointer", color: C.text3 }}
+                                        onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+                                        onMouseLeave={e => (e.currentTarget.style.color = C.text3)}>
+                                        <X size={12}/>
+                                      </button>
                                     </div>
                                     {r.summary && <p style={{ fontSize: 12, color: C.text2, margin: "0 0 4px 21px", lineHeight: 1.5 }}>{r.summary}</p>}
                                     {r.autoResolved && r.autoResolved.length > 0 && (

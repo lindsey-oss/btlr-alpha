@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { Home as HomeIcon, Loader2, Eye, EyeOff, DollarSign, Bot } from "lucide-react";
+import { phCapture, phIdentify, logError } from "../../lib/monitoring";
 
 const C = {
   navy:    "#0f1f3d",
@@ -45,11 +46,14 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signUp({ email, password });
       if (error) {
         setError(error.message);
+        logError({ error_type: "signup_error", message: (error as any).message, severity: "warning", metadata: { event: "signup_error" } });
       } else {
         // If email confirmation is off in Supabase, go straight to dashboard
         // If email confirmation is on, show a message
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
+          phIdentify(session.user.id, { email: session.user.email });
+          phCapture("user_signed_up", { has_session: true });
           // Apply affiliate referral if the user arrived via a /ref/[code] link
           const affiliateRef = sessionStorage.getItem("btlr_affiliate_ref");
           if (affiliateRef && session.user?.id) {
@@ -62,6 +66,7 @@ export default function LoginPage() {
           }
           router.push("/dashboard");
         } else {
+          phCapture("user_signed_up", { has_session: false, confirmation_required: true });
           setSuccess("Account created! Check your email to confirm, then sign in.");
           setMode("login");
         }
@@ -70,7 +75,13 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) {
         setError(error.message);
+        logError({ error_type: "login_error", message: (error as any).message, severity: "warning" });
       } else {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          phIdentify(session.user.id, { email: session.user.email });
+          phCapture("user_logged_in");
+        }
         router.push("/dashboard");
       }
     }

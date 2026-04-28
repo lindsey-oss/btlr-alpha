@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Home as HomeIcon, Loader2, Phone, Mail, Globe, CheckCircle2, UserCircle2 } from "lucide-react";
+import { phCapture } from "../../../lib/monitoring";
 
 const ROLE_LABELS: Record<string, string> = {
   realtor:  "Real Estate Agent",
@@ -52,6 +53,7 @@ export default function AffiliateLandingPage() {
         const json = await res.json();
         if (!res.ok || !json.affiliate) { setNotFound(true); return; }
         setAffiliate(json.affiliate);
+        phCapture("affiliate_referral_viewed", { affiliate_code: code, affiliate_role: json.affiliate.role });
         // Store the code so the login page can pick it up after signup
         sessionStorage.setItem("btlr_affiliate_ref", code);
       } catch {
