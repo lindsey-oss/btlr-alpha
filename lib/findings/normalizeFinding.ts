@@ -471,15 +471,25 @@ export function normalizeFinding(raw: RawFinding): NormalizedFinding {
     : "low";
 
   // 9. Human-readable title
-  //    pool_spa: "Pool & Spa — Skimmer — Missing Component"
-  //    others:   "Hvac — Noisy Operation"  →  title-cased below
+  //    pool_spa: always "Pool & Spa — Skimmer — Missing Component"
+  //    others:   include component when it adds real specificity
+  //              e.g. "Roof Drainage Exterior — Gutters — Damaged Component"
+  //              vs   "Roof Drainage Exterior — Damaged Component" (when component == category)
   const categoryLabel = canonicalCategory === "pool_spa"
     ? "Pool & Spa"
     : canonicalCategory.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   const componentLabel = component.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
   const issueLabel     = issueType .replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
 
-  const title = isPoolSpa
+  // Component is "meaningful" when it names a specific part (gutter, wiring, shingles…)
+  // rather than just echoing back the category slug.
+  const isMeaningfulComponent =
+    !isPoolSpa &&
+    component !== "unknown" &&
+    component !== slugLabel(canonicalCategory) &&
+    system    !== slugLabel(canonicalCategory);
+
+  const title = isPoolSpa || isMeaningfulComponent
     ? `${categoryLabel} — ${componentLabel} — ${issueLabel}`
     : `${categoryLabel} — ${issueLabel}`;
 

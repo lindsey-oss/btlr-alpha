@@ -27,7 +27,8 @@ const l1Cache = new Map();      // hash → result (in-process, no TTL needed)
 const L1_MAX  = 100;
 
 function cacheKey(text) {
-  return createHash("sha256").update(text).digest("hex");
+  // Include PARSE_VERSION so changing the prompt/normalization invalidates old cache entries
+  return createHash("sha256").update(PARSE_VERSION + "|" + text).digest("hex");
 }
 
 function l1Get(key)        { return l1Cache.get(key) ?? null; }
@@ -82,6 +83,12 @@ const MIN_TEXT_LENGTH = 80;     // below this = likely image/scanned PDF
 
 const AI_TEMPERATURE = 0;
 const AI_SEED = 91472;          // fixed — never change
+
+// ── CACHE VERSION ─────────────────────────────────────────────────────────────
+// Increment whenever prompt rules or normalization logic change.
+// This invaluates all L1 + L2 cached results so the next upload re-parses
+// with the corrected logic.  DO NOT change the seed above.
+const PARSE_VERSION = "v4";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -452,13 +459,40 @@ findings:
       Safety | Environmental | Pest | Mold | Radon | Asbestos
       Pool | Spa | Hot Tub | Pool Equipment
       Garage | General
-    CRITICAL CATEGORY RULES:
+    CRITICAL CATEGORY RULES — READ CAREFULLY:
       • Ceiling texture/stains, drywall, wall cracks, floor issues, interior paint → "Interior" or specific label
       • Window glass/seals/sashes/frames → "Windows"
       • Entry/interior/sliding/screen doors → "Doors"
       • NEVER use "Windows" for ceilings, floors, walls, or interior surfaces
       • NEVER use "Exterior" for purely indoor observations
       • If nothing fits, use "General"
+
+    WIRING / ELECTRICAL — CRITICAL OVERRIDE:
+      • ANY finding about exposed wiring, open wiring, bare wiring, Romex cable,
+        NM cable, unprotected wiring, junction boxes, breakers, outlets, GFCI, panels,
+        or any electrical component → ALWAYS "Electrical", regardless of WHERE it is located.
+      • "Exposed Romex wires at rear exterior wall" → "Electrical"  (NOT "Exterior", NOT "Roof")
+      • "Open wiring in attic" → "Electrical"  (NOT "Attic", NOT "Roof")
+      • "Knob-and-tube wiring in basement" → "Electrical"  (NOT "Basement", NOT "Foundation")
+      • Location words like "exterior", "wall", "attic", "crawlspace" DO NOT change an
+        electrical finding into a roof or exterior finding.
+
+    VEGETATION / LANDSCAPING:
+      • Vegetation, trees, shrubs, plants, vines, or branches in contact with or
+        growing against the building → "Exterior" or "Siding"
+      • This is NOT a "Roof" finding even if plant material touches the roof.
+      • "Vegetation in contact with siding" → "Siding"
+      • "Tree limbs overhanging/touching roof" → "Exterior"
+
+    DEDUPLICATION — IMPORTANT:
+      • Each distinct physical deficiency must appear EXACTLY ONCE in your findings array.
+      • If the same defect appears in both a summary section AND a detailed section of the
+        report, extract it ONCE only — use the most detailed description available.
+      • Two findings are duplicates when they describe the same physical problem at the
+        same location, even if the wording differs slightly.
+      • It IS correct to have multiple findings with the same category when they describe
+        genuinely different physical defects (e.g., damaged gutters AND damaged stucco are
+        two separate findings even though both are "Exterior/Siding").
   - severity:
       "critical" = immediate safety hazard, structural failure, active leak, mold, pest infestation, open wiring, gas leak
       "warning"  = significant repair needed, system nearing end of life, inspector recommends repair soon
@@ -520,7 +554,10 @@ Same CRITICAL CATEGORY RULES as pass 1:
   • Ceilings/walls/floors/drywall/interior paint → "Interior" or specific
   • Window glass/seals/frames → "Windows"  |  Doors → "Doors"
   • NEVER use "Windows" for interior surfaces
-Return ALL findings you find. The merger deduplicates against pass 1. Return up to 30 findings.`;
+  • Exposed wiring / Romex / NM cable / open wiring → ALWAYS "Electrical" regardless of location
+  • Vegetation/plants in contact with siding, walls, or roof → "Siding" or "Exterior" (NOT "Roof")
+  • Do NOT re-extract findings already captured in pass 1 (the merger handles deduplication).
+Return findings you find that are NOT already in the pass 1 list above. Return up to 30 new findings.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

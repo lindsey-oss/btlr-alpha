@@ -206,6 +206,37 @@ function categoryStringMatchedNamedRule(rawCategory: string): boolean {
   return toCategoryKey(rawCategory) !== "maintenance_upkeep";
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// DESCRIPTION-BASED OVERRIDE RULES
+//
+// Applied BEFORE toCategoryKey() so strong description signals can correct
+// AI category labeling errors (e.g., "Romex wires at exterior wall" → Roof).
+//
+// Rules are checked in order; first match wins.
+// These fire ONLY when:
+//   (a) the description matches the pattern, AND
+//   (b) the AI's category does NOT already map to the target category
+//       (we never downgrade a correct classification)
+// ─────────────────────────────────────────────────────────────────────────────
+const DESCRIPTION_OVERRIDE_RULES: Array<{
+  descPattern:  RegExp;
+  targetCat:    BtlrCategory;
+  reason:       string;
+}> = [
+  // Exposed / open / bare / Romex wiring → electrical, regardless of location
+  {
+    descPattern: /\b(romex|nm[-\s]?cable|nm-b|exposed\s+wir(e|ing)|open\s+wir(e|ing)|bare\s+wir(e|ing)|unprotected\s+wir(e|ing)|wir(e|ing)\s+(is\s+)?(exposed|open|bare|visible|outside|exterior|on\s+wall))\b/i,
+    targetCat:   "electrical",
+    reason:      "description contains exposed/Romex wiring keywords — overrides AI category to electrical",
+  },
+  // Vegetation / plants / trees in contact with building → site/grading
+  {
+    descPattern: /\b(vegetation|tree|shrub|bush|vine|plant|branch|foliage|overgrowth|landscap)\b.{0,100}\b(contact|touching|against|cover|in\s+contact|adjacent|near|on|growing\s+on|growing\s+against)\b.{0,60}\b(siding|stucco|wall|exterior|roof|fascia|soffit|foundation|building|structure|gutter)\b|\b(siding|stucco|wall|exterior|roof|fascia|foundation)\b.{0,60}\b(vegetation|plant|tree|shrub|bush|vine|branch)\b/i,
+    targetCat:   "site_grading_drainage",
+    reason:      "description indicates vegetation/plant contact with structure — overrides to site_grading_drainage",
+  },
+];
+
 /**
  * Classify a finding with an explicit confidence score and reason string.
  *
@@ -214,6 +245,22 @@ function categoryStringMatchedNamedRule(rawCategory: string): boolean {
  * confidence_score, classification_reason, and needs_review.
  */
 export function classifyFinding(rawCategory: string, description: string): ClassificationResult {
+  // ── Description-based override pass ──────────────────────────────────────
+  // Runs BEFORE toCategoryKey so description evidence can correct AI errors.
+  const desc = description || "";
+  for (const rule of DESCRIPTION_OVERRIDE_RULES) {
+    if (!rule.descPattern.test(desc)) continue;
+    const aiCategory = toCategoryKey(rawCategory);
+    // Only override when the AI's category is WRONG (different from target)
+    if (aiCategory !== rule.targetCat) {
+      return {
+        category:   rule.targetCat,
+        confidence: "high",
+        reason:     rule.reason,
+      };
+    }
+  }
+
   const category     = toCategoryKey(rawCategory);
   const namedMatch   = categoryStringMatchedNamedRule(rawCategory);
   const descMatch    = descriptionCorroborates(category, description);
