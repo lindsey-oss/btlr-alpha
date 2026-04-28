@@ -1,5 +1,4 @@
 import { createClient } from "@supabase/supabase-js";
-import { getPostHogClient } from "../../../lib/posthog-server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -40,19 +39,6 @@ export async function POST(req) {
       });
 
     if (error) throw error;
-
-    // Track job request server-side
-    const distinctId = body.user_id ?? body.homeowner_email ?? "anonymous";
-    const posthog = getPostHogClient();
-      distinctId,
-      event: "job_requested",
-      properties: {
-        job_id:       jobId,
-        trade:        body.trade ?? null,
-        urgency:      body.urgency ?? "normal",
-        has_email:    !!body.homeowner_email,
-      },
-    });
 
     // Send job link email to homeowner (confirmation) if email provided
     const jobUrl = `${process.env.NEXT_PUBLIC_APP_URL}/job/${jobId}`;

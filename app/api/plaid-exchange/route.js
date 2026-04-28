@@ -2,7 +2,6 @@
 // Called after user completes Plaid Link flow
 
 import { createClient } from "@supabase/supabase-js";
-import { getPostHogClient } from "../../../lib/posthog-server";
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -48,13 +47,6 @@ export async function POST(req) {
         .from("properties")
         .insert({ address: "My Home", plaid_access_token: accessToken });
     }
-
-    // Track bank connection server-side
-    const posthog = getPostHogClient();
-      distinctId: existing?.id ? String(existing.id) : "anonymous",
-      event: "bank_account_connected",
-      properties: { plaid_env: process.env.PLAID_ENV || "sandbox" },
-    });
 
     // Immediately fetch mortgage data so dashboard populates right away
     try {
