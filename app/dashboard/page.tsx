@@ -1989,6 +1989,14 @@ export default function Dashboard() {
   const [plaidConnected, setPlaidConnected]   = useState(false);
   const [connectingPlaid, setConnectingPlaid] = useState(false);
 
+  // Plaid MFA gate
+  const [showMfaModal, setShowMfaModal]       = useState(false);
+  const [mfaOtpValue,  setMfaOtpValue]        = useState("");
+  const [mfaSending,   setMfaSending]          = useState(false);
+  const [mfaVerifying, setMfaVerifying]        = useState(false);
+  const [mfaError,     setMfaError]            = useState("");
+  const [plaidToken,   setPlaidToken]          = useState<string | null>(null);
+
   // Repair Fund — connected savings balance (Plaid or manual)
   const [repairSavingsBalance, setRepairSavingsBalance]   = useState<number | null>(null);
   const [repairSavingsName, setRepairSavingsName]         = useState<string>("Savings Account");
@@ -2520,32 +2528,60 @@ export default function Dashboard() {
     } catch { /* silent */ }
   }
 
+  function launchPlaidHandler(link_token: string) {
+    // @ts-ignore
+    if (!window.Plaid) { alert("Plaid script not loaded. Refresh and try again."); setConnectingPlaid(false); return; }
+    // @ts-ignore
+    const handler = window.Plaid.create({
+      token: link_token,
+      onSuccess: async (public_token: string) => {
+        setConnectingPlaid(true);
+        try {
+          await fetch("/api/plaid-exchange", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ public_token }) });
+          await new Promise(r => setTimeout(r, 1500));
+          await loadPlaidData();
+          addEvent("Bank account connected");
+        } catch { /* silent */ }
+        setConnectingPlaid(false);
+      },
+      onExit: () => setConnectingPlaid(false),
+      onEvent: (eventName: string) => { if (eventName === "HANDOFF") setConnectingPlaid(true); },
+    });
+    handler.open();
+  }
+
   async function connectPlaid() {
     setConnectingPlaid(true);
+    setMfaError("");
+    setMfaOtpValue("");
     try {
-      const res = await fetch("/api/plaid-link", { method: "POST" });
-      const { link_token, error } = await res.json();
+      // Fetch link_token and send OTP in parallel
+      const [tokenRes] = await Promise.all([
+        fetch("/api/plaid-link", { method: "POST" }),
+        supabase.auth.signInWithOtp({ email: user!.email!, options: { shouldCreateUser: false } }),
+      ]);
+      const { link_token, error } = await tokenRes.json();
       if (error || !link_token) { alert("Could not start bank connection."); setConnectingPlaid(false); return; }
-      // @ts-ignore
-      if (!window.Plaid) { alert("Plaid script not loaded. Refresh and try again."); setConnectingPlaid(false); return; }
-      // @ts-ignore
-      const handler = window.Plaid.create({
-        token: link_token,
-        onSuccess: async (public_token: string) => {
-          setConnectingPlaid(true);
-          try {
-            await fetch("/api/plaid-exchange", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ public_token }) });
-            await new Promise(r => setTimeout(r, 1500));
-            await loadPlaidData();
-            addEvent("Bank account connected");
-          } catch { /* silent */ }
-          setConnectingPlaid(false);
-        },
-        onExit: () => setConnectingPlaid(false),
-        onEvent: (eventName: string) => { if (eventName === "HANDOFF") setConnectingPlaid(true); },
-      });
-      handler.open();
+      setPlaidToken(link_token);
+      setConnectingPlaid(false);
+      setShowMfaModal(true);
     } catch { alert("Bank connection failed."); setConnectingPlaid(false); }
+  }
+
+  async function verifyMfaAndLaunch() {
+    if (!mfaOtpValue.trim() || !user?.email || !plaidToken) return;
+    setMfaVerifying(true);
+    setMfaError("");
+    const { error } = await supabase.auth.verifyOtp({ email: user.email, token: mfaOtpValue.trim(), type: "email" });
+    if (error) {
+      setMfaError("Incorrect code — please check your email and try again.");
+      setMfaVerifying(false);
+      return;
+    }
+    setShowMfaModal(false);
+    setMfaOtpValue("");
+    setConnectingPlaid(true);
+    launchPlaidHandler(plaidToken);
   }
 
   async function checkAuth(): Promise<boolean> {
@@ -7585,6 +7621,77 @@ export default function Dashboard() {
 
       {/* Always-rendered hidden photo input — needed by both Dashboard and Documents tabs */}
       <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoCapture} disabled={photoAnalyzing}/>
+
+      {/* ── Plaid MFA Verification Modal ─────────────────────────────── */}
+      {showMfaModal && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1000, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}>
+          <div style={{ background: C.surface, borderRadius: 18, padding: "32px 28px", width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}>
+            {/* Icon */}
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: "#eff6ff", display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
+              <Shield size={22} color={C.accent}/>
+            </div>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: C.text, margin: "0 0 8px" }}>Verify your identity</h2>
+            <p style={{ fontSize: 14, color: C.text3, margin: "0 0 24px", lineHeight: 1.5 }}>
+              We sent a 6-digit code to <strong style={{ color: C.text }}>{user?.email}</strong>. Enter it below to securely connect your bank.
+            </p>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={6}
+              placeholder="000000"
+              value={mfaOtpValue}
+              onChange={e => { setMfaOtpValue(e.target.value.replace(/\D/g, "")); setMfaError(""); }}
+              onKeyDown={e => { if (e.key === "Enter") verifyMfaAndLaunch(); }}
+              autoFocus
+              style={{
+                width: "100%", padding: "13px 16px", borderRadius: 10, fontSize: 22,
+                fontWeight: 700, letterSpacing: "0.25em", textAlign: "center",
+                border: `1.5px solid ${mfaError ? C.red : mfaOtpValue.length === 6 ? C.accent : C.border}`,
+                background: C.bg, color: C.text, outline: "none", boxSizing: "border-box",
+                transition: "border-color 0.15s",
+              }}
+            />
+            {mfaError && (
+              <p style={{ fontSize: 13, color: C.red, margin: "8px 0 0", textAlign: "center" }}>{mfaError}</p>
+            )}
+            <button
+              onClick={verifyMfaAndLaunch}
+              disabled={mfaOtpValue.length !== 6 || mfaVerifying}
+              style={{
+                width: "100%", marginTop: 16, padding: "13px", borderRadius: 11,
+                background: mfaOtpValue.length === 6 ? C.accent : C.border,
+                border: "none", color: "white", fontSize: 15, fontWeight: 700,
+                cursor: mfaOtpValue.length === 6 && !mfaVerifying ? "pointer" : "not-allowed",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                transition: "background 0.15s",
+              }}
+            >
+              {mfaVerifying ? <><Loader2 size={15} className="animate-spin"/>Verifying…</> : "Verify & Connect Bank"}
+            </button>
+            <button
+              onClick={() => { setShowMfaModal(false); setMfaOtpValue(""); setMfaError(""); setPlaidToken(null); }}
+              style={{ width: "100%", marginTop: 10, padding: "11px", borderRadius: 11, background: "transparent", border: `1px solid ${C.border}`, color: C.text3, fontSize: 14, fontWeight: 600, cursor: "pointer" }}
+            >
+              Cancel
+            </button>
+            <p style={{ fontSize: 12, color: C.text3, textAlign: "center", margin: "14px 0 0" }}>
+              Didn&apos;t get the code?{" "}
+              <button
+                onClick={async () => {
+                  setMfaSending(true);
+                  await supabase.auth.signInWithOtp({ email: user!.email!, options: { shouldCreateUser: false } });
+                  setMfaSending(false);
+                  setMfaError("");
+                }}
+                disabled={mfaSending}
+                style={{ background: "none", border: "none", color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: 0 }}
+              >
+                {mfaSending ? "Sending…" : "Resend code"}
+              </button>
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
