@@ -2250,12 +2250,11 @@ export default function Dashboard() {
           const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
           const storagePath = `${uid}/insurance-${Date.now()}-${safeName}`;
           await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
-          if (propId) {
-            await supabase.from("documents").insert({
-              user_id: uid, property_id: propId,
-              file_name: file.name, file_path: storagePath, document_type: "insurance",
-            });
-          }
+          // Always save documents row — user_id alone is enough; propId added when available
+          await supabase.from("documents").insert({
+            user_id: uid, ...(propId ? { property_id: propId } : {}),
+            file_name: file.name, file_path: storagePath, document_type: "insurance",
+          });
           const { data: signedIns } = await supabase.storage.from("documents").createSignedUrl(storagePath, 3600);
           if (signedIns?.signedUrl) setInsuranceDocUrls(prev => [...prev, signedIns.signedUrl]);
         }
@@ -2369,21 +2368,29 @@ export default function Dashboard() {
       if (!uid) throw new Error("Not signed in");
       const propId = activePropertyIdRef.current;
 
-      // Upload file to storage so the API can read it
-      const ts = Date.now();
-      const storagePath = `${uid}/insurance-add-${ts}-${file.name}`;
+      // Upload raw file to storage
+      const ts       = Date.now();
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const storagePath = `${uid}/insurance-add-${ts}-${safeName}`;
       const { error: upErr } = await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
       if (upErr) throw new Error(upErr.message);
-      const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
-      if (!signed?.signedUrl) throw new Error("Could not get download URL");
 
+      // Save documents row so PDF is viewable on reload (no propId gate — user_id alone is enough)
+      await supabase.from("documents").insert({
+        user_id: uid, ...(propId ? { property_id: propId } : {}),
+        file_name: file.name, file_path: storagePath, document_type: "insurance",
+      });
+
+      // Populate PDF link immediately
+      const { data: signedAdd } = await supabase.storage.from("documents").createSignedUrl(storagePath, 3600);
+      if (signedAdd?.signedUrl) setInsuranceDocUrls(prev => [...prev, signedAdd.signedUrl]);
+
+      // Send raw file bytes to the API — same path as uploadInsurance
       const params = new URLSearchParams();
       if (uid)    params.set("userId",     uid);
       if (propId) params.set("propertyId", String(propId));
-      const authHeader = { "Authorization": `Bearer ${sessionData.session?.access_token ?? ""}` };
       const res = await fetch(`/api/parse-insurance?${params}`, {
-        method: "POST", headers: { "Content-Type": "application/json", ...authHeader },
-        body: JSON.stringify({ signedUrl: signed.signedUrl, filename: file.name }),
+        method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file,
       });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let json: any = {};
@@ -2392,15 +2399,15 @@ export default function Dashboard() {
       const parsed = json.data ?? json;
       if (!parsed || json.error) throw new Error(json.error ?? "Could not parse policy");
 
-      // Build a compact secondary policy object with just the display fields
+      // Build compact secondary policy — API returns camelCase keys
       const newPolicy = {
         provider:       parsed.provider       ?? null,
-        policyType:     parsed.policy_type    ?? null,
-        policyNumber:   parsed.policy_number  ?? null,
-        annualPremium:  parsed.annual_premium ?? null,
-        expirationDate: parsed.expiration_date ?? null,
-        claimPhone:     parsed.claim_phone    ?? null,
-        claimUrl:       parsed.claim_url      ?? null,
+        policyType:     parsed.policyType     ?? null,
+        policyNumber:   parsed.policyNumber   ?? null,
+        annualPremium:  parsed.annualPremium  ?? null,
+        expirationDate: parsed.expirationDate ?? null,
+        claimPhone:     parsed.claimPhone     ?? null,
+        claimUrl:       parsed.claimUrl       ?? null,
       };
 
       // Append to additional_policies in DB
@@ -2418,6 +2425,7 @@ export default function Dashboard() {
         ...prev,
         additionalPolicies: [...(prev?.additionalPolicies ?? []), newPolicy],
       }));
+      setInsuranceDocCount(prev => prev + 1);
       showToast(`✓ Added ${newPolicy.provider ?? "policy"} — both policies now active`, "success");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Upload failed";
@@ -2442,13 +2450,11 @@ export default function Dashboard() {
         const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
         const storagePath = `${uid}/warranty-${Date.now()}-${safeName}`;
         await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
-        // Save document row so the original PDF is viewable
-        if (propId) {
-          await supabase.from("documents").insert({
-            user_id: uid, property_id: propId,
-            file_name: file.name, file_path: storagePath, document_type: "warranty",
-          });
-        }
+        // Always save documents row — user_id alone is enough; propId added when available
+        await supabase.from("documents").insert({
+          user_id: uid, ...(propId ? { property_id: propId } : {}),
+          file_name: file.name, file_path: storagePath, document_type: "warranty",
+        });
         const { data: signedWarr } = await supabase.storage.from("documents").createSignedUrl(storagePath, 3600);
         if (signedWarr?.signedUrl) setWarrantyDocUrl(signedWarr.signedUrl);
       }
@@ -3492,31 +3498,42 @@ export default function Dashboard() {
       }
 
       // ── 4. Warranty PDF URL ────────────────────────────────────────────────
-      const currentPropId = activePropertyIdRef.current;
-      const warrQuery = supabase
+      // Primary path: documents table row (created by all uploads going forward).
+      // Fallback: scan storage bucket for files uploaded before the documents row
+      // was required — so users never have to re-upload an existing file.
+      const { data: warrData } = await supabase
         .from("documents")
         .select("file_path")
         .eq("user_id", uid)
         .eq("document_type", "warranty")
         .order("created_at", { ascending: false })
         .limit(1);
-      if (currentPropId) warrQuery.eq("property_id", currentPropId);
-      const { data: warrData } = await warrQuery;
+
       if (warrData?.length) {
         const { data: signedWarr } = await supabase.storage.from("documents").createSignedUrl(warrData[0].file_path, 3600);
         if (signedWarr?.signedUrl) setWarrantyDocUrl(signedWarr.signedUrl);
+      } else {
+        // Fallback: list storage files for this user and find warranty uploads
+        const { data: storageFiles } = await supabase.storage.from("documents").list(uid, {
+          limit: 100, sortBy: { column: "name", order: "desc" },
+        });
+        const warrFile = storageFiles?.find(f => f.name.startsWith("warranty-"));
+        if (warrFile) {
+          const path = `${uid}/${warrFile.name}`;
+          const { data: sw } = await supabase.storage.from("documents").createSignedUrl(path, 3600);
+          if (sw?.signedUrl) setWarrantyDocUrl(sw.signedUrl);
+        }
       }
 
       // ── 5. Insurance PDF URLs ──────────────────────────────────────────────
-      const insQuery = supabase
+      const { data: insData } = await supabase
         .from("documents")
-        .select("file_path")
+        .select("file_path, file_name")
         .eq("user_id", uid)
         .eq("document_type", "insurance")
         .order("created_at", { ascending: false })
         .limit(5);
-      if (currentPropId) insQuery.eq("property_id", currentPropId);
-      const { data: insData } = await insQuery;
+
       if (insData?.length) {
         const urls: string[] = [];
         for (const row of insData) {
@@ -3524,6 +3541,22 @@ export default function Dashboard() {
           if (s?.signedUrl) urls.push(s.signedUrl);
         }
         if (urls.length) setInsuranceDocUrls(urls);
+      } else {
+        // Fallback: list storage files and find insurance uploads
+        const { data: storageFiles } = await supabase.storage.from("documents").list(uid, {
+          limit: 100, sortBy: { column: "name", order: "desc" },
+        });
+        const insFiles = storageFiles?.filter(f =>
+          f.name.startsWith("insurance-") || f.name.startsWith("insurance-add-")
+        ) ?? [];
+        if (insFiles.length) {
+          const urls: string[] = [];
+          for (const f of insFiles.slice(0, 5)) {
+            const { data: s } = await supabase.storage.from("documents").createSignedUrl(`${uid}/${f.name}`, 3600);
+            if (s?.signedUrl) urls.push(s.signedUrl);
+          }
+          if (urls.length) setInsuranceDocUrls(urls);
+        }
       }
 
     } catch (err) {
@@ -5172,8 +5205,8 @@ export default function Dashboard() {
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
                         <span style={{ fontSize: 20, fontWeight: 800, color: "white", letterSpacing: "-0.5px" }}>{statusLevel}</span>
                         {streak > 0 && (
-                          <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.2)" }}>
-                            🔥 {streak} week{streak !== 1 ? "s" : ""}
+                          <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.2)", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                            <TrendingUp size={11} color="white"/>{streak} week{streak !== 1 ? "s" : ""}
                           </span>
                         )}
                       </div>
@@ -5209,7 +5242,7 @@ export default function Dashboard() {
                       <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>Weekly Goal</p>
                       <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>
                         {completionsThisWeek >= WEEKLY_GOAL
-                          ? "🎉 Goal reached! Great work this week."
+                          ? "Goal reached — great work this week."
                           : `Complete ${WEEKLY_GOAL - completionsThisWeek} more task${WEEKLY_GOAL - completionsThisWeek !== 1 ? "s" : ""} to hit your goal`}
                       </p>
                     </div>
@@ -5314,7 +5347,9 @@ export default function Dashboard() {
                 <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
                   <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <span style={{ fontSize: 16 }}>{season === "spring" ? "🌱" : season === "summer" ? "☀️" : season === "fall" ? "🍂" : "❄️"}</span>
+                      <div style={{ width: 28, height: 28, borderRadius: 8, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        <Activity size={14} color={C.accent}/>
+                      </div>
                       <div>
                         <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>{seasonLabel} Checklist</p>
                         <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>Seasonal tasks for this time of year</p>
