@@ -12,6 +12,7 @@ import {
   ExternalLink, ArrowRight, BarChart3, Clock, TrendingUp,
   Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera, Phone, Mail, Trash2, RefreshCw,
 } from "lucide-react";
+import posthog from "posthog-js";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
 import type { HomeHealthReport } from "../../lib/scoring-engine";
@@ -2024,7 +2025,7 @@ export default function Dashboard() {
     // legacy fields from old parser / properties table
     premium?: number;
     // stacked additional policies (CA FAIR Plan + DIC, etc.)
-    additionalPolicies?: Array<{ provider?: string; policyType?: string; policyNumber?: string; premium?: number; annualPremium?: number; renewalDate?: string; expirationDate?: string; claimPhone?: string; claimUrl?: string; claimEmail?: string }>;
+    additionalPolicies?: Array<{ provider?: string; policyType?: string; policyNumber?: string; premium?: number; annualPremium?: number; renewalDate?: string; expirationDate?: string; deductible?: number; claimPhone?: string; claimUrl?: string; claimEmail?: string }>;
   } | null>(null);
   const [parsingInsurance, setParsingInsurance] = useState(false);
   const [insuranceError, setInsuranceError] = useState<string | null>(null);
@@ -2444,6 +2445,24 @@ export default function Dashboard() {
     setInsuranceFileKey(k => k + 1);
   }
 
+  async function deleteInsurance() {
+    if (!confirm("Remove this insurance record? This will clear all parsed policy data.")) return;
+    const propId = activePropertyIdRef.current;
+    if (propId) await supabase.from("home_insurance").delete().eq("property_id", propId);
+    setInsurance(null);
+    setInsuranceDocUrls([]);
+    showToast("Insurance record removed", "success");
+  }
+
+  async function deleteWarranty() {
+    if (!confirm("Remove this warranty record? This will clear all parsed warranty data.")) return;
+    const propId = activePropertyIdRef.current;
+    if (propId) await supabase.from("home_warranty").delete().eq("property_id", propId);
+    setWarranty(null);
+    setWarrantyDocUrl(null);
+    showToast("Warranty record removed", "success");
+  }
+
   async function uploadWarranty(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setParsingWarranty(true);
@@ -2801,6 +2820,7 @@ export default function Dashboard() {
       setActivePropertyId(data.id);
       activePropertyIdRef.current = data.id;
       localStorage.setItem("btlr_active_property_id", String(data.id));
+      posthog.capture("property_created", { property_id: data.id, method: "blank" });
       showToast("New property created — upload an inspection report to get started", "success");
     } catch (err: unknown) {
       showToast(err instanceof Error ? err.message : "Failed to create property.", "error");
@@ -2828,6 +2848,7 @@ export default function Dashboard() {
       setNewPropForm({ address: "", nickname: "", home_type: "single_family", year_built: "" });
       setNav("Documents");
       await switchProperty(data.id);
+      posthog.capture("property_created", { property_id: data.id, address: data.address, method: "form", home_type: newPropForm.home_type || null, year_built: newPropForm.year_built || null });
       showToast(`✓ Property added: ${data.address}`, "success");
     } catch (err: unknown) {
       setNewPropError(err instanceof Error ? err.message : "Failed to save property.");
@@ -3404,6 +3425,12 @@ export default function Dashboard() {
             inspectionDate: result.inspection_date ?? null,
           });
           setHomeHealthReport(mergedReport);
+          posthog.capture("home_health_score_calculated", {
+            overall_score:    mergedReport.overallScore,
+            grade:            mergedReport.grade,
+            confidence_score: mergedReport.confidence_score,
+            property_id:      savePropId,
+          });
           // Persist score metadata so confidence bar and renewal funnel survive refresh
           if (savePropId) {
             supabase.from("properties").update({
@@ -3419,6 +3446,12 @@ export default function Dashboard() {
         }
         if (result._debug) setParseDebug(result._debug);
         const findingCount = newFindings.length;
+        posthog.capture("inspection_report_uploaded", {
+          finding_count:     findingCount,
+          inspection_type:   result.inspection_type ?? "Home Inspection",
+          total_cost_estimate: result.total_estimated_cost ?? null,
+          property_id:       activePropertyIdRef.current,
+        });
         addEvent(`${result.inspection_type ?? "Inspection"} analyzed: ${findingCount} finding${findingCount !== 1 ? "s" : ""} detected`);
         setInspectDone(true);
         // Show post-inspection review modal — only scored findings that are critical or warning.
@@ -6617,6 +6650,9 @@ export default function Dashboard() {
                         {parsingInsurance ? "…" : "Replace"}
                         <input key={`rep-${insuranceFileKey}`} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                       </label>
+                      <button onClick={deleteInsurance} title="Remove insurance record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #fca5a530", color: C.red, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
+                        <Trash2 size={10}/>
+                      </button>
                     </div>
                   )}
                 </div>
@@ -6704,28 +6740,41 @@ export default function Dashboard() {
                         <X size={13}/>
                       </button>
                     </div>
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: ap.claimPhone || ap.claimUrl ? 10 : 0 }}>
-                      {ap.annualPremium && (
-                        <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}>
-                          <div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Premium</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>${ap.annualPremium.toLocaleString()}<span style={{ fontSize: 10, color: C.text3 }}>/yr</span></div>
-                        </div>
-                      )}
-                      {ap.expirationDate && (
-                        <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}>
-                          <div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Renews</div>
-                          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{ap.expirationDate}</div>
-                        </div>
-                      )}
-                    </div>
-                    {(ap.claimPhone || ap.claimUrl) && (
-                      <button onClick={() => {
-                        if (ap.claimUrl) window.open(ap.claimUrl);
-                        else if (ap.claimPhone) window.location.href = `tel:${ap.claimPhone.replace(/\D/g, "")}`;
-                      }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: C.navy, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                        File Claim
-                      </button>
-                    )}
+                    {(() => {
+                      const apPremium = ap.annualPremium ?? ap.premium;
+                      const apRenewal = ap.expirationDate ?? ap.renewalDate;
+                      const hasInfo = apPremium != null || !!apRenewal;
+                      return (
+                        <>
+                          {hasInfo ? (
+                            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: ap.claimPhone || ap.claimUrl ? 10 : 0 }}>
+                              {apPremium != null && (
+                                <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}>
+                                  <div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Premium</div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>${typeof apPremium === "number" ? apPremium.toLocaleString() : apPremium}<span style={{ fontSize: 10, color: C.text3 }}>/yr</span></div>
+                                </div>
+                              )}
+                              {apRenewal && (
+                                <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}>
+                                  <div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Renews</div>
+                                  <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{apRenewal}</div>
+                                </div>
+                              )}
+                            </div>
+                          ) : (
+                            <p style={{ fontSize: 11, color: C.text3, margin: "0 0 8px", fontStyle: "italic" }}>No details parsed — upload a declarations page for coverage info.</p>
+                          )}
+                          {(ap.claimPhone || ap.claimUrl) && (
+                            <button onClick={() => {
+                              if (ap.claimUrl) window.open(ap.claimUrl);
+                              else if (ap.claimPhone) window.location.href = `tel:${ap.claimPhone.replace(/\D/g, "")}`;
+                            }} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: C.navy, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
+                              File Claim
+                            </button>
+                          )}
+                        </>
+                      );
+                    })()}
                   </div>
                 ))}
 
@@ -6850,8 +6899,8 @@ export default function Dashboard() {
                       <div style={{ borderTop: "1px solid #bae6fd", paddingTop: 12 }}>
                         <p style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Your Agent</p>
                         {insurance.agentName  && <p style={{ fontSize: 13, color: C.text, margin: "0 0 2px" }}>{insurance.agentName}</p>}
-                        {insurance.agentPhone && <a href={`tel:${insurance.agentPhone.replace(/\D/g, "")}`} style={{ fontSize: 13, color: "#0891b2", display: "block", textDecoration: "none", margin: "0 0 2px" }}>📞 {insurance.agentPhone}</a>}
-                        {insurance.agentEmail && <a href={`mailto:${insurance.agentEmail}`} style={{ fontSize: 13, color: "#0891b2", display: "block", textDecoration: "none" }}>✉️ {insurance.agentEmail}</a>}
+                        {insurance.agentPhone && <a href={`tel:${insurance.agentPhone.replace(/\D/g, "")}`} style={{ fontSize: 13, color: "#0891b2", display: "flex", alignItems: "center", gap: 5, textDecoration: "none", margin: "0 0 2px" }}><Phone size={12}/> {insurance.agentPhone}</a>}
+                        {insurance.agentEmail && <a href={`mailto:${insurance.agentEmail}`} style={{ fontSize: 13, color: "#0891b2", display: "flex", alignItems: "center", gap: 5, textDecoration: "none" }}><Mail size={12}/> {insurance.agentEmail}</a>}
                       </div>
                     )}
                   </div>
@@ -6864,11 +6913,18 @@ export default function Dashboard() {
                 <div style={{ height: 4, background: "#7c3aed", borderRadius: "16px 16px 0 0" }}/>
                 <div style={{ padding: "20px 22px 22px" }}>
                 {/* Header row */}
-                <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
-                  <div style={{ width: 32, height: 32, borderRadius: 9, background: "#7c3aed18", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <Shield size={15} color="#7c3aed"/>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 9, background: "#7c3aed18", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Shield size={15} color="#7c3aed"/>
+                    </div>
+                    <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", letterSpacing: "0.08em", textTransform: "uppercase" }}>Home Warranty</span>
                   </div>
-                  <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", letterSpacing: "0.08em", textTransform: "uppercase", marginLeft: 8 }}>Home Warranty</span>
+                  {warranty && (
+                    <button onClick={deleteWarranty} title="Remove warranty record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #fca5a530", color: C.red, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
+                      <Trash2 size={10}/>
+                    </button>
+                  )}
                 </div>
                 {warranty ? (
                   <>
@@ -6955,8 +7011,8 @@ export default function Dashboard() {
                       )}
                       {warranty.claimPhone && (
                         <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
-                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 13, fontWeight: 700, textDecoration: "none", background: "white" }}>
-                          📞 {warranty.claimPhone}
+                          style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 9, border: "1.5px solid #e9d5ff", color: "#7c3aed", fontSize: 13, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                          <Phone size={13}/> {warranty.claimPhone}
                         </a>
                       )}
                     </div>
@@ -6966,7 +7022,7 @@ export default function Dashboard() {
                   <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
                     {warranty.serviceFee     && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}><strong>${warranty.serviceFee}</strong> service fee/claim</span>}
                     {warranty.responseTime   && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>{warranty.responseTime} response</span>}
-                    {warranty.maxAnnualBenefit && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>Max ${warranty.maxAnnualBenefit?.toLocaleString()}/yr</span>}
+                    {warranty.maxAnnualBenefit != null && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>Max ${typeof warranty.maxAnnualBenefit === "number" ? warranty.maxAnnualBenefit.toLocaleString() : String(warranty.maxAnnualBenefit)}/yr</span>}
                     {warranty.paymentAmount  && <span style={{ fontSize: 12, background: "white", border: "1px solid #e9d5ff", borderRadius: 6, padding: "3px 9px", color: "#6d28d9" }}>${warranty.paymentAmount}/{warranty.paymentFrequency ?? "mo"}</span>}
                   </div>
 
@@ -6999,9 +7055,12 @@ export default function Dashboard() {
                     <div>
                       <p style={{ fontSize: 11, fontWeight: 700, color: C.amber, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Coverage Limits</p>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                        {Object.entries(warranty.coverageLimits).map(([sys, limit]) => (
-                          <span key={sys} style={{ fontSize: 12, background: C.amberBg, border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "3px 9px", color: C.amber }}>{sys}: ${(limit as number).toLocaleString()}</span>
-                        ))}
+                        {Object.entries(warranty.coverageLimits).map(([sys, limit]) => {
+                          const val = limit == null ? "" : typeof limit === "number" ? `$${limit.toLocaleString()}` : String(limit);
+                          return (
+                            <span key={sys} style={{ fontSize: 12, background: C.amberBg, border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "3px 9px", color: C.amber }}>{sys}{val ? `: ${val}` : ""}</span>
+                          );
+                        })}
                       </div>
                     </div>
                   )}
