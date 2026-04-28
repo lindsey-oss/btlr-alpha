@@ -7,7 +7,9 @@ import {
   DollarSign, HelpCircle, MessageSquare, AlertOctagon,
   Thermometer, Paintbrush, AlignLeft, Clock,
   Phone, Mail, Copy, ChevronDown, Pencil,
+  Plus, UserCircle2,
 } from "lucide-react";
+import { supabase } from "../../lib/supabase";
 
 const C = {
   bg:      "#f0f4f8",
@@ -93,6 +95,38 @@ function getTradeIcon(key: string, size = 18, color = C.text3): React.ReactNode 
   if (k.includes("floor"))       return <AlignLeft size={size} color={color}/>;
   return                                <Wrench size={size} color={color}/>;
 }
+
+// ── My Home Team types & constants ───────────────────────────────────────────
+interface SavedContact {
+  id: string;
+  affiliate_id: string | null;
+  name: string;
+  company: string | null;
+  role: string;
+  category: string;
+  phone: string | null;
+  email: string | null;
+  website: string | null;
+  photo_url: string | null;
+  notes: string | null;
+}
+
+const TEAM_CATEGORY_LABELS: Record<string, string> = {
+  real_estate: "Real Estate",
+  insurance:   "Insurance",
+  maintenance: "Maintenance",
+  repair:      "Repair",
+};
+
+const SAVED_ROLE_LABELS: Record<string, string> = {
+  realtor:          "Real Estate Agent",
+  lender:           "Mortgage Lender",
+  escrow:           "Escrow Officer",
+  title:            "Title Officer",
+  attorney:         "Real Estate Attorney",
+  insurance_broker: "Insurance Broker",
+  home_warranty:    "Home Warranty",
+};
 
 const CATEGORIES = [
   { key: "roofing",    label: "Roofing"        },
@@ -664,6 +698,29 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
   const [loadingContractors, setLoadingContractors] = useState(false);
   const [copiedIndex, setCopiedIndex]     = useState<number | null>(null);
 
+  // ── My Home Team ──
+  const [savedContacts,    setSavedContacts]    = useState<SavedContact[]>([]);
+  const [loadingContacts,  setLoadingContacts]  = useState(false);
+
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    setLoadingContacts(true);
+    (async () => {
+      try {
+        const { data } = await supabase
+          .from("saved_contacts")
+          .select("id, affiliate_id, name, company, role, category, phone, email, website, photo_url, notes")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: true });
+        if (!cancelled) setSavedContacts((data as SavedContact[]) ?? []);
+      } catch { /* ignore */ } finally {
+        if (!cancelled) setLoadingContacts(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
   useEffect(() => {
     const check = () => setIsMobile(window.innerWidth < 768);
     check();
@@ -844,6 +901,133 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18, minWidth: 0, overflow: "hidden" }}>
+
+      {/* ── My Home Team ─────────────────────────────────────────────── */}
+      {userId && (
+        <div style={card()}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+            <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0, display: "flex", alignItems: "center", gap: 7 }}>
+              🏠 My Home Team
+            </p>
+            <button
+              onClick={() => alert("Manual contact adding is coming soon!")}
+              style={{
+                padding: "5px 12px", borderRadius: 8, border: `1.5px solid ${C.border}`,
+                background: C.bg, color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer",
+                display: "flex", alignItems: "center", gap: 5,
+              }}
+            >
+              <Plus size={12}/> Add
+            </button>
+          </div>
+
+          {loadingContacts && (
+            <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 0", color: C.text3, fontSize: 13 }}>
+              <Loader2 size={14} color={C.accent} className="animate-spin"/> Loading your team…
+            </div>
+          )}
+
+          {!loadingContacts && savedContacts.length === 0 && (
+            <p style={{ fontSize: 13, color: C.text3, margin: "6px 0 0", lineHeight: 1.5 }}>
+              No team members yet. Professionals who send you their referral link will appear here automatically.
+            </p>
+          )}
+
+          {!loadingContacts && savedContacts.length > 0 && (() => {
+            // Group by category
+            const grouped: Record<string, SavedContact[]> = {};
+            savedContacts.forEach(c => {
+              const key = c.category || "general";
+              if (!grouped[key]) grouped[key] = [];
+              grouped[key].push(c);
+            });
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 12 }}>
+                {Object.entries(grouped).map(([cat, contacts]) => (
+                  <div key={cat}>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase",
+                      letterSpacing: "0.07em", margin: "0 0 8px" }}>
+                      {TEAM_CATEGORY_LABELS[cat] ?? cat.replace(/_/g, " ")}
+                    </p>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {contacts.map(contact => (
+                        <div key={contact.id} style={{
+                          display: "flex", alignItems: "center", gap: 12,
+                          padding: "12px 14px", borderRadius: 12,
+                          border: `1.5px solid ${C.border}`, background: C.surface,
+                        }}>
+                          {/* Avatar */}
+                          {contact.photo_url ? (
+                            <img src={contact.photo_url} alt={contact.name} style={{
+                              width: 42, height: 42, borderRadius: "50%", objectFit: "cover",
+                              flexShrink: 0, border: `2px solid ${C.border}`,
+                            }}/>
+                          ) : (
+                            <div style={{ width: 42, height: 42, borderRadius: "50%", background: C.bg,
+                              display: "flex", alignItems: "center", justifyContent: "center",
+                              flexShrink: 0, border: `2px solid ${C.border}` }}>
+                              <UserCircle2 size={24} color={C.text3}/>
+                            </div>
+                          )}
+                          {/* Info */}
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{contact.name}</span>
+                              {contact.affiliate_id && (
+                                <span style={{ fontSize: 10, fontWeight: 700, color: C.accent, background: "#eff6ff",
+                                  padding: "2px 7px", borderRadius: 20, border: "1px solid #bfdbfe" }}>
+                                  Via Referral
+                                </span>
+                              )}
+                            </div>
+                            {contact.company && (
+                              <p style={{ fontSize: 12, color: C.text2, margin: "1px 0 0" }}>{contact.company}</p>
+                            )}
+                            <p style={{ fontSize: 12, color: C.text3, margin: "1px 0 0" }}>
+                              {SAVED_ROLE_LABELS[contact.role] ?? contact.role}
+                            </p>
+                          </div>
+                          {/* Quick-contact buttons */}
+                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                            {contact.phone && (
+                              <a href={`tel:${contact.phone.replace(/\D/g, "")}`} style={{
+                                width: 32, height: 32, borderRadius: 8, display: "flex",
+                                alignItems: "center", justifyContent: "center",
+                                background: C.navy, textDecoration: "none",
+                              }}>
+                                <Phone size={13} color="white"/>
+                              </a>
+                            )}
+                            {contact.email && (
+                              <a href={`mailto:${contact.email}`} style={{
+                                width: 32, height: 32, borderRadius: 8, display: "flex",
+                                alignItems: "center", justifyContent: "center",
+                                background: C.accent, textDecoration: "none",
+                              }}>
+                                <Mail size={13} color="white"/>
+                              </a>
+                            )}
+                            {contact.website && (
+                              <a href={contact.website.startsWith("http") ? contact.website : `https://${contact.website}`}
+                                target="_blank" rel="noopener noreferrer" style={{
+                                  width: 32, height: 32, borderRadius: 8, display: "flex",
+                                  alignItems: "center", justifyContent: "center",
+                                  background: C.bg, border: `1px solid ${C.border}`, textDecoration: "none",
+                                }}>
+                                <ExternalLink size={13} color={C.text2}/>
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })()}
+        </div>
+      )}
 
       {/* ── CTA Context Banner (shown when opened via a repair/issue CTA) ── */}
       {prefillContext && (

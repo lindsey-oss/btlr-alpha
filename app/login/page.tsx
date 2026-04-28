@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "../../lib/supabase";
 import { Home as HomeIcon, Loader2, Eye, EyeOff, DollarSign, Bot } from "lucide-react";
@@ -20,6 +20,14 @@ const C = {
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode]         = useState<"login" | "signup">("login");
+
+  // Auto-switch to signup when arriving via an affiliate referral link (?signup=1)
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("signup") === "1") setMode("signup");
+    }
+  }, []);
   const [email, setEmail]       = useState("");
   const [password, setPassword] = useState("");
   const [showPw, setShowPw]     = useState(false);
@@ -42,6 +50,16 @@ export default function LoginPage() {
         // If email confirmation is on, show a message
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
+          // Apply affiliate referral if the user arrived via a /ref/[code] link
+          const affiliateRef = sessionStorage.getItem("btlr_affiliate_ref");
+          if (affiliateRef && session.user?.id) {
+            fetch("/api/affiliate/apply", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ code: affiliateRef, userId: session.user.id }),
+            }).catch(() => {});
+            sessionStorage.removeItem("btlr_affiliate_ref");
+          }
           router.push("/dashboard");
         } else {
           setSuccess("Account created! Check your email to confirm, then sign in.");
