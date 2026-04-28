@@ -1838,9 +1838,8 @@ export default function Dashboard() {
   const [inspectionDoc, setInspectionDoc] = useState<Doc | null>(null); // last uploaded inspection file reference
   const [confirmDeleteInspection, setConfirmDeleteInspection] = useState(false); // score-reset warning modal
 
-  // ── Maintenance checklist "done" state ──────────────────────────────────
+  // ── Seasonal checklist "done" state (legacy — kept for seasonal checkboxes) ──
   // Keyed by season+year so it auto-resets each new season.
-  // Stored in localStorage so it survives page refreshes within the season.
   const maintenanceDoneKey = (() => {
     const mo = new Date().getMonth();
     const yr = new Date().getFullYear();
@@ -1858,6 +1857,28 @@ export default function Dashboard() {
       const next = new Set(prev);
       next.has(key) ? next.delete(key) : next.add(key);
       try { localStorage.setItem(maintenanceDoneKey, JSON.stringify([...next])); } catch { /* silent */ }
+      return next;
+    });
+  }
+
+  // ── Recurring maintenance task completions ────────────────────────────────
+  // Keyed by task ID → ISO datetime of most recent completion.
+  // Separate from inspection findings / repairs — maintenance = behavior, not condition.
+  const [maintCompletions, setMaintCompletions] = useState<Record<string, string>>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("btlr_maint_v1") : null;
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+  function toggleMaintTask(taskId: string) {
+    setMaintCompletions(prev => {
+      const next = { ...prev };
+      if (next[taskId]) {
+        delete next[taskId];
+      } else {
+        next[taskId] = new Date().toISOString();
+      }
+      try { localStorage.setItem("btlr_maint_v1", JSON.stringify(next)); } catch { /* silent */ }
       return next;
     });
   }
@@ -4679,8 +4700,72 @@ export default function Dashboard() {
               const s = findingStatuses[fk] ?? "repair_needed";
               if (s === "completed" || s === "not_needed") repArchivedItems.push({ f, globalIdx: i, fk });
             });
+            // ── 5-year cost outlook for hero card ──────────────────────────────
+            const repPredictions = homeHealthReport?.predictions ?? [];
+            const repUrgentPreds = repPredictions.filter(p => ["critical","high"].includes(p.urgency) && !p.not_assessed);
+            const repMedPreds    = repPredictions.filter(p => p.urgency === "medium" && !p.not_assessed);
+            const repLongPreds   = repPredictions.filter(p => ["low","monitor"].includes(p.urgency) && !p.not_assessed);
+            const repAvg   = (p: (typeof repPredictions)[0]) => (p.cost_range.estimated_cost_min + p.cost_range.estimated_cost_max) / 2;
+            const repUrgentTotal = repUrgentPreds.reduce((s, p) => s + repAvg(p), 0);
+            const repMedTotal    = repMedPreds.reduce((s, p) => s + repAvg(p), 0);
+            const repLongTotal   = repLongPreds.reduce((s, p) => s + repAvg(p), 0);
+            const repFiveYrTotal = repUrgentTotal + repMedTotal + repLongTotal + (maintenanceBaseline * 5);
+            const repFmt = (n: number) => n >= 1000 ? `$${(n / 1000).toFixed(0)}k` : `$${Math.round(n).toLocaleString()}`;
+
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+                {/* ── 5-YEAR COST OUTLOOK HERO ────────────────────────── */}
+                <div style={{
+                  background: "linear-gradient(135deg, #134e4a 0%, #0f766e 60%, #0d9488 100%)",
+                  borderRadius: 18, padding: isMobile ? "18px 18px" : "22px 28px",
+                  position: "relative", overflow: "hidden",
+                }}>
+                  <div style={{ position: "absolute", top: 0, right: 0, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,0.04)", transform: "translate(40px,-40px)", pointerEvents: "none" }}/>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>5-Year Cost Outlook</p>
+                  {repPredictions.length > 0 ? (
+                    <>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 34, fontWeight: 800, color: "white", letterSpacing: "-1px" }}>{repFmt(repFiveYrTotal)}</span>
+                        <span style={{ fontSize: 14, color: "rgba(255,255,255,0.5)" }}>estimated over 5 years</span>
+                      </div>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", margin: "0 0 16px", lineHeight: 1.5 }}>
+                        Knowing what&apos;s coming means you can plan, budget, and schedule on your terms — not in a panic after something breaks.
+                      </p>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {repUrgentTotal > 0 && (
+                          <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(239,68,68,0.2)", color: "#fca5a5", border: "1px solid rgba(239,68,68,0.3)" }}>
+                            {repFmt(repUrgentTotal)} urgent / this year
+                          </span>
+                        )}
+                        {repMedTotal > 0 && (
+                          <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(245,158,11,0.2)", color: "#fcd34d", border: "1px solid rgba(245,158,11,0.3)" }}>
+                            {repFmt(repMedTotal)} in 1–3 years
+                          </span>
+                        )}
+                        <span style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                          {repFmt(maintenanceBaseline * 5)} routine maintenance
+                        </span>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <p style={{ fontSize: 20, fontWeight: 800, color: "rgba(255,255,255,0.4)", margin: "0 0 8px" }}>No forecast yet</p>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: "0 0 14px", lineHeight: 1.5 }}>
+                        Upload an inspection report or complete a self-inspection to unlock your personalized 5-year cost outlook.
+                      </p>
+                      <div style={{ display: "flex", gap: 10 }}>
+                        <button onClick={() => inspRef.current?.click()} style={{ padding: "8px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                          <Upload size={13}/> Upload Inspection
+                        </button>
+                        <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ padding: "8px 14px", borderRadius: 10, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.8)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                          Self-Inspection
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
                   {/* Combined header: counts + legend + action */}
                   <div style={{ padding: "12px 16px", background: C.bg, borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap", justifyContent: "space-between" }}>
@@ -4886,74 +4971,166 @@ export default function Dashboard() {
           })()}
 
           {/* ── Maintenance ───────────────────────────────────────────── */}
+          {/* Maintenance = recurring home care habits. NO inspection findings here. */}
+          {/* Inspection findings (repairs) live exclusively in the Repairs tab.     */}
           {nav === "Maintenance" && (() => {
-            const predictions = homeHealthReport?.predictions ?? [];
-            const mo = new Date().getMonth(); // 0-11
+            const today       = new Date();
+            const todayMs     = today.getTime();
+            const mo          = today.getMonth();
             const season: "winter" | "spring" | "summer" | "fall" =
               mo <= 1 || mo === 11 ? "winter" : mo <= 4 ? "spring" : mo <= 7 ? "summer" : "fall";
             const seasonLabel = season.charAt(0).toUpperCase() + season.slice(1);
 
-            // Urgency visual config
-            const UM: Record<string, { label: string; color: string; bg: string; border: string; dot: string }> = {
-              critical: { label: "Act Now",    color: "#ef4444", bg: "rgba(239,68,68,0.10)",  border: "rgba(239,68,68,0.25)",  dot: "#ef4444" },
-              high:     { label: "This Year",  color: "#f97316", bg: "rgba(249,115,22,0.10)", border: "rgba(249,115,22,0.25)", dot: "#f97316" },
-              medium:   { label: "1–3 Years",  color: "#f59e0b", bg: "rgba(245,158,11,0.09)", border: "rgba(245,158,11,0.25)", dot: "#f59e0b" },
-              low:      { label: "3–5 Years",  color: "#84cc16", bg: "rgba(132,204,22,0.09)", border: "rgba(132,204,22,0.2)",  dot: "#84cc16" },
-              monitor:  { label: "Good Shape", color: "#22c55e", bg: "rgba(34,197,94,0.09)",  border: "rgba(34,197,94,0.2)",   dot: "#22c55e" },
+            // ── Recurring task definitions ────────────────────────────────
+            // weight: 3=high 2=medium 1=low — affects Maintenance Score
+            type MaintTask = {
+              id: string; task: string; system: string;
+              freq: "monthly" | "quarterly" | "semi_annual" | "annual";
+              freqLabel: string; weight: 1 | 2 | 3; tip: string;
+              icon: React.ReactNode;
             };
-
-            const sysIcon = (cat: string, clr: string) => {
-              if (cat.includes("roof"))       return <HomeIcon  size={15} color={clr}/>;
-              if (cat.includes("electrical")) return <Zap       size={15} color={clr}/>;
-              if (cat.includes("plumbing"))   return <Droplets  size={15} color={clr}/>;
-              if (cat.includes("hvac"))       return <Wind      size={15} color={clr}/>;
-              if (cat.includes("safety"))     return <Shield    size={15} color={clr}/>;
-              if (cat.includes("appliance"))  return <Wrench    size={15} color={clr}/>;
-              return <Activity size={15} color={clr}/>;
+            const PERIOD_DAYS: Record<string, number> = {
+              monthly: 30, quarterly: 91, semi_annual: 182, annual: 365,
             };
+            const MAINT_TASKS: MaintTask[] = [
+              // ── Monthly ────────────────────────────────────────────────
+              { id: "hvac_filter",        task: "Check / replace HVAC filter",          system: "HVAC",        freq: "monthly",     freqLabel: "Monthly",    weight: 2, tip: "1–2\" filters monthly; 4–5\" every 3–6 months",    icon: <Wind     size={13} color={C.accent}/> },
+              { id: "dishwasher_filter",  task: "Clean dishwasher filter",              system: "Appliances",  freq: "monthly",     freqLabel: "Monthly",    weight: 1, tip: "Twist out bottom filter, rinse under warm water",    icon: <Wrench   size={13} color={C.accent}/> },
+              { id: "garbage_disposal",   task: "Clean garbage disposal",               system: "Plumbing",    freq: "monthly",     freqLabel: "Monthly",    weight: 1, tip: "Ice cubes + salt, then citrus peel for odor",        icon: <Droplets size={13} color={C.accent}/> },
+              { id: "range_hood",         task: "Degrease range hood filter",           system: "Appliances",  freq: "monthly",     freqLabel: "Monthly",    weight: 1, tip: "Soak in hot soapy water or run through dishwasher",   icon: <Wrench   size={13} color={C.accent}/> },
+              // ── Quarterly ──────────────────────────────────────────────
+              { id: "smoke_detector",     task: "Test smoke & CO detectors",            system: "Safety",      freq: "quarterly",   freqLabel: "Quarterly",  weight: 3, tip: "Press test button — replace batteries once a year",   icon: <Shield   size={13} color="#f59e0b"/> },
+              { id: "exterior_walk",      task: "Exterior walkthrough inspection",      system: "Exterior",    freq: "quarterly",   freqLabel: "Quarterly",  weight: 2, tip: "Check siding, caulk, and foundation for new cracks",  icon: <Eye      size={13} color="#f59e0b"/> },
+              { id: "gfci_test",          task: "Test all GFCI outlets",                system: "Electrical",  freq: "quarterly",   freqLabel: "Quarterly",  weight: 2, tip: "Press TEST then RESET on every GFCI outlet",          icon: <Zap      size={13} color="#f59e0b"/> },
+              { id: "water_heater_chk",   task: "Check water heater temp & valve",      system: "Plumbing",    freq: "quarterly",   freqLabel: "Quarterly",  weight: 2, tip: "Set to 120°F; test pressure-relief valve handle",      icon: <Droplets size={13} color="#f59e0b"/> },
+              { id: "landscaping",        task: "Trim vegetation near structure",       system: "Exterior",    freq: "quarterly",   freqLabel: "Quarterly",  weight: 1, tip: "Keep plants 12\"+ from siding and roof edge",          icon: <Activity size={13} color="#f59e0b"/> },
+              // ── Semi-annual ────────────────────────────────────────────
+              { id: "gutter_clean",       task: "Clean gutters & downspouts",           system: "Roof",        freq: "semi_annual", freqLabel: "Twice / Yr", weight: 2, tip: "Spring after pollen, fall after leaves",               icon: <HomeIcon size={13} color="#8b5cf6"/> },
+              { id: "hvac_tune",          task: "Schedule HVAC tune-up",                system: "HVAC",        freq: "semi_annual", freqLabel: "Twice / Yr", weight: 3, tip: "Once before heat season, once before cool season",     icon: <Wind     size={13} color="#8b5cf6"/> },
+              { id: "dryer_vent",         task: "Clean dryer vent & lint duct",         system: "Appliances",  freq: "semi_annual", freqLabel: "Twice / Yr", weight: 3, tip: "Leading cause of house fires — don't skip this one",   icon: <Wrench   size={13} color="#8b5cf6"/> },
+              { id: "fire_ext",           task: "Inspect fire extinguisher",            system: "Safety",      freq: "semi_annual", freqLabel: "Twice / Yr", weight: 2, tip: "Check pressure gauge and expiration date",              icon: <Shield   size={13} color="#8b5cf6"/> },
+              // ── Annual ─────────────────────────────────────────────────
+              { id: "roof_inspect",       task: "Inspect roof for damage",              system: "Roof",        freq: "annual",      freqLabel: "Annual",     weight: 2, tip: "Look for missing shingles and damaged flashing",        icon: <HomeIcon size={13} color={C.green}/> },
+              { id: "water_heater_flush", task: "Flush water heater sediment",          system: "Plumbing",    freq: "annual",      freqLabel: "Annual",     weight: 2, tip: "Extends life 2–3 years; improves efficiency",           icon: <Droplets size={13} color={C.green}/> },
+              { id: "caulking",           task: "Inspect & reapply caulking",           system: "Exterior",    freq: "annual",      freqLabel: "Annual",     weight: 1, tip: "Windows, doors, tub/shower, exterior penetrations",    icon: <Eye      size={13} color={C.green}/> },
+              { id: "pest_inspect",       task: "Schedule pest / termite inspection",   system: "Safety",      freq: "annual",      freqLabel: "Annual",     weight: 3, tip: "Early detection prevents structural damage",             icon: <Bug      size={13} color={C.green}/> },
+              { id: "chimney",            task: "Chimney & fireplace inspection",       system: "Fireplace",   freq: "annual",      freqLabel: "Annual",     weight: 2, tip: "NFPA recommends annual inspection before first use",    icon: <Activity size={13} color={C.green}/> },
+            ];
 
-            // 5-year cost outlook buckets
-            const urgentPreds  = predictions.filter(p => ["critical","high"].includes(p.urgency) && !p.not_assessed);
-            const medPreds     = predictions.filter(p => p.urgency === "medium" && !p.not_assessed);
-            const longPreds    = predictions.filter(p => ["low","monitor"].includes(p.urgency) && !p.not_assessed);
-            const avg          = (p: typeof predictions[0]) => (p.cost_range.estimated_cost_min + p.cost_range.estimated_cost_max) / 2;
-            const urgentTotal  = urgentPreds.reduce((s, p) => s + avg(p), 0);
-            const medTotal     = medPreds.reduce((s,   p) => s + avg(p), 0);
-            const longTotal    = longPreds.reduce((s,  p) => s + avg(p), 0);
-            const fiveYrTotal  = urgentTotal + medTotal + longTotal + (maintenanceBaseline * 5);
-            const fmt = (n: number) => n >= 1000 ? `$${(n/1000).toFixed(0)}k` : `$${Math.round(n).toLocaleString()}`;
+            // ── Task state computation ────────────────────────────────────
+            type TaskState = "completed" | "due" | "upcoming";
+            const hasAnyHistory = Object.keys(maintCompletions).length > 0;
 
-            // Seasonal checklist data
+            function getTaskState(t: MaintTask): TaskState {
+              const lastDoneStr = maintCompletions[t.id];
+              if (!lastDoneStr) return hasAnyHistory ? "due" : "upcoming";
+              const daysSince = (todayMs - new Date(lastDoneStr).getTime()) / 86400000;
+              return daysSince < PERIOD_DAYS[t.freq] ? "completed" : "due";
+            }
+            const taskStates = Object.fromEntries(
+              MAINT_TASKS.map(t => [t.id, getTaskState(t)])
+            ) as Record<string, TaskState>;
+
+            // ── Maintenance Score (weighted completed / weighted due+completed) ──
+            const completedTasks2 = MAINT_TASKS.filter(t => taskStates[t.id] === "completed");
+            const dueTasks2       = MAINT_TASKS.filter(t => taskStates[t.id] === "due");
+            const wCompleted = completedTasks2.reduce((s, t) => s + t.weight, 0);
+            const wDue       = dueTasks2.reduce((s, t) => s + t.weight, 0);
+            const wTotal     = wCompleted + wDue;
+            const maintScore = wTotal > 0 ? Math.round((wCompleted / wTotal) * 100) : null;
+
+            const statusLevel = maintScore === null ? "New"
+              : maintScore >= 80 ? "Excellent"
+              : maintScore >= 55 ? "On Track"
+              : "Needs Attention";
+            const statusColor = maintScore === null ? C.text3
+              : maintScore >= 80 ? C.green
+              : maintScore >= 55 ? "#f59e0b"
+              : C.red;
+            const statusBg = maintScore === null ? C.bg
+              : maintScore >= 80 ? C.greenBg
+              : maintScore >= 55 ? "#fffbeb"
+              : C.redBg;
+
+            // ── ISO week key ──────────────────────────────────────────────
+            function isoWeek(d: Date): string {
+              const tmp = new Date(d);
+              tmp.setHours(0, 0, 0, 0);
+              tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7));
+              const ys = new Date(tmp.getFullYear(), 0, 1);
+              const wk = Math.ceil(((tmp.getTime() - ys.getTime()) / 86400000 + 1) / 7);
+              return `${tmp.getFullYear()}-W${String(wk).padStart(2, "0")}`;
+            }
+            const thisWeek   = isoWeek(today);
+            const WEEKLY_GOAL = 3;
+
+            // ── Weekly completions (count tasks completed this week) ──────
+            const completionsThisWeek = Object.values(maintCompletions)
+              .filter(d => isoWeek(new Date(d)) === thisWeek).length;
+
+            // ── Streak: consecutive past weeks with >= WEEKLY_GOAL ────────
+            const weekCounts: Record<string, number> = {};
+            for (const d of Object.values(maintCompletions)) {
+              const wk = isoWeek(new Date(d));
+              weekCounts[wk] = (weekCounts[wk] ?? 0) + 1;
+            }
+            let streak = 0;
+            // Current week counts if already at goal
+            if ((weekCounts[thisWeek] ?? 0) >= WEEKLY_GOAL) streak++;
+            // Walk back through prior weeks
+            const walkDate = new Date(today);
+            walkDate.setDate(walkDate.getDate() - 7);
+            for (let i = 0; i < 52; i++) {
+              const wk = isoWeek(walkDate);
+              if ((weekCounts[wk] ?? 0) >= WEEKLY_GOAL) {
+                streak++;
+                walkDate.setDate(walkDate.getDate() - 7);
+              } else { break; }
+            }
+
+            // ── Tasks due this week (due state + high/med weight) ─────────
+            const dueSoon = MAINT_TASKS.filter(t => taskStates[t.id] === "due")
+              .sort((a, b) => b.weight - a.weight).slice(0, 4);
+
+            // ── Frequency groups ──────────────────────────────────────────
+            const FREQ_GROUPS = [
+              { key: "monthly",     label: "Monthly",      color: C.accent,  bg: "#eff6ff",               border: `${C.accent}25` },
+              { key: "quarterly",   label: "Quarterly",    color: "#f59e0b", bg: "rgba(245,158,11,0.09)", border: "rgba(245,158,11,0.25)" },
+              { key: "semi_annual", label: "Twice / Year", color: "#8b5cf6", bg: "rgba(139,92,246,0.09)", border: "rgba(139,92,246,0.25)" },
+              { key: "annual",      label: "Annual",       color: C.green,   bg: C.greenBg,               border: `${C.green}40` },
+            ];
+
+            // ── Seasonal checklist data ───────────────────────────────────
             const SEASONAL: Record<string, Array<{ task: string; system: string; freq: string; icon: React.ReactNode }>> = {
               winter: [
-                { task: "Check pipe insulation in unheated spaces",    system: "Plumbing",   freq: "Prevent freezing",        icon: <Droplets size={13} color={C.text3}/> },
-                { task: "Test heating system — replace filters",        system: "HVAC",       freq: "Before cold snap",        icon: <Wind size={13} color={C.text3}/> },
-                { task: "Inspect window & door weatherstripping",       system: "Envelope",   freq: "Energy savings",          icon: <Eye size={13} color={C.text3}/> },
-                { task: "Test smoke & CO detectors",                    system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
-                { task: "Check roof for ice dams after snowfall",       system: "Roof",       freq: "After heavy snow",        icon: <HomeIcon size={13} color={C.text3}/> },
+                { task: "Check pipe insulation in unheated spaces",   system: "Plumbing",   freq: "Prevent freezing",        icon: <Droplets size={13} color={C.text3}/> },
+                { task: "Test heating system — replace filters",       system: "HVAC",       freq: "Before cold snap",        icon: <Wind size={13} color={C.text3}/> },
+                { task: "Inspect window & door weatherstripping",      system: "Envelope",   freq: "Energy savings",          icon: <Eye size={13} color={C.text3}/> },
+                { task: "Test smoke & CO detectors",                   system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
+                { task: "Check roof for ice dams after snowfall",      system: "Roof",       freq: "After heavy snow",        icon: <HomeIcon size={13} color={C.text3}/> },
               ],
               spring: [
-                { task: "Clean gutters & downspouts",                   system: "Roof",       freq: "After last frost",        icon: <HomeIcon size={13} color={C.text3}/> },
-                { task: "Schedule A/C tune-up before summer heat",      system: "HVAC",       freq: "Before heat season",      icon: <Wind size={13} color={C.text3}/> },
-                { task: "Inspect roof for winter damage",               system: "Roof",       freq: "Annual",                  icon: <HomeIcon size={13} color={C.text3}/> },
-                { task: "Check deck / patio for winter damage",         system: "Exterior",   freq: "Annual",                  icon: <Activity size={13} color={C.text3}/> },
-                { task: "Test all GFCI outlets",                        system: "Electrical", freq: "Annual",                  icon: <Zap size={13} color={C.text3}/> },
-                { task: "Inspect foundation for new cracks",            system: "Structure",  freq: "Annual",                  icon: <Activity size={13} color={C.text3}/> },
+                { task: "Clean gutters & downspouts",                  system: "Roof",       freq: "After last frost",        icon: <HomeIcon size={13} color={C.text3}/> },
+                { task: "Schedule A/C tune-up before summer heat",     system: "HVAC",       freq: "Before heat season",      icon: <Wind size={13} color={C.text3}/> },
+                { task: "Inspect roof for winter damage",              system: "Roof",       freq: "Annual",                  icon: <HomeIcon size={13} color={C.text3}/> },
+                { task: "Check deck / patio for winter damage",        system: "Exterior",   freq: "Annual",                  icon: <Activity size={13} color={C.text3}/> },
+                { task: "Test all GFCI outlets",                       system: "Electrical", freq: "Annual",                  icon: <Zap size={13} color={C.text3}/> },
+                { task: "Inspect foundation for new cracks",           system: "Structure",  freq: "Annual",                  icon: <Activity size={13} color={C.text3}/> },
               ],
               summer: [
-                { task: "Replace HVAC filters",                         system: "HVAC",       freq: "Every 3 months",          icon: <Wind size={13} color={C.text3}/> },
-                { task: "Test smoke & CO detectors",                    system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
-                { task: "Inspect exterior caulking & paint",            system: "Exterior",   freq: "Annual",                  icon: <Eye size={13} color={C.text3}/> },
-                { task: "Schedule pest / termite inspection",           system: "Safety",     freq: "Annual",                  icon: <Bug size={13} color={C.text3}/> },
-                { task: "Flush water heater to clear sediment",         system: "Plumbing",   freq: "Annual — extends life 2–3 yrs", icon: <Droplets size={13} color={C.text3}/> },
+                { task: "Replace HVAC filters",                        system: "HVAC",       freq: "Every 3 months",          icon: <Wind size={13} color={C.text3}/> },
+                { task: "Test smoke & CO detectors",                   system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
+                { task: "Inspect exterior caulking & paint",           system: "Exterior",   freq: "Annual",                  icon: <Eye size={13} color={C.text3}/> },
+                { task: "Schedule pest / termite inspection",          system: "Safety",     freq: "Annual",                  icon: <Bug size={13} color={C.text3}/> },
+                { task: "Flush water heater to clear sediment",        system: "Plumbing",   freq: "Annual — extends life 2–3 yrs", icon: <Droplets size={13} color={C.text3}/> },
               ],
               fall: [
-                { task: "Schedule furnace / boiler tune-up",            system: "HVAC",       freq: "Before heating season",   icon: <Wind size={13} color={C.text3}/> },
-                { task: "Clean gutters — leaves & debris",              system: "Roof",       freq: "Before first freeze",     icon: <HomeIcon size={13} color={C.text3}/> },
-                { task: "Drain outdoor hose bibbs & irrigation",        system: "Plumbing",   freq: "Before freeze",           icon: <Droplets size={13} color={C.text3}/> },
-                { task: "Inspect chimney & fireplace (if applicable)",  system: "Fireplace",  freq: "Before first use",        icon: <Activity size={13} color={C.text3}/> },
-                { task: "Test smoke & CO detectors",                    system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
-                { task: "Replace HVAC filters",                         system: "HVAC",       freq: "Before heating season",   icon: <Wind size={13} color={C.text3}/> },
+                { task: "Schedule furnace / boiler tune-up",           system: "HVAC",       freq: "Before heating season",   icon: <Wind size={13} color={C.text3}/> },
+                { task: "Clean gutters — leaves & debris",             system: "Roof",       freq: "Before first freeze",     icon: <HomeIcon size={13} color={C.text3}/> },
+                { task: "Drain outdoor hose bibbs & irrigation",       system: "Plumbing",   freq: "Before freeze",           icon: <Droplets size={13} color={C.text3}/> },
+                { task: "Inspect chimney & fireplace (if applicable)", system: "Fireplace",  freq: "Before first use",        icon: <Activity size={13} color={C.text3}/> },
+                { task: "Test smoke & CO detectors",                   system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
+                { task: "Replace HVAC filters",                        system: "HVAC",       freq: "Before heating season",   icon: <Wind size={13} color={C.text3}/> },
               ],
             };
             const seasonTasks = SEASONAL[season];
@@ -4961,188 +5138,188 @@ export default function Dashboard() {
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
 
-                {/* ── PROACTIVE HEADLINE CARD ──────────────────────────── */}
+                {/* ── MAINTENANCE SCORE HERO ──────────────────────────── */}
                 <div style={{
-                  background: "linear-gradient(135deg, #134e4a 0%, #0f766e 60%, #0d9488 100%)",
+                  background: "linear-gradient(135deg, #1B2D47 0%, #2C5F8A 100%)",
                   borderRadius: 18, padding: isMobile ? "18px 18px" : "22px 28px",
                   position: "relative", overflow: "hidden",
                 }}>
-                  <div style={{ position: "absolute", top: 0, right: 0, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,0.04)", transform: "translate(40px,-40px)", pointerEvents: "none" }}/>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>5-Year Maintenance Forecast</p>
-                  {predictions.length > 0 ? (
-                    <>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 34, fontWeight: 800, color: "white", letterSpacing: "-1px" }}>{fmt(fiveYrTotal)}</span>
-                        <span style={{ fontSize: 14, color: "rgba(255,255,255,0.5)" }}>estimated over 5 years</span>
-                      </div>
-                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", margin: "0 0 16px", lineHeight: 1.5 }}>
-                        Knowing what&apos;s coming means you can plan, budget, and schedule on your terms — not in a panic after something breaks.
-                      </p>
-                      {/* Cost breakdown pills */}
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {urgentTotal > 0 && (
-                          <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(239,68,68,0.2)", color: "#fca5a5", border: "1px solid rgba(239,68,68,0.3)" }}>
-                            {fmt(urgentTotal)} urgent / this year
-                          </span>
-                        )}
-                        {medTotal > 0 && (
-                          <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(245,158,11,0.2)", color: "#fcd34d", border: "1px solid rgba(245,158,11,0.3)" }}>
-                            {fmt(medTotal)} in 1–3 years
-                          </span>
-                        )}
-                        <span style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                          {fmt(maintenanceBaseline * 5)} routine maintenance
+                  <div style={{ position: "absolute", top: 0, right: 0, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,0.04)", transform: "translate(50px,-50px)", pointerEvents: "none" }}/>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 8px" }}>Maintenance Score</p>
+                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
+                    {/* Score ring */}
+                    <div style={{ position: "relative", width: 72, height: 72, flexShrink: 0 }}>
+                      <svg width={72} height={72} viewBox="0 0 72 72" style={{ transform: "rotate(-90deg)" }}>
+                        <circle cx={36} cy={36} r={28} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={7}/>
+                        <circle cx={36} cy={36} r={28} fill="none"
+                          stroke={maintScore === null ? "rgba(255,255,255,0.25)" : statusColor}
+                          strokeWidth={7}
+                          strokeDasharray={`${2 * Math.PI * 28}`}
+                          strokeDashoffset={`${2 * Math.PI * 28 * (1 - (maintScore ?? 0) / 100)}`}
+                          strokeLinecap="round"
+                          style={{ transition: "stroke-dashoffset 0.5s ease" }}
+                        />
+                      </svg>
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
+                        <span style={{ fontSize: maintScore === null ? 12 : 18, fontWeight: 800, color: "white", lineHeight: 1 }}>
+                          {maintScore === null ? "—" : maintScore}
                         </span>
+                        {maintScore !== null && <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>/100</span>}
                       </div>
-                    </>
-                  ) : (
-                    <>
-                      <p style={{ fontSize: 20, fontWeight: 800, color: "rgba(255,255,255,0.4)", margin: "0 0 8px" }}>No forecast yet</p>
-                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.45)", margin: "0 0 14px", lineHeight: 1.5 }}>
-                        Upload an inspection report or complete a self-inspection to unlock your personalized 5-year maintenance forecast.
+                    </div>
+                    {/* Status + descriptor */}
+                    <div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                        <span style={{ fontSize: 20, fontWeight: 800, color: "white", letterSpacing: "-0.5px" }}>{statusLevel}</span>
+                        {streak > 0 && (
+                          <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.2)" }}>
+                            🔥 {streak} week{streak !== 1 ? "s" : ""}
+                          </span>
+                        )}
+                      </div>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", margin: 0, lineHeight: 1.5 }}>
+                        {maintScore === null
+                          ? "Start checking off tasks to build your score."
+                          : maintScore >= 80
+                          ? "Great habits — your home is well cared for."
+                          : maintScore >= 55
+                          ? "Good progress. A few tasks are waiting."
+                          : "Some tasks need attention — no worries, just get started."}
                       </p>
-                      <div style={{ display: "flex", gap: 10 }}>
-                        <button onClick={() => inspRef.current?.click()} style={{ padding: "8px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                          <Upload size={13}/> Upload Inspection
-                        </button>
-                        <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ padding: "8px 14px", borderRadius: 10, background: "rgba(255,255,255,0.1)", border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.8)", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                          Self-Inspection
-                        </button>
+                    </div>
+                  </div>
+                  {/* Score chips */}
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.65)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                      {completedTasks2.length} completed
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.65)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                      {dueTasks2.length} due
+                    </span>
+                    <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.65)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                      {MAINT_TASKS.filter(t => taskStates[t.id] === "upcoming").length} upcoming
+                    </span>
+                  </div>
+                </div>
+
+                {/* ── WEEKLY GOAL PROGRESS ────────────────────────────── */}
+                <div style={{ ...card({ padding: "16px 18px" }) }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                    <div>
+                      <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>Weekly Goal</p>
+                      <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>
+                        {completionsThisWeek >= WEEKLY_GOAL
+                          ? "🎉 Goal reached! Great work this week."
+                          : `Complete ${WEEKLY_GOAL - completionsThisWeek} more task${WEEKLY_GOAL - completionsThisWeek !== 1 ? "s" : ""} to hit your goal`}
+                      </p>
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 800, color: completionsThisWeek >= WEEKLY_GOAL ? C.green : C.text2 }}>
+                      {completionsThisWeek} / {WEEKLY_GOAL}
+                    </span>
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{ height: 8, borderRadius: 6, background: C.bg, overflow: "hidden", marginBottom: dueSoon.length > 0 ? 14 : 0 }}>
+                    <div style={{
+                      height: "100%", borderRadius: 6,
+                      background: completionsThisWeek >= WEEKLY_GOAL
+                        ? C.green
+                        : `linear-gradient(90deg, ${C.accent}, #5C8FB8)`,
+                      width: `${Math.min(100, Math.round((completionsThisWeek / WEEKLY_GOAL) * 100))}%`,
+                      transition: "width 0.4s ease",
+                    }}/>
+                  </div>
+                  {/* Due soon list */}
+                  {dueSoon.length > 0 && (
+                    <div>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Ready to complete</p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                        {dueSoon.map(t => (
+                          <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, background: C.bg, border: `1px solid ${C.border}` }}>
+                            <button onClick={() => toggleMaintTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${C.border}`, background: "white", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}/>
+                            <span style={{ fontSize: 13, fontWeight: 600, color: C.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.task}</span>
+                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: t.weight === 3 ? `${C.red}12` : t.weight === 2 ? "#fffbeb" : C.bg, color: t.weight === 3 ? C.red : t.weight === 2 ? "#92400e" : C.text3, border: `1px solid ${t.weight === 3 ? `${C.red}25` : t.weight === 2 ? "#fde68a" : C.border}`, flexShrink: 0 }}>
+                              {t.weight === 3 ? "High" : t.weight === 2 ? "Med" : "Low"}
+                            </span>
+                          </div>
+                        ))}
                       </div>
-                    </>
+                    </div>
                   )}
                 </div>
 
-                {/* ── SYSTEM PREDICTION CARDS ──────────────────────────── */}
-                {predictions.length > 0 && (
-                  <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                    <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                      <div>
-                        <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>System Forecast</p>
-                        <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>Prioritized by urgency · Based on inspection findings</p>
+                {/* ── RECURRING TASK LIST BY FREQUENCY ───────────────── */}
+                {FREQ_GROUPS.map(group => {
+                  const groupTasks  = MAINT_TASKS.filter(t => t.freq === group.key);
+                  const groupDone   = groupTasks.filter(t => taskStates[t.id] === "completed").length;
+                  return (
+                    <div key={group.key} style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
+                      <div style={{ padding: "12px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: group.bg, color: group.color, border: `1px solid ${group.border}` }}>
+                            {group.label}
+                          </span>
+                          <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>{groupTasks.length} tasks</p>
+                        </div>
+                        {groupDone > 0 && (
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
+                            {groupDone}/{groupTasks.length} done
+                          </span>
+                        )}
                       </div>
-                      {urgentPreds.length > 0 && (
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 20, background: "rgba(239,68,68,0.12)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.25)" }}>
-                          {urgentPreds.length} need attention
-                        </span>
-                      )}
-                    </div>
-                    {predictions.map((pred, i) => {
-                      const um = UM[pred.urgency] ?? UM.monitor;
-                      const isUrgent = pred.urgency === "critical" || pred.urgency === "high";
-                      const predKey = `pred-${pred.category}-${pred.system_label}`;
-                      const isDone  = doneTasks.has(predKey);
-                      return (
-                        <div key={i} style={{
-                          display: "flex", alignItems: "center", gap: 12,
-                          padding: "13px 18px",
-                          borderBottom: i < predictions.length - 1 ? `1px solid ${C.border}` : "none",
-                          background: isDone ? C.greenBg : isUrgent ? `${um.bg}` : "transparent",
-                          transition: "background 0.2s",
-                          opacity: isDone ? 0.7 : 1,
-                        }}>
-                          {/* Done checkbox */}
-                          <button
-                            onClick={() => toggleDoneTask(predKey)}
-                            title={isDone ? "Mark as not done" : "Mark as done"}
-                            style={{
-                              width: 22, height: 22, borderRadius: 6, flexShrink: 0, cursor: "pointer",
-                              border: `2px solid ${isDone ? C.green : C.border}`,
-                              background: isDone ? C.green : "white",
-                              display: "flex", alignItems: "center", justifyContent: "center",
-                              transition: "all 0.15s",
-                            }}>
-                            {isDone && <Check size={11} color="white" strokeWidth={3}/>}
-                          </button>
-                          {/* System icon */}
-                          <div style={{ width: 36, height: 36, borderRadius: 9, background: isDone ? `${C.green}18` : `${um.color}18`, border: `1px solid ${isDone ? C.green : um.color}30`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                            {sysIcon(pred.category, isDone ? C.green : um.color)}
-                          </div>
-                          {/* Label + driver */}
-                          <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap", marginBottom: 3 }}>
-                              <p style={{ fontSize: 13, fontWeight: 700, color: isDone ? C.text3 : C.text, margin: 0, whiteSpace: "nowrap", textDecoration: isDone ? "line-through" : "none" }}>{pred.system_label}</p>
-                              {!isDone && (
-                                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: um.bg, color: um.color, border: `1px solid ${um.border}`, whiteSpace: "nowrap" }}>
-                                  {um.label}
-                                </span>
-                              )}
-                              {isDone && (
-                                <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40`, whiteSpace: "nowrap" }}>
-                                  Done
-                                </span>
-                              )}
+                      {groupTasks.map((item, i) => {
+                        const state  = taskStates[item.id] as TaskState;
+                        const isDone = state === "completed";
+                        return (
+                          <div key={item.id} style={{
+                            display: "flex", alignItems: "center", gap: 12, padding: "12px 18px",
+                            borderBottom: i < groupTasks.length - 1 ? `1px solid ${C.border}` : "none",
+                            background: isDone ? C.greenBg : state === "due" ? "transparent" : "transparent",
+                            opacity: state === "upcoming" ? 0.65 : 1,
+                            transition: "background 0.2s",
+                          }}>
+                            {/* Checkbox */}
+                            <button onClick={() => toggleMaintTask(item.id)} style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, cursor: "pointer", border: `2px solid ${isDone ? C.green : C.border}`, background: isDone ? C.green : "white", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
+                              {isDone && <Check size={11} color="white" strokeWidth={3}/>}
+                            </button>
+                            {/* Icon */}
+                            <div style={{ width: 30, height: 30, borderRadius: 8, background: isDone ? `${C.green}18` : C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                              {isDone ? <CheckCircle2 size={13} color={C.green}/> : item.icon}
                             </div>
-                            <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                              {pred.not_assessed ? "Not yet assessed — self-inspect or upload report" : pred.driver}
-                            </p>
-                          </div>
-                          {/* Cost + action */}
-                          {!isDone && (
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 5, flexShrink: 0 }}>
-                              {!pred.not_assessed && (
-                                <span style={{ fontSize: 12, fontWeight: 700, color: isUrgent ? um.color : C.text2 }}>
-                                  {pred.cost_range_formatted.replace(" (estimated)", "")}
-                                </span>
-                              )}
-                              {isUrgent ? (
-                                <button
-                                  onClick={() => { handleFindVendors(pred.system_label, pred.driver); }}
-                                  style={{ padding: "5px 12px", borderRadius: 8, background: um.color, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
-                                  Find Pro
-                                </button>
+                            {/* Label + tip */}
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <p style={{ fontSize: 13, fontWeight: 600, color: isDone ? C.text3 : C.text, margin: 0, textDecoration: isDone ? "line-through" : "none" }}>{item.task}</p>
+                              <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.system} · {item.tip}</p>
+                            </div>
+                            {/* State + weight badge */}
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
+                              {isDone ? (
+                                <span style={{ fontSize: 11, fontWeight: 700, color: C.green }}>✓ Done</span>
+                              ) : state === "due" ? (
+                                <>
+                                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: group.bg, color: group.color, border: `1px solid ${group.border}` }}>Due</span>
+                                  <span style={{ fontSize: 10, color: C.text3 }}>{item.weight === 3 ? "High" : item.weight === 2 ? "Med" : "Low"} priority</span>
+                                </>
                               ) : (
-                                <span style={{ fontSize: 11, color: C.text3 }}>{pred.failure_window_label}</span>
+                                <span style={{ fontSize: 10, color: C.text3 }}>Upcoming</span>
                               )}
                             </div>
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
 
-                {/* ── 5-YEAR COST TIMELINE ─────────────────────────────── */}
-                {predictions.length > 0 && (
-                  <div style={{ ...card({ padding: "16px 18px" }) }}>
-                    <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: "0 0 12px" }}>Cost Timeline</p>
-                    {(() => {
-                      const buckets = [
-                        { label: "Now",        years: "Immediate",  amount: urgentTotal,                   color: "#ef4444" },
-                        { label: "1 yr",       years: "This year",  amount: urgentTotal * 0.5 + medTotal * 0.2 + maintenanceBaseline, color: "#f97316" },
-                        { label: "3 yrs",      years: "Years 1–3",  amount: medTotal * 0.6 + maintenanceBaseline * 2, color: "#f59e0b" },
-                        { label: "5 yrs",      years: "Years 3–5",  amount: longTotal * 0.4 + medTotal * 0.2 + maintenanceBaseline * 2, color: "#84cc16" },
-                      ];
-                      const max = Math.max(...buckets.map(b => b.amount), 1);
-                      return (
-                        <div style={{ display: "flex", gap: isMobile ? 8 : 14, alignItems: "flex-end", height: 80 }}>
-                          {buckets.map((b, i) => (
-                            <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 4, height: "100%" }}>
-                              <p style={{ fontSize: 10, fontWeight: 700, color: b.amount > 0 ? b.color : C.text3, margin: 0 }}>{b.amount > 0 ? fmt(b.amount) : "—"}</p>
-                              <div style={{ flex: 1, width: "100%", display: "flex", alignItems: "flex-end" }}>
-                                <div style={{ width: "100%", height: `${Math.max(8, (b.amount / max) * 52)}px`, borderRadius: "4px 4px 0 0", background: b.amount > 0 ? b.color : C.border, opacity: b.amount > 0 ? 1 : 0.4, transition: "height 0.4s ease" }}/>
-                              </div>
-                              <p style={{ fontSize: 11, fontWeight: 700, color: C.text2, margin: 0 }}>{b.label}</p>
-                              <p style={{ fontSize: 9, color: C.text3, margin: 0 }}>{b.years}</p>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                )}
-
-                {/* ── SEASONAL CHECKLIST ───────────────────────────────── */}
+                {/* ── SEASONAL CHECKLIST ──────────────────────────────── */}
                 <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
                   <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <span style={{ fontSize: 16 }}>{season === "spring" ? "🌱" : season === "summer" ? "☀️" : season === "fall" ? "🍂" : "❄️"}</span>
                       <div>
-                        <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>{seasonLabel} Maintenance Checklist</p>
-                        <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>Proactive tasks for this season</p>
+                        <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>{seasonLabel} Checklist</p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>Seasonal tasks for this time of year</p>
                       </div>
                     </div>
-                    {/* Progress summary */}
                     {seasonTasks.filter(t => doneTasks.has(`${season}-${t.task}`)).length > 0 && (
                       <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
                         {seasonTasks.filter(t => doneTasks.has(`${season}-${t.task}`)).length}/{seasonTasks.length} done
@@ -5153,69 +5330,27 @@ export default function Dashboard() {
                     const taskKey = `${season}-${item.task}`;
                     const isDone  = doneTasks.has(taskKey);
                     return (
-                      <div key={i} style={{
-                        display: "flex", alignItems: "center", gap: 12, padding: "12px 18px",
-                        borderBottom: i < seasonTasks.length - 1 ? `1px solid ${C.border}` : "none",
-                        background: isDone ? C.greenBg : "transparent",
-                        transition: "background 0.2s",
-                      }}>
-                        {/* Done toggle checkbox */}
-                        <button
-                          onClick={() => toggleDoneTask(taskKey)}
-                          title={isDone ? "Mark as not done" : "Mark as done"}
-                          style={{
-                            width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: "pointer",
-                            border: `2px solid ${isDone ? C.green : C.border}`,
-                            background: isDone ? C.green : "white",
-                            display: "flex", alignItems: "center", justifyContent: "center",
-                            transition: "all 0.15s",
-                          }}>
+                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", borderBottom: i < seasonTasks.length - 1 ? `1px solid ${C.border}` : "none", background: isDone ? C.greenBg : "transparent", transition: "background 0.2s" }}>
+                        <button onClick={() => toggleDoneTask(taskKey)} style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: "pointer", border: `2px solid ${isDone ? C.green : C.border}`, background: isDone ? C.green : "white", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
                           {isDone && <Check size={13} color="white" strokeWidth={3}/>}
                         </button>
                         <div style={{ width: 28, height: 28, borderRadius: 7, background: isDone ? `${C.green}18` : C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {isDone
-                            ? <CheckCircle2 size={13} color={C.green}/>
-                            : item.icon}
+                          {isDone ? <CheckCircle2 size={13} color={C.green}/> : item.icon}
                         </div>
                         <div style={{ flex: 1, minWidth: 0 }}>
                           <p style={{ fontSize: 13, fontWeight: 600, color: isDone ? C.text3 : C.text, margin: 0, textDecoration: isDone ? "line-through" : "none" }}>{item.task}</p>
                           <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>{item.system} · {item.freq}</p>
                         </div>
-                        {!isDone && (
-                          <button
-                            onClick={() => handleFindVendors(item.system, item.task)}
-                            style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                        {!isDone ? (
+                          <button onClick={() => handleFindVendors(item.system, item.task)} style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
                             Find Pro
                           </button>
-                        )}
-                        {isDone && (
+                        ) : (
                           <span style={{ fontSize: 11, fontWeight: 700, color: C.green, flexShrink: 0 }}>✓ Done</span>
                         )}
                       </div>
                     );
                   })}
-                </div>
-
-                {/* ── STAY AHEAD CTA ───────────────────────────────────── */}
-                <div style={{ borderRadius: 14, padding: "16px 18px", background: C.accentBg, border: `1px solid ${C.accent}22`, display: "flex", alignItems: "center", gap: 14 }}>
-                  <div style={{ width: 40, height: 40, borderRadius: 12, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                    <TrendingUp size={18} color="white"/>
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>Stay ahead with a professional inspection</p>
-                    <p style={{ fontSize: 12, color: C.text3, margin: 0, lineHeight: 1.4 }}>
-                      A certified BTLR inspector gives you a verified, bank-grade report — and locks in the Professionally Verified badge for your score.
-                    </p>
-                  </div>
-                  {userTier === "pro" ? (
-                    <button onClick={() => setNav("Vendors")} style={{ padding: "8px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
-                      Find Inspector
-                    </button>
-                  ) : (
-                    <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ padding: "8px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}>
-                      Self-Inspect
-                    </button>
-                  )}
                 </div>
 
               </div>

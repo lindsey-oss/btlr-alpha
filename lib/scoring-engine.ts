@@ -404,23 +404,37 @@ export function computeHomeHealthReport(
 
   // ── Sub-scores ────────────────────────────────────────────────
   //
-  // All three sub-scores use additive per-item deductions. Without caps they
-  // collapse to 0 on rich inspection reports (25 items × any penalty = huge).
-  // Floors prevent that while still communicating real concern levels.
+  // All sub-scores use per-category aggregation (worst finding per category)
+  // rather than per-item sums. This prevents pile-on collapse on rich reports
+  // (e.g. 25 findings × 18 pts each → instant floor) while still penalising
+  // a house that has serious issues across many different systems.
+  // Floors ensure scores remain legible even in worst-case reports.
 
   // Safety score: 100 minus safety penalties — floor 30
-  // Cap the raw penalty sum so a report with 10 "high" items doesn't zero out.
-  const rawSafetyPenalty = items.reduce((sum, i) => {
-    return sum + (SAFETY_PENALTY[i.safety_impact] ?? 0);
-  }, 0);
+  // Use per-category worst-case instead of per-item sum so a report with many
+  // findings in the same category doesn't pile penalties beyond one per category.
+  // Max categories = 10, max penalty per category = 30 (critical) → max raw = 300,
+  // but in practice 4-6 categories × 18-30 pts each → realistic range 72–180.
+  const categoryWorstSafety = new Map<string, number>();
+  for (const item of items) {
+    const pen = SAFETY_PENALTY[item.safety_impact] ?? 0;
+    if (pen > (categoryWorstSafety.get(item.category) ?? 0))
+      categoryWorstSafety.set(item.category, pen);
+  }
+  const rawSafetyPenalty = Array.from(categoryWorstSafety.values()).reduce((s, p) => s + p, 0);
   const safety_score = Math.round(Math.max(30, Math.min(100, 100 - rawSafetyPenalty)));
 
-  // Maintenance score: base 85, +/- maintenance adjustments — floor 30
+  // Maintenance score: base 85, +/- maintenance adjustments — floor 35
+  // Per-category worst-case prevents pile-on from many deferred findings.
   const maintBase = 85;
-  const maintDelta = items.reduce((sum, i) => {
-    return sum + (MAINTENANCE_ADJ[i.maintenance_state] ?? MAINTENANCE_ADJ.unknown);
-  }, 0);
-  const maintenance_score = Math.round(Math.max(30, Math.min(100, maintBase + maintDelta)));
+  const categoryWorstMaint = new Map<string, number>();
+  for (const item of items) {
+    const adj = MAINTENANCE_ADJ[item.maintenance_state] ?? MAINTENANCE_ADJ.unknown;
+    if (adj < (categoryWorstMaint.get(item.category) ?? 0))
+      categoryWorstMaint.set(item.category, adj);
+  }
+  const maintDelta = Array.from(categoryWorstMaint.values()).reduce((s, a) => s + a, 0);
+  const maintenance_score = Math.round(Math.max(35, Math.min(100, maintBase + maintDelta)));
 
   // Readiness score: start 100, subtract risk factors — floor 30
   // Each item can subtract at most ~32 pts; with 20+ items this collapses.
@@ -447,15 +461,15 @@ export function computeHomeHealthReport(
   readiness -= leakDeduction;
   const readiness_score = Math.round(Math.max(30, Math.min(100, readiness)));
 
-  // Confidence score: average inspector confidence across items
-  // Phase 3 — decay always reduces reported confidence regardless of enableDecay flag.
-  // The confidenceMultiplier communicates freshness to the user even when score
-  // decay is not yet enabled.
+  // Confidence score: average inspector confidence across items — floor 40
+  // Reflects inspection coverage quality only (classifier confidence, item count).
+  // Decay / staleness is already communicated via report.decay.label ("Expired",
+  // "Aging", etc.) and the home_health_score decay adjustment — mixing it into
+  // the confidence score causes it to collapse to 30 for any inspection >5 yrs.
   const avgConf = items.length > 0
     ? items.reduce((s, i) => s + i.inspector_confidence, 0) / items.length
     : 0.4;
-  const decayConfMultiplier = decay?.confidenceMultiplier ?? 1.0;
-  const confidence_score = Math.round(avgConf * decayConfMultiplier * 100);
+  const confidence_score = Math.round(Math.max(40, Math.min(100, avgConf * 100)));
 
   // ── Priority actions ──────────────────────────────────────────
   const priority_actions: PriorityAction[] = items
