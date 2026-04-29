@@ -15,6 +15,7 @@ import {
 import { phCapture, phIdentify, phReset } from "../../lib/monitoring";
 import VendorsView from "../components/VendorsView";
 import MyJobsView from "../components/MyJobsView";
+import TutorialModal from "../components/TutorialModal";
 import type { HomeHealthReport } from "../../lib/scoring-engine";
 import { normalizeLegacyFindings } from "../../lib/scoring-engine";
 import { runScoringPipeline } from "../../lib/scoring-pipeline";
@@ -1831,6 +1832,7 @@ export default function Dashboard() {
   const [hvacYear, setHvacYear] = useState("");
   const [year, setYear]         = useState<number | null>(null);
   const [nav, setNav]           = useState("Dashboard");
+  const [showTutorial, setShowTutorial] = useState(false);
   const [toast, setToast]       = useState<{ msg: string; type: "success" | "error" | "info" } | null>(null);
   const toastTimerRef           = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -2099,6 +2101,12 @@ export default function Dashboard() {
     if (!(window as any).SpeechRecognition && !(window as any).webkitSpeechRecognition) {
       setSpeechSupported(false);
     }
+    // Show tutorial on first visit
+    try {
+      if (!localStorage.getItem("btlr_tutorial_seen")) {
+        setShowTutorial(true);
+      }
+    } catch { /* ignore */ }
   }, []);
 
   useEffect(() => {
@@ -2234,6 +2242,11 @@ export default function Dashboard() {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ msg, type });
     toastTimerRef.current = setTimeout(() => setToast(null), 5000);
+  }
+
+  function handleTutorialClose() {
+    setShowTutorial(false);
+    try { localStorage.setItem("btlr_tutorial_seen", "1"); } catch { /* ignore */ }
   }
 
   async function uploadInsurance(e: React.ChangeEvent<HTMLInputElement>) {
@@ -4715,6 +4728,9 @@ export default function Dashboard() {
               <span style={{ fontSize: 12, color: "rgba(255,255,255,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 130 }}>{user.email}</span>
             </div>
           )}
+          <button onClick={() => setShowTutorial(true)} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", cursor: "pointer", background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.4)", fontSize: 12, marginBottom: 6 }}>
+            <span style={{ width: 13, height: 13, borderRadius: "50%", border: "1.5px solid rgba(255,255,255,0.4)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 9, fontWeight: 800, lineHeight: 1 }}>?</span> How it works
+          </button>
           <button onClick={logout} style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", padding: "8px 10px", borderRadius: 8, border: "none", cursor: "pointer", background: "rgba(255,255,255,0.06)", color: "rgba(255,255,255,0.4)", fontSize: 12 }}>
             <LogOut size={13}/> Sign out
           </button>
@@ -7741,6 +7757,9 @@ export default function Dashboard() {
 
       {/* Always-rendered hidden photo input — needed by both Dashboard and Documents tabs */}
       <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoCapture} disabled={photoAnalyzing}/>
+
+      {/* ── Tutorial walkthrough ─────────────────────────────────────── */}
+      <TutorialModal open={showTutorial} onClose={handleTutorialClose}/>
 
       {/* ── Plaid MFA Verification Modal ─────────────────────────────── */}
       {showMfaModal && (
