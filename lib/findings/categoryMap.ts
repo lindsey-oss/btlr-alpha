@@ -60,6 +60,7 @@ export function toCategoryKey(raw: string): BtlrCategory {
     c.includes("soffit") || c.includes("fascia") ||
     c.includes("siding") || c.includes("flashing") ||
     c.includes("downspout") || c.includes("eave") ||
+    c.includes("stucco") || c.includes("eifs") || c.includes("cladding") ||
     (c.includes("exterior") && !c.includes("deck") && !c.includes("patio"))
   ) return "roof_drainage_exterior";
 
@@ -183,7 +184,7 @@ export interface ClassificationResult {
  */
 const DESC_KEYWORDS: Record<BtlrCategory, string[]> = {
   structure_foundation:    ["crack", "settl", "heav", "foundation", "crawl", "basement", "pier", "slab", "struct", "beam", "joist", "framing"],
-  roof_drainage_exterior:  ["shingle", "roof", "gutter", "fascia", "soffit", "flashing", "downspout", "siding", "eave", "chimney", "exterior"],
+  roof_drainage_exterior:  ["shingle", "roof", "gutter", "fascia", "soffit", "flashing", "downspout", "siding", "eave", "chimney", "exterior", "stucco", "eifs", "cladding", "plaster"],
   plumbing:                ["pipe", "drain", "toilet", "sink", "faucet", "water heater", "sewer", "leak", "water supply", "hose", "shutoff", "valve"],
   electrical:              ["electr", "panel", "wiring", "outlet", "breaker", "gfci", "afci", "romex", "circuit", "junction", "switch", "voltage"],
   hvac:                    ["furnace", "hvac", "duct", "thermostat", "condenser", "heat pump", "air handler", "refrigerant", "compressor", "evaporator"],
@@ -234,6 +235,13 @@ const DESCRIPTION_OVERRIDE_RULES: Array<{
     descPattern: /\b(vegetation|tree|shrub|bush|vine|plant|branch|foliage|overgrowth|landscap)\b.{0,100}\b(contact|touching|against|cover|in\s+contact|adjacent|near|on|growing\s+on|growing\s+against)\b.{0,60}\b(siding|stucco|wall|exterior|roof|fascia|soffit|foundation|building|structure|gutter)\b|\b(siding|stucco|wall|exterior|roof|fascia|foundation)\b.{0,60}\b(vegetation|plant|tree|shrub|bush|vine|branch)\b/i,
     targetCat:   "site_grading_drainage",
     reason:      "description indicates vegetation/plant contact with structure — overrides to site_grading_drainage",
+  },
+  // Stucco / EIFS / exterior cladding → roof_drainage_exterior (not roof alone)
+  // Fires when AI incorrectly labels stucco findings as "Roof"
+  {
+    descPattern: /\bstucco\b|\beifs\b|\bexterior\s+(plaster|cladding|coating|finish|wall\s+surface|wall\s+finish)\b|\bexterior\s+insulation\s+and\s+finish\b/i,
+    targetCat:   "roof_drainage_exterior",
+    reason:      "description contains stucco/EIFS/exterior cladding keywords — overrides to roof_drainage_exterior (exterior wall, not roof)",
   },
 ];
 

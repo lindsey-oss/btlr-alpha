@@ -88,7 +88,7 @@ const AI_SEED = 91472;          // fixed — never change
 // Increment whenever prompt rules or normalization logic change.
 // This invaluates all L1 + L2 cached results so the next upload re-parses
 // with the corrected logic.  DO NOT change the seed above.
-const PARSE_VERSION = "v4";
+const PARSE_VERSION = "v5";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -484,6 +484,16 @@ findings:
       • "Vegetation in contact with siding" → "Siding"
       • "Tree limbs overhanging/touching roof" → "Exterior"
 
+    EXTERIOR CLADDING / STUCCO — CRITICAL OVERRIDE:
+      • Stucco, EIFS, exterior plaster, exterior cladding, exterior wall finish,
+        exterior paint, exterior coating, exterior masonry, exterior brick → "Exterior"
+      • These are wall surface materials — NEVER "Roof", even if they appear near the roofline
+      • "Damaged/deteriorated stucco" → "Exterior"
+      • "Stucco repairs needed" → "Exterior"
+      • "Stucco cracks at exterior walls" → "Exterior"
+      • Chimney stucco/mortar → "Chimney", NOT "Roof"
+      • Rule: if a licensed STUCCO CONTRACTOR does the work → category is "Exterior"
+
     DEDUPLICATION — IMPORTANT:
       • Each distinct physical deficiency must appear EXACTLY ONCE in your findings array.
       • If the same defect appears in both a summary section AND a detailed section of the
@@ -556,6 +566,8 @@ Same CRITICAL CATEGORY RULES as pass 1:
   • NEVER use "Windows" for interior surfaces
   • Exposed wiring / Romex / NM cable / open wiring → ALWAYS "Electrical" regardless of location
   • Vegetation/plants in contact with siding, walls, or roof → "Siding" or "Exterior" (NOT "Roof")
+  • Stucco / EIFS / exterior plaster / exterior cladding / exterior wall finish → ALWAYS "Exterior" (NEVER "Roof")
+  • If a licensed stucco contractor does the repair → category is "Exterior"
   • Do NOT re-extract findings already captured in pass 1 (the merger handles deduplication).
 Return findings you find that are NOT already in the pass 1 list above. Return up to 30 new findings.`;
 }

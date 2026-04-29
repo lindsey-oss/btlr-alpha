@@ -175,6 +175,8 @@ const COMPONENT_PATTERNS: [RegExp, string, string][] = [
   [/\bsoffit\b/i,                          "soffit",           "roof"        ],
   [/\bfascia\b/i,                          "fascia",           "roof"        ],
   [/\bchimney\b/i,                         "chimney",          "exterior"    ],
+  [/\bstucco\b/i,                          "stucco",           "exterior"    ],
+  [/\beifs\b|\bexterior\s+cladding\b/i,    "eifs_cladding",    "exterior"    ],
   [/\bsiding\b/i,                          "siding",           "exterior"    ],
   // ── Structural ──────────────────────────────────────────────
   [/\bfoundation\b/i,                      "foundation",       "structure"   ],
