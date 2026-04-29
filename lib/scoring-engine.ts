@@ -143,7 +143,7 @@ export function toCategoryKey(category: string): string {
   const c = (category || "").toLowerCase();
   if (c.includes("struct") || c.includes("found") || c.includes("crawl") || c.includes("basement"))
     return "structure_foundation";
-  if (c.includes("roof") || c.includes("gutter") || c.includes("exterior") || c.includes("siding") || c.includes("fascia") || c.includes("soffit") || c.includes("chimney") || c.includes("flashing") || c.includes("downspout") || c.includes("drainage"))
+  if (c.includes("roof") || c.includes("gutter") || c.includes("exterior") || c.includes("siding") || c.includes("fascia") || c.includes("soffit") || c.includes("flashing") || c.includes("downspout") || c.includes("drainage"))
     return "roof_drainage_exterior";
   if (c.includes("plumb") || c.includes("pipe") || c.includes("sink") || c.includes("toilet") || c.includes("faucet") || c.includes("sewer"))
     return "plumbing";

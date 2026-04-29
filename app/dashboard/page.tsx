@@ -1167,24 +1167,31 @@ function HealthScoreModal({
         {homeHealthReport && (
           <>
             <RichScoreDimensions report={homeHealthReport} />
-            {homeHealthReport.category_scores.some(cs => !cs.limited_data) && (
+            {homeHealthReport.category_scores.length > 0 && (
               <div style={{ padding: "18px 28px", borderTop: `1px solid ${C.border}` }}>
                 <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 12px" }}>System Health</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                   {homeHealthReport.category_scores
-                    .filter(cs => !cs.limited_data)
-                    .sort((a, b) => a.score - b.score)
+                    .sort((a, b) => {
+                      // Not-assessed systems always go last
+                      if (a.not_assessed !== b.not_assessed) return a.not_assessed ? 1 : -1;
+                      return a.score - b.score;
+                    })
                     .map(cs => {
-                      const barColor = cs.score >= 80 ? C.green : cs.score >= 65 ? C.amber : C.red;
-                      const label = cs.category.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+                      const noData = cs.not_assessed;
+                      const barColor = noData ? C.text3 : cs.score >= 80 ? C.green : cs.score >= 65 ? C.amber : C.red;
+                      const label = formatLabel(cs.category);
                       return (
                         <div key={cs.category}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
-                            <span style={{ fontSize: 12, color: C.text2, fontWeight: 500 }}>{label}</span>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{cs.score}</span>
+                            <span style={{ fontSize: 12, color: noData ? C.text3 : C.text2, fontWeight: 500 }}>{label}</span>
+                            {noData
+                              ? <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic" }}>No issues found</span>
+                              : <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{cs.score}</span>
+                            }
                           </div>
                           <div style={{ height: 5, borderRadius: 3, background: C.border, overflow: "hidden" }}>
-                            <div style={{ height: "100%", width: `${cs.score}%`, background: barColor, borderRadius: 3, transition: "width 0.8s ease" }}/>
+                            <div style={{ height: "100%", width: noData ? "100%" : `${cs.score}%`, background: noData ? C.border : barColor, borderRadius: 3, transition: "width 0.8s ease" }}/>
                           </div>
                         </div>
                       );
@@ -1260,7 +1267,7 @@ function HealthScoreModal({
                           </div>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 3, flexWrap: "wrap" }}>
-                              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{d.category}</span>
+                              <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{formatLabel(d.category)}</span>
                               <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, color: badge.color, background: badge.bg }}>
                                 {badge.label}
                               </span>
@@ -1300,7 +1307,7 @@ function HealthScoreModal({
                 <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderBottom: i < resolvedDeductions.length - 1 ? `1px solid #bbf7d0` : "none" }}>
                   <CheckCircle2 size={13} color={C.green} style={{ flexShrink: 0 }}/>
                   <div style={{ flex: 1 }}>
-                    <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{d.category}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{formatLabel(d.category)}</span>
                     <span style={{ fontSize: 12, color: C.text3, marginLeft: 8 }}>repair confirmed</span>
                   </div>
                   <span style={{ fontSize: 13, fontWeight: 700, color: C.green }}>+{Math.abs(d.points)} restored</span>
@@ -1957,6 +1964,7 @@ export default function Dashboard() {
   const [completeModalTarget, setCompleteModalTarget]   = useState<{ finding: Finding; globalIdx: number } | null>(null);
   const [savingComplete, setSavingComplete]             = useState(false);
   const [archivesExpanded, setArchivesExpanded]         = useState(false);
+  const [showFullCostPlan, setShowFullCostPlan]         = useState(false);
 
   // Keyed by findingKey — loaded from repair_completions table on mount
   type RepairCompletion = { completed_at: string; notes: string; receipt_url?: string; was_scorable: boolean; score_before?: number };
@@ -3053,8 +3061,17 @@ export default function Dashboard() {
           const currentYear = new Date().getFullYear();
           const roofAge = data.roof_year ? currentYear - data.roof_year : null;
           const hvacAge = data.hvac_year ? currentYear - data.hvac_year : null;
-          const inspNorm = normalizeLegacyFindings(scoringFindings, roofAge, hvacAge);
-          const photoNorm = normalizeLegacyFindings(data.photo_findings ?? [], null, null)
+          // Only critical/warning findings impact the score — info items
+          // (maintenance notes, minor cosmetic observations) are shown in
+          // the Repairs tab but must not penalize the Home Health Score.
+          const seriousFindings = scoringFindings.filter((f: Finding) =>
+            f.severity === "critical" || f.severity === "warning"
+          );
+          const seriousPhotoFindings = (data.photo_findings ?? []).filter((f: Finding) =>
+            f.severity === "critical" || f.severity === "warning"
+          );
+          const inspNorm = normalizeLegacyFindings(seriousFindings, roofAge, hvacAge);
+          const photoNorm = normalizeLegacyFindings(seriousPhotoFindings, null, null)
             .map(item => ({ ...item, inspector_confidence: 0.85, source_type: "photo" }));
           const { report } = runScoringPipeline({
             items:          [...inspNorm, ...photoNorm],
@@ -3063,7 +3080,7 @@ export default function Dashboard() {
             inspectionDate: data.inspection_date ?? null,
           });
           setHomeHealthReport(report);
-          console.log(`[loadProperty] Score computed: ${report.home_health_score} (${scoringFindings.length} findings from ${loadedFindings.length > 0 ? "findings table" : "JSONB fallback"})`);
+          console.log(`[loadProperty] Score computed: ${report.home_health_score} (${seriousFindings.length} scored / ${scoringFindings.length} total findings from ${loadedFindings.length > 0 ? "findings table" : "JSONB fallback"})`);
           // Persist score metadata so confidence bar and renewal funnel survive refresh
           if (propId) {
             supabase.from("properties").update({
@@ -3426,8 +3443,12 @@ export default function Dashboard() {
           const currentYear = new Date().getFullYear();
           const rA = result.roof_year ? currentYear - result.roof_year : null;
           const hA = result.hvac_year ? currentYear - result.hvac_year : null;
-          const inspNorm = normalizeLegacyFindings(newFindings, rA, hA);
-          const photoNorm = normalizeLegacyFindings(photoFindings, null, null)
+          // Score only serious findings — info items (maintenance notes, minor
+          // cosmetic observations) are visible in Repairs but don't affect the score.
+          const seriousNew   = newFindings.filter((f: Finding) => f.severity === "critical" || f.severity === "warning");
+          const seriousPhoto = photoFindings.filter((f: Finding) => f.severity === "critical" || f.severity === "warning");
+          const inspNorm = normalizeLegacyFindings(seriousNew, rA, hA);
+          const photoNorm = normalizeLegacyFindings(seriousPhoto, null, null)
             .map(item => ({ ...item, inspector_confidence: 0.85, source_type: "photo" }));
           const currentHomeType = allProperties.find(p => p.id === activePropertyId)?.home_type ?? null;
           const savePropId = activePropertyIdRef.current;
@@ -3916,15 +3937,20 @@ export default function Dashboard() {
       const hvacAge = hvacYear ? currentYear - parseInt(hvacYear) : null;
 
       // Keep only findings that are still active (repair_needed / monitor)
+      // AND only critical/warning severity — info-level items (sticky door,
+      // missing vent cap, minor vegetation, cosmetic notes) are visible in
+      // the Repairs tab but never penalize the Home Health Score.
       const inspActive = inspFindings.filter((f, i) => {
         const s = newStatuses[findingKey(f, i)] ?? "repair_needed";
-        return s !== "completed" && s !== "not_needed";
+        return s !== "completed" && s !== "not_needed" &&
+               (f.severity === "critical" || f.severity === "warning");
       });
       const photoActive = photoFindings.filter((f, i) => {
         // Photo findings are indexed after inspection findings
         const baseIdx = inspFindings.length + i;
         const s = newStatuses[findingKey(f, baseIdx)] ?? "repair_needed";
-        return s !== "completed" && s !== "not_needed";
+        return s !== "completed" && s !== "not_needed" &&
+               (f.severity === "critical" || f.severity === "warning");
       });
 
       const inspNorm  = normalizeLegacyFindings(inspActive, roofAge, hvacAge);
@@ -4926,31 +4952,55 @@ export default function Dashboard() {
                   position: "relative", overflow: "hidden",
                 }}>
                   <div style={{ position: "absolute", top: 0, right: 0, width: 160, height: 160, borderRadius: "50%", background: "rgba(255,255,255,0.04)", transform: "translate(40px,-40px)", pointerEvents: "none" }}/>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>5-Year Cost Outlook</p>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>Home Savings Plan</p>
                   {repPredictions.length > 0 ? (
                     <>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 34, fontWeight: 800, color: "white", letterSpacing: "-1px" }}>{repFmt(repFiveYrTotal)}</span>
-                        <span style={{ fontSize: 14, color: "rgba(255,255,255,0.5)" }}>estimated over 5 years</span>
+                      {/* ── Headline: monthly set-aside ── */}
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 4, flexWrap: "wrap" }}>
+                        <span style={{ fontSize: 34, fontWeight: 800, color: "white", letterSpacing: "-1px" }}>{repFmt(Math.ceil(repFiveYrTotal / 60))}<span style={{ fontSize: 16, fontWeight: 600, letterSpacing: 0 }}>/mo</span></span>
+                        <span style={{ fontSize: 14, color: "rgba(255,255,255,0.5)" }}>recommended set-aside</span>
                       </div>
-                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", margin: "0 0 16px", lineHeight: 1.5 }}>
-                        Knowing what&apos;s coming means you can plan, budget, and schedule on your terms — not in a panic after something breaks.
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", margin: "0 0 14px", lineHeight: 1.5 }}>
+                        Save a little each month and you&apos;ll be ready when it&apos;s time — no surprises, no scrambling.
                       </p>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {repUrgentTotal > 0 && (
-                          <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(239,68,68,0.2)", color: "#fca5a5", border: "1px solid rgba(239,68,68,0.3)" }}>
-                            {repFmt(repUrgentTotal)} urgent / this year
+
+                      {/* ── Near-term priority ── */}
+                      {repUrgentTotal > 0 && (
+                        <div style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 10 }}>
+                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#fca5a5", letterSpacing: "0.05em", textTransform: "uppercase" }}>Needs attention this year</p>
+                          <p style={{ margin: "2px 0 0", fontSize: 22, fontWeight: 800, color: "white", letterSpacing: "-0.5px" }}>{repFmt(repUrgentTotal)}</p>
+                        </div>
+                      )}
+
+                      {/* ── "See full plan" toggle ── */}
+                      <button
+                        onClick={() => setShowFullCostPlan(p => !p)}
+                        style={{ background: "none", border: "none", padding: 0, cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.5)", marginBottom: showFullCostPlan ? 10 : 0 }}
+                      >
+                        {showFullCostPlan ? "Hide" : "See full plan"} <ChevronRight size={13} style={{ transform: showFullCostPlan ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s" }}/>
+                      </button>
+
+                      {/* ── Full breakdown (collapsed by default) ── */}
+                      {showFullCostPlan && (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                          {repUrgentTotal > 0 && (
+                            <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(239,68,68,0.2)", color: "#fca5a5", border: "1px solid rgba(239,68,68,0.3)" }}>
+                              {repFmt(repUrgentTotal)} urgent / this year
+                            </span>
+                          )}
+                          {repMedTotal > 0 && (
+                            <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(245,158,11,0.2)", color: "#fcd34d", border: "1px solid rgba(245,158,11,0.3)" }}>
+                              {repFmt(repMedTotal)} in 1–3 years
+                            </span>
+                          )}
+                          <span style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                            {repFmt(maintenanceBaseline * 5)} routine maintenance
                           </span>
-                        )}
-                        {repMedTotal > 0 && (
-                          <span style={{ fontSize: 12, fontWeight: 700, padding: "5px 12px", borderRadius: 20, background: "rgba(245,158,11,0.2)", color: "#fcd34d", border: "1px solid rgba(245,158,11,0.3)" }}>
-                            {repFmt(repMedTotal)} in 1–3 years
+                          <span style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20, background: "rgba(255,255,255,0.07)", color: "rgba(255,255,255,0.45)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                            {repFmt(repFiveYrTotal)} total over 5 years
                           </span>
-                        )}
-                        <span style={{ fontSize: 12, fontWeight: 600, padding: "5px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                          {repFmt(maintenanceBaseline * 5)} routine maintenance
-                        </span>
-                      </div>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <>
@@ -6343,7 +6393,9 @@ export default function Dashboard() {
                     <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>
                       {userTier === "pro"
                         ? `Last inspection is ${homeHealthReport.decay.label.toLowerCase()} — schedule with a certified BTLR inspector to stay verified`
-                        : `Last assessment is ${homeHealthReport.decay.label.toLowerCase()} — answer a quick 7-step check-in to refresh your score`}
+                        : inspectionResult?.inspection_date
+                          ? `Last inspected ${new Date(inspectionResult.inspection_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })} — answer a quick 7-step check-in to refresh your score`
+                          : "Answer a quick 7-step check-in to refresh your score"}
                     </p>
                   </div>
                 </div>
