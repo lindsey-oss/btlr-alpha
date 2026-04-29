@@ -88,7 +88,7 @@ const AI_SEED = 91472;          // fixed — never change
 // Increment whenever prompt rules or normalization logic change.
 // This invaluates all L1 + L2 cached results so the next upload re-parses
 // with the corrected logic.  DO NOT change the seed above.
-const PARSE_VERSION = "v5";
+const PARSE_VERSION = "v6";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -732,9 +732,11 @@ export async function POST(req) {
   let pdfBuffer      = null;
   let filename       = "";
 
+  let propertyId = null;
   try {
     const body = await req.json();
-    filename = body.filename || "";
+    filename   = body.filename   || "";
+    propertyId = body.propertyId ?? null;
     const { signedUrl } = body;
 
     if (signedUrl) {
@@ -759,6 +761,76 @@ export async function POST(req) {
   const charCount = inspectionText.trim().length;
   console.log(`[parse-inspection] Extracted ${charCount} chars from document`);
   let _parseHash = null;
+
+  // ── DB-findings fast path ─────────────────────────────────────────────────
+  // If this property already has professional inspection findings stored in the
+  // findings table, return those EXACT findings instead of re-running the AI.
+  // This guarantees the same report always produces the same findings — even
+  // after serverless cold starts wipe the in-process L1 cache, and even if
+  // Supabase L2 cache writes failed.
+  //
+  // We only do this when propertyId is provided by the dashboard, which always
+  // sends it for authenticated uploads (after property creation).
+  if (propertyId) {
+    try {
+      const { data: existingRows, error: existErr } = await supabaseAdmin
+        .from("findings")
+        .select("raw_finding, category, description, severity, normalized_finding_key, scorable, score_impact, recommended_action, estimated_cost_min, estimated_cost_max, confidence_score, classification_reason, needs_review, title, system, component, issue_type, location")
+        .eq("property_id", propertyId)
+        .eq("finding_source", "professional")
+        .order("created_at", { ascending: true })
+        .limit(100);
+
+      if (!existErr && existingRows && existingRows.length > 0) {
+        console.log(`[parse-inspection] DB fast-path: returning ${existingRows.length} stored findings for property ${propertyId}`);
+
+        // Reconstruct findings in the shape the dashboard expects
+        const restoredFindings = existingRows.map(row => ({
+          ...(row.raw_finding ?? {}),
+          category:               row.category,
+          description:            row.description ?? "",
+          severity:               row.severity    ?? "info",
+          normalized_finding_key: row.normalized_finding_key,
+          title:                  row.title,
+          system:                 row.system,
+          component:              row.component,
+          issue_type:             row.issue_type,
+          location:               row.location,
+          recommended_action:     row.recommended_action,
+          estimated_cost_min:     row.estimated_cost_min,
+          estimated_cost_max:     row.estimated_cost_max,
+          is_scorable:            row.scorable,
+          scorable:               row.scorable,
+          score_impact:           row.score_impact,
+          confidence_score:       row.confidence_score       ?? "medium",
+          classification_reason:  row.classification_reason  ?? null,
+          needs_review:           row.needs_review            ?? false,
+        }));
+
+        // Compute a fresh score from the restored findings
+        let home_health_report = null;
+        try {
+          const normalizedItems = normalizeLegacyFindings(restoredFindings, null, null);
+          home_health_report    = computeHomeHealthReport(normalizedItems);
+        } catch { /* non-fatal */ }
+
+        return Response.json({
+          property_address:  null,   // already stored on the property row
+          inspection_date:   null,
+          company_name:      null,
+          inspector_name:    null,
+          summary:           null,
+          roof_year:         null,
+          hvac_year:         null,
+          findings:          restoredFindings,
+          home_health_report,
+          _source:           "db_findings_cache",
+        });
+      }
+    } catch (dbFastPathErr) {
+      console.warn("[parse-inspection] DB fast-path check failed (will re-parse):", dbFastPathErr?.message);
+    }
+  }
 
   // ── Image / scanned PDF detection ────────────────────────────────────────
   const isLikelyImagePdf = charCount < MIN_TEXT_LENGTH;

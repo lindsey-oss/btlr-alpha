@@ -3224,7 +3224,7 @@ export default function Dashboard() {
       const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
       if (!signed?.signedUrl) throw new Error("Could not get download URL");
       const authHeader = await getAuthHeader();
-      const res = await fetch("/api/parse-inspection", { method: "POST", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ signedUrl: signed.signedUrl, filename: file.name, storagePath }) });
+      const res = await fetch("/api/parse-inspection", { method: "POST", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ signedUrl: signed.signedUrl, filename: file.name, storagePath, propertyId: activePropertyIdRef.current }) });
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let result: any = {};
       try { result = await res.json(); } catch { setInspectErr("Server error — please try again."); setInspecting(false); if (inspRef.current) inspRef.current.value = ""; return; }
@@ -3904,6 +3904,49 @@ export default function Dashboard() {
 
   // ── Mark all findings in a cost item's category as completed ─────────────
   // Optionally uploads a receipt/invoice file first (stored in repair_docs bucket).
+  // ── Recompute Home Health score after any finding-status change ─────────────
+  // Called whenever the user marks a repair completed / not-needed or saves a
+  // review. Filters out resolved findings so the score reflects the new state
+  // immediately — no page reload required.
+  function recomputeScore(newStatuses: Record<string, FindingStatus>) {
+    try {
+      const inspFindings: Finding[] = inspectionResult?.findings ?? [];
+      const currentYear = new Date().getFullYear();
+      const roofAge = roofYear ? currentYear - parseInt(roofYear) : null;
+      const hvacAge = hvacYear ? currentYear - parseInt(hvacYear) : null;
+
+      // Keep only findings that are still active (repair_needed / monitor)
+      const inspActive = inspFindings.filter((f, i) => {
+        const s = newStatuses[findingKey(f, i)] ?? "repair_needed";
+        return s !== "completed" && s !== "not_needed";
+      });
+      const photoActive = photoFindings.filter((f, i) => {
+        // Photo findings are indexed after inspection findings
+        const baseIdx = inspFindings.length + i;
+        const s = newStatuses[findingKey(f, baseIdx)] ?? "repair_needed";
+        return s !== "completed" && s !== "not_needed";
+      });
+
+      const inspNorm  = normalizeLegacyFindings(inspActive, roofAge, hvacAge);
+      const photoNorm = normalizeLegacyFindings(photoActive, null, null)
+        .map(item => ({ ...item, inspector_confidence: 0.85, source_type: "photo" }));
+
+      const propType = allProperties.find(p => p.id === activePropertyId)?.home_type ?? null;
+      const { report } = runScoringPipeline({
+        items:          [...inspNorm, ...photoNorm],
+        propertyId:     String(activePropertyIdRef.current ?? "unknown"),
+        propertyType:   propType,
+        inspectionDate: inspectionResult?.inspection_date ?? null,
+      });
+      setHomeHealthReport(report);
+      console.log(
+        `[recomputeScore] ${report.home_health_score} — active: ${inspActive.length + photoActive.length}/${inspFindings.length + photoFindings.length} findings`
+      );
+    } catch (err) {
+      console.error("[recomputeScore] failed (non-fatal):", err);
+    }
+  }
+
   async function markCategoryComplete(costItem: CostItem, receiptFile?: File) {
     setMarkCompleteUploading(true);
     try {
@@ -3922,6 +3965,7 @@ export default function Dashboard() {
       });
       setFindingStatuses(updated);
       await persistFindingStatuses(updated);
+      recomputeScore(updated);
 
       // Optionally upload the receipt to storage
       if (receiptFile) {
@@ -3965,6 +4009,7 @@ export default function Dashboard() {
     setSavingStatuses(true);
     setFindingStatuses(statuses);
     await persistFindingStatuses(statuses);
+    recomputeScore(statuses);
     setShowReviewModal(false);
     setSavingStatuses(false);
     addEvent("Inspection findings reviewed and status updated");
@@ -3976,6 +4021,7 @@ export default function Dashboard() {
     const newStatuses = { ...findingStatuses, [key]: status };
     setFindingStatuses(newStatuses);
     await persistFindingStatuses(newStatuses);
+    recomputeScore(newStatuses);
   }
 
   // ── Open the Mark Complete modal ─────────────────────────────────────────
@@ -3999,6 +4045,7 @@ export default function Dashboard() {
       const newStatuses = { ...findingStatuses, [key]: "completed" as FindingStatus };
       setFindingStatuses(newStatuses);
       await persistFindingStatuses(newStatuses);
+      recomputeScore(newStatuses);
 
       // 2. Upload receipt to Storage if provided
       let receiptPath: string | null = null;

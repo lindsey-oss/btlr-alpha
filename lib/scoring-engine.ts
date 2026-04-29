@@ -143,13 +143,13 @@ export function toCategoryKey(category: string): string {
   const c = (category || "").toLowerCase();
   if (c.includes("struct") || c.includes("found") || c.includes("crawl") || c.includes("basement"))
     return "structure_foundation";
-  if (c.includes("roof") || c.includes("gutter") || c.includes("exterior") || c.includes("siding") || c.includes("fascia") || c.includes("soffit"))
+  if (c.includes("roof") || c.includes("gutter") || c.includes("exterior") || c.includes("siding") || c.includes("fascia") || c.includes("soffit") || c.includes("chimney") || c.includes("flashing") || c.includes("downspout") || c.includes("drainage"))
     return "roof_drainage_exterior";
   if (c.includes("plumb") || c.includes("pipe") || c.includes("sink") || c.includes("toilet") || c.includes("faucet") || c.includes("sewer"))
     return "plumbing";
   if (c.includes("electric") || c.includes("panel") || c.includes("wiring") || c.includes("outlet") || c.includes("circuit") || c.includes("gfci"))
     return "electrical";
-  if (c.includes("hvac") || c.includes("heat") || c.includes("cool") || c.includes("furnace") || c.includes("ac ") || c.includes(" ac") || c.includes("duct") || c.includes("air"))
+  if (c.includes("hvac") || c.includes("heat") || c.includes("cool") || c.includes("furnace") || c.includes("ac ") || c.includes(" ac") || c.includes("duct") || c.includes("air") || c.includes("thermostat") || c.includes("ventilat"))
     return "hvac";
   if (c.includes("window") || c.includes("door") || c.includes("interior") || c.includes("floor") || c.includes("ceiling") || c.includes("wall") || c.includes("stair"))
     return "interior_windows_doors";
