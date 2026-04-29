@@ -244,7 +244,7 @@ function categoryLabel(category: string): string {
 function severityLabel(severity?: string | null): string {
   switch (severity) {
     case "critical": return "High Priority";
-    case "warning":  return "Medium Priority";
+    case "warning":  return "Moderate Priority";
     default:         return "Informational";
   }
 }
@@ -1115,8 +1115,8 @@ function HealthScoreModal({
 
   function sourceBadge(d: ScoreDeduction) {
     if (d.source === "system_age")    return { label: "System Age",  color: C.amber, bg: C.amberBg };
-    if (d.severity === "critical")    return { label: "Critical",    color: C.red,   bg: C.redBg   };
-    if (d.severity === "warning")     return { label: "Warning",     color: C.amber, bg: C.amberBg };
+    if (d.severity === "critical")    return { label: "High Priority",     color: C.red,   bg: C.redBg   };
+    if (d.severity === "warning")     return { label: "Moderate Priority", color: C.amber, bg: C.amberBg };
     return                                   { label: "Note",        color: C.text3, bg: C.bg      };
   }
 
@@ -1463,8 +1463,8 @@ function healthStatusInfo(score: number) {
   if (score >= 90) return { label: "Excellent",       tagColor: "#22c55e", tagBg: "rgba(34,197,94,0.18)",  desc: "Your home is in great shape. Keep up with routine maintenance." };
   if (score >= 80) return { label: "Good",            tagColor: "#84cc16", tagBg: "rgba(132,204,22,0.18)", desc: "Your home is healthy. A few items to monitor over time." };
   if (score >= 65) return { label: "Fair",            tagColor: "#f59e0b", tagBg: "rgba(245,158,11,0.18)", desc: "Some systems need attention. Review the breakdown for next steps." };
-  if (score >= 50) return { label: "Needs Attention", tagColor: "#f97316", tagBg: "rgba(249,115,22,0.18)", desc: "Multiple issues need attention. Prioritize repairs to protect your home." };
-  return                  { label: "Critical",        tagColor: "#ef4444", tagBg: "rgba(239,68,68,0.18)",  desc: "Immediate action needed. See the full breakdown to prioritize repairs." };
+  if (score >= 50) return { label: "Needs Attention", tagColor: "#f97316", tagBg: "rgba(249,115,22,0.18)", desc: "A few things to address — your plan is ready when you are." };
+  return                  { label: "Needs Work",      tagColor: "#ef4444", tagBg: "rgba(239,68,68,0.18)",  desc: "Recommended to address soon. See the breakdown for a clear plan." };
 }
 
 // ── Warranty coverage check ───────────────────────────────────────────────
@@ -1642,9 +1642,9 @@ function CostDetailModal({
             <span style={{ fontSize: 11, fontWeight: 700, color: col, textTransform: "uppercase", letterSpacing: "0.08em",
               display: "flex", alignItems: "center", gap: 4 }}>
               {item.severity === "critical"
-                ? <><AlertTriangle size={11}/> Critical</>
+                ? <><AlertTriangle size={11}/> High Priority</>
                 : item.severity === "warning"
-                  ? <><AlertCircle size={11}/> Attention Needed</>
+                  ? <><AlertCircle size={11}/> Moderate Priority</>
                   : <><Info size={11}/> Ongoing</>}
             </span>
             <h2 style={{ fontSize: 22, fontWeight: 700, color: C.text, margin: "6px 0 0", letterSpacing: "-0.3px" }}>{item.label}</h2>
@@ -4389,7 +4389,7 @@ export default function Dashboard() {
       : getFallbackCost(f.category, f.severity);
     costs.push({
       label:         categoryLabel(f.category),
-      horizon:       f.severity === "critical" ? "Immediate" : f.severity === "warning" ? "Within 1–2 yrs" : "Ongoing",
+      horizon:       f.severity === "critical" ? "Start Soon" : f.severity === "warning" ? "Within 1–2 yrs" : "Ongoing",
       amount,
       severity:      f.severity,
       finding:       f,
@@ -4914,7 +4914,7 @@ export default function Dashboard() {
                     <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
                       {allFindings.filter(f => f.severity === "critical").length > 0 && (
                         <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: `${C.red}12`, color: C.red, border: `1px solid ${C.red}25` }}>
-                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, display: "inline-block" }}/>{allFindings.filter(f => f.severity === "critical").length} critical
+                          <span style={{ width: 6, height: 6, borderRadius: "50%", background: C.red, display: "inline-block" }}/>{allFindings.filter(f => f.severity === "critical").length} high priority
                         </span>
                       )}
                       {allFindings.filter(f => f.severity === "warning").length > 0 && (
@@ -4949,7 +4949,7 @@ export default function Dashboard() {
                     const hasWarning  = items.some(({ f }) => f.severity === "warning");
                     const allResolved = items.every(({ f, globalIdx }) => { const s = findingStatuses[findingKey(f, globalIdx)] ?? "repair_needed"; return s === "completed" || s === "not_needed"; });
                     const worstColor = hasCritical ? C.red : hasWarning ? C.amber : allResolved ? C.green : C.text3;
-                    const worstLabel = hasCritical ? "Critical" : hasWarning ? "Warning" : allResolved ? "Resolved" : "Good";
+                    const worstLabel = hasCritical ? "High Priority" : hasWarning ? "Moderate Priority" : allResolved ? "Resolved" : "Good";
                     const worstBg    = hasCritical ? C.redBg   : hasWarning ? C.amberBg : allResolved ? C.greenBg : C.bg;
                     return (
                       <div key={gk} style={{ borderBottom: gi < repGroups.length - 1 ? `1px solid ${C.border}` : "none" }}>
@@ -6130,7 +6130,7 @@ export default function Dashboard() {
                       {criticalCount > 0 && (
                         <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20,
                           background: "rgba(239,68,68,0.15)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}>
-                          {criticalCount} Critical Finding{criticalCount !== 1 ? "s" : ""}
+                          {criticalCount} Priority Item{criticalCount !== 1 ? "s" : ""}
                         </span>
                       )}
                       {/* Extended Condition (Tier 2) label — shown when supplemental data exists */}
@@ -7360,7 +7360,7 @@ export default function Dashboard() {
                 <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 12 }}>
                   {knownCosts.length > 0 && (
                     <>
-                      <p style={{ fontSize: 10, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Immediate Repairs</p>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: C.red, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Start Here</p>
                       {knownCosts.map((c, i) => (
                         <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
                           <span style={{ fontSize: 12, color: C.text3, flex: 1, paddingRight: 8 }}>{c.label}</span>

@@ -497,8 +497,8 @@ export function normalizeFinding(raw: RawFinding): NormalizedFinding {
 
   // 10. Default recommended action
   const recommended_action =
-    severity === "critical" ? "Address immediately — contact a licensed contractor" :
-    severity === "warning"  ? "Schedule repair within 6–12 months"                  :
+    severity === "critical" ? "We recommend handling this soon — contact a licensed contractor" :
+    severity === "warning"  ? "Plan to address within 6–12 months"                              :
                               "Monitor and perform routine maintenance";
 
   // 11. Cost range (±25% of point estimate when available)
