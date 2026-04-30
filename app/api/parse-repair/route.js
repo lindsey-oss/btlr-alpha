@@ -139,10 +139,7 @@ export async function POST(req) {
       console.error("[parse-repair] Processing error:", parseErr?.message);
       return Response.json({ success: false, error: parseErr?.message || "Processing error" });
     } finally {
-      // Clean up storage file after parsing
-      if (storagePath) {
-        try { await supabase.storage.from("documents").remove([storagePath]); } catch {}
-      }
+      // Keep storage file — user needs to be able to view the original PDF
     }
 
     // Match repair to existing findings

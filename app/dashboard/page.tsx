@@ -2674,6 +2674,7 @@ export default function Dashboard() {
     setFindingStatuses({}); setRepairDocs([]); setPhotoFindings([]);
     setHomeHealthReport(null); setHomeValue(null); setPropertyTax(null);
     setTimeline([]); setInsuranceDocCount(0);
+    // Timeline for the new property will be restored by switchProperty → loadTimelineFromStorage
     setWarrantyDocUrl(null); setInsuranceDocUrls([]);
     setParseDebug(null); setMortgageForm({ lender: "loanDepot", balance: "", payment: "", due_day: "1", rate: "" });
     setInspectionSource(null);
@@ -2803,6 +2804,7 @@ export default function Dashboard() {
       const active = match ? match.id : data[0].id;
       setActivePropertyId(active);
       activePropertyIdRef.current = active;
+      loadTimelineFromStorage(active);
       return active;
     } catch { return null; }
   }
@@ -2811,6 +2813,7 @@ export default function Dashboard() {
   async function switchProperty(id: number) {
     clearPropertyState();
     setActivePropertyId(id);
+    loadTimelineFromStorage(id);
     activePropertyIdRef.current = id;
     localStorage.setItem("btlr_active_property_id", String(id));
     setShowPropDropdown(false);
@@ -3999,23 +4002,43 @@ export default function Dashboard() {
         const uid = session?.user?.id;
         const propId = activePropertyIdRef.current;
         if (uid) {
+          const safeName = receiptFile.name.replace(/[^a-zA-Z0-9._-]/g, "_");
           const ts = Date.now();
-          const storagePath = `${uid}/repair-receipt-${ts}-${receiptFile.name}`;
+          const storagePath = `${uid}/repair-receipt-${ts}-${safeName}`;
           await supabase.storage.from("documents").upload(storagePath, receiptFile, { upsert: true });
 
-          // Parse the receipt via the repair-doc API if available, otherwise just store it
-          if (propId) {
-            try {
-              const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
-              if (signed?.signedUrl) {
-                await fetch(`/api/parse-repair-doc?propertyId=${propId}&userId=${uid}`, {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session?.access_token ?? ""}` },
-                  body: JSON.stringify({ signedUrl: signed.signedUrl, filename: receiptFile.name }),
-                });
+          // Save to documents table so it appears in the Documents tab
+          await supabase.from("documents").insert({
+            user_id:       uid,
+            ...(propId ? { property_id: propId } : {}),
+            file_name:     receiptFile.name,
+            file_path:     storagePath,
+            document_type: "other",
+          });
+
+          // Parse the receipt via the repair API
+          try {
+            const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
+            if (signed?.signedUrl) {
+              const authHeader: Record<string, string> = session?.access_token ? { "Authorization": `Bearer ${session.access_token}` } : {};
+              const parseRes = await fetch("/api/parse-repair", {
+                method: "POST",
+                headers: { "Content-Type": "application/json", ...authHeader },
+                body: JSON.stringify({ signedUrl: signed.signedUrl, filename: receiptFile.name, storagePath }),
+              });
+              const parseData = await parseRes.json();
+              // Patch storage_path onto the repair_documents row so View PDF works
+              if (parseData.repair_doc_id) {
+                await supabase.from("repair_documents")
+                  .update({ storage_path: storagePath })
+                  .eq("id", parseData.repair_doc_id);
               }
-            } catch { /* receipt stored even if parse fails */ }
-          }
+            }
+          } catch { /* receipt stored even if parse fails */ }
+
+          // Refresh docs so the receipt appears immediately
+          loadDocs();
+          loadRepairDocs();
         }
         showToast(`✓ ${costItem.label} marked complete — receipt saved`, "success");
       } else {
@@ -4370,7 +4393,29 @@ export default function Dashboard() {
   }
 
   function addEvent(event: string) {
-    setTimeline(prev => [{ date: new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }), event }, ...prev]);
+    const entry: TimelineEvent = {
+      date:  new Date().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }),
+      event,
+    };
+    setTimeline(prev => {
+      const next = [entry, ...prev].slice(0, 50); // cap at 50 events
+      // Persist to localStorage keyed by userId + propertyId
+      try {
+        const uid  = activePropertyIdRef.current ?? "unknown";
+        localStorage.setItem(`btlr_timeline_${uid}`, JSON.stringify(next));
+      } catch { /* non-fatal */ }
+      return next;
+    });
+  }
+
+  function loadTimelineFromStorage(propertyId: number | null) {
+    try {
+      const raw = localStorage.getItem(`btlr_timeline_${propertyId ?? "unknown"}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as TimelineEvent[];
+        if (Array.isArray(parsed)) setTimeline(parsed);
+      }
+    } catch { /* non-fatal */ }
   }
 
   if (!year) return (
@@ -4582,10 +4627,10 @@ export default function Dashboard() {
   const fundOnTrack = monthlyContribution >= recommendedMonthly && recommendedMonthly > 0;
   const navItems = [
     { label: "Dashboard",    icon: <HomeIcon size={15}/> },
-    { label: "Repairs",      icon: <TrendingDown size={15}/>, badge: costs.filter(c => c.severity === "critical").length || undefined },
     { label: "Vendors",      icon: <Users size={15}/> },
-    { label: "My Jobs",      icon: <Briefcase size={15}/> },
     { label: "Maintenance",  icon: <Wrench size={15}/> },
+    { label: "Repairs",      icon: <TrendingDown size={15}/>, badge: costs.filter(c => c.severity === "critical").length || undefined },
+    { label: "My Jobs",      icon: <Briefcase size={15}/> },
     { label: "Documents",    icon: <FileText size={15}/> },
     { label: "Settings",     icon: <Settings size={15}/> },
   ];

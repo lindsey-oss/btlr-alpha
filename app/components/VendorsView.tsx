@@ -112,19 +112,42 @@ interface SavedContact {
   notes: string | null;
 }
 
+// Display order and labels for the 3 home team sections
+const TEAM_CATEGORY_ORDER = ["real_estate", "repair", "maintenance"];
+
 const TEAM_CATEGORY_LABELS: Record<string, string> = {
-  real_estate: "Real Estate",
+  real_estate: "Real Estate Team",
+  repair:      "Repair Team",
+  maintenance: "Maintenance Team",
+  // legacy fallback — insurance contacts still render if present in DB
   insurance:   "Insurance",
-  maintenance: "Maintenance",
-  repair:      "Repair",
 };
 
 const SAVED_ROLE_LABELS: Record<string, string> = {
+  // Real Estate Team
   realtor:          "Real Estate Agent",
   lender:           "Mortgage Lender",
   escrow:           "Escrow Officer",
   title:            "Title Officer",
   attorney:         "Real Estate Attorney",
+  // Repair Team
+  plumber:          "Plumber",
+  electrician:      "Electrician",
+  roofer:           "Roofer",
+  hvac_tech:        "HVAC Technician",
+  general_contractor: "General Contractor",
+  handyman:         "Handyman",
+  pest_control:     "Pest Control",
+  foundation:       "Foundation Specialist",
+  painter:          "Painter",
+  flooring:         "Flooring Contractor",
+  // Maintenance Team
+  landscaper:       "Landscaper",
+  house_cleaner:    "House Cleaner",
+  pool_service:     "Pool Service",
+  gutter_cleaner:   "Gutter Cleaning",
+  window_cleaner:   "Window Cleaner",
+  // Legacy
   insurance_broker: "Insurance Broker",
   home_warranty:    "Home Warranty",
 };
@@ -908,8 +931,8 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
       {userId && (
         <div style={card()}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-            <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0, display: "flex", alignItems: "center", gap: 7 }}>
-              🏠 My Home Team
+            <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>
+              My Home Team
             </p>
             <button
               onClick={() => alert("Manual contact adding is coming soon!")}
@@ -943,9 +966,14 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
               if (!grouped[key]) grouped[key] = [];
               grouped[key].push(c);
             });
+            // Show in defined order, then any unexpected categories after
+            const orderedKeys = [
+              ...TEAM_CATEGORY_ORDER.filter(k => grouped[k]),
+              ...Object.keys(grouped).filter(k => !TEAM_CATEGORY_ORDER.includes(k)),
+            ];
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 14, marginTop: 12 }}>
-                {Object.entries(grouped).map(([cat, contacts]) => (
+                {orderedKeys.map(cat => { const contacts = grouped[cat]; return (
                   <div key={cat}>
                     <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase",
                       letterSpacing: "0.07em", margin: "0 0 8px" }}>
@@ -1024,7 +1052,7 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
                       ))}
                     </div>
                   </div>
-                ))}
+                ); })}
               </div>
             );
           })()}
