@@ -340,8 +340,12 @@ export function computeHomeHealthReport(
     if (key in byCategory) byCategory[key].push(item);
   }
 
+  // Whether we have any inspection data at all.
+  // When true: systems with no active findings score 100 (inspector found nothing wrong).
+  // When false (empty dashboard): all systems are not-assessed so we never show 100 with zero data.
+  const hasInspectionData = items.length > 0;
+
   // Compute per-category scores
-  // Categories with no items → not_assessed: true, excluded from weighted sum
   const categoryScores: CategoryScore[] = Object.entries(weights).map(([cat, weight]) => {
     const catItems = byCategory[cat] ?? [];
     const result   = computeCategoryScore(catItems);
@@ -352,15 +356,29 @@ export function computeHomeHealthReport(
       .map(i => i.notes || i.recommended_action);
 
     if (!result) {
-      // No data for this system — mark Not Assessed, excluded from score
+      if (!hasInspectionData) {
+        // No inspection uploaded yet — truly unknown
+        return {
+          category:     cat,
+          score:        0,
+          confidence:   0,
+          status:       "Not Assessed",
+          top_findings: [],
+          limited_data: true,
+          not_assessed: true,
+          weight,
+        };
+      }
+      // We have inspection data but no active issues in this system →
+      // inspector found nothing wrong (or all repairs completed) → score 100
       return {
         category:     cat,
-        score:        0,
-        confidence:   0,
-        status:       "Not Assessed",
+        score:        100,
+        confidence:   1,
+        status:       "Excellent",
         top_findings: [],
-        limited_data: true,
-        not_assessed: true,
+        limited_data: false,
+        not_assessed: false,
         weight,
       };
     }
