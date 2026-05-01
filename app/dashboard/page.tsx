@@ -2163,6 +2163,7 @@ export default function Dashboard() {
       return raw ? JSON.parse(raw) : {};
     } catch { return {}; }
   });
+  const [maintFilter, setMaintFilter]  = useState<"all"|"due"|"done">("all");
   const [scheduleModal, setScheduleModal] = useState<{ taskId: string; taskName: string } | null>(null);
   const [schedDate, setSchedDate]     = useState("");
   const [schedVendor, setSchedVendor] = useState("");
@@ -5963,62 +5964,120 @@ export default function Dashboard() {
               );
             }
 
+            // Checklist filter tabs
+            const filteredTasks = maintFilter === "due"
+              ? MAINT_TASKS.filter(t => ["overdue","due","scheduled","booked"].includes(taskStates[t.id]))
+              : maintFilter === "done"
+              ? MAINT_TASKS.filter(t => taskStates[t.id] === "done")
+              : annualTasks;
+
+            // Score ring geometry
+            const ringR = 52;
+            const ringC = 64;
+            const ringCircumference = 2 * Math.PI * ringR;
+            const ringProgress = maintScore ?? 0;
+            const ringOffset = ringCircumference - (ringProgress / 100) * ringCircumference;
+            const ringColor = ringProgress >= 80 ? C.green : ringProgress >= 50 ? C.amber : C.red;
+
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-                {/* ── Header ── */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
-                  <div>
-                    <p style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, color: C.text, margin: "0 0 2px", letterSpacing: "-0.3px" }}>Maintenance</p>
-                    <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
-                      {maintScore !== null ? `${maintScore}% on track` : "Preventive care schedule"}
-                      {urgentCount > 0 && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, padding: "2px 9px", borderRadius: 20, background: C.amberBg, color: C.amber, border: `1px solid ${C.amber}40` }}>{urgentCount} need attention</span>}
-                    </p>
+                {/* ── Score Ring Card ── */}
+                <div style={{ ...card(), padding: isMobile ? "20px 18px" : "24px 28px" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 18 : 28, flexWrap: "wrap" }}>
+
+                    {/* Ring */}
+                    <div style={{ position: "relative", flexShrink: 0 }}>
+                      <svg width={ringC * 2} height={ringC * 2} style={{ transform: "rotate(-90deg)" }}>
+                        <circle cx={ringC} cy={ringC} r={ringR} fill="none" stroke={C.border} strokeWidth={10}/>
+                        <circle
+                          cx={ringC} cy={ringC} r={ringR} fill="none"
+                          stroke={ringColor} strokeWidth={10}
+                          strokeDasharray={ringCircumference}
+                          strokeDashoffset={ringOffset}
+                          strokeLinecap="round"
+                          style={{ transition: "stroke-dashoffset 0.6s ease" }}
+                        />
+                      </svg>
+                      <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
+                        <span style={{ fontSize: 26, fontWeight: 900, color: C.text, letterSpacing: "-1px", lineHeight: 1 }}>{maintScore ?? "—"}</span>
+                        {maintScore !== null && <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>%</span>}
+                      </div>
+                    </div>
+
+                    {/* Summary text */}
+                    <div style={{ flex: 1, minWidth: 140 }}>
+                      <p style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: C.text, margin: "0 0 4px", letterSpacing: "-0.3px" }}>Home Score</p>
+                      <p style={{ fontSize: 13, color: C.text3, margin: "0 0 12px" }}>
+                        {maintScore === null
+                          ? "Mark tasks complete to track your score"
+                          : maintScore >= 80
+                          ? "Great job keeping up with maintenance"
+                          : maintScore >= 50
+                          ? "Some tasks need your attention"
+                          : "Several tasks are overdue — let's catch up"}
+                      </p>
+                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                        {urgentCount > 0 && (
+                          <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: C.amberBg, color: C.amber, border: `1px solid ${C.amber}40` }}>
+                            {urgentCount} need attention
+                          </span>
+                        )}
+                        <span style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
+                          {MAINT_TASKS.filter(t => taskStates[t.id] === "done").length} done
+                        </span>
+                        <span style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: C.surface2, color: C.text3, border: `1px solid ${C.border}` }}>
+                          {MAINT_TASKS.length} total
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Add Task button */}
+                    <button
+                      onClick={() => { setScheduleModal({ taskId: "__custom__", taskName: "New Task" }); setSchedDate(""); setSchedVendor(""); }}
+                      style={{ fontSize: 13, fontWeight: 700, padding: "9px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      <Plus size={14}/> Add Task
+                    </button>
                   </div>
-                  <button
-                    onClick={() => { setScheduleModal({ taskId: "__custom__", taskName: "New Task" }); setSchedDate(""); setSchedVendor(""); }}
-                    style={{ fontSize: 13, fontWeight: 700, padding: "9px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
-                    <Plus size={14}/> Add Task
-                  </button>
                 </div>
 
-                {/* ── Two-column layout ── */}
-                <div style={{ display: isMobile ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}>
-
-                  {/* LEFT: Due Soon */}
-                  <div style={{ ...card() }}>
-                    <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: "0 0 4px" }}>Due Soon</p>
-                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 16px" }}>Tap any status to schedule</p>
-                    {dueSoonTasks.length === 0 ? (
-                      <div style={{ textAlign: "center", padding: "24px 0" }}>
-                        <CheckCircle2 size={28} color={C.green} style={{ margin: "0 auto 10px" }}/>
-                        <p style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: "0 0 4px" }}>All caught up</p>
-                        <p style={{ fontSize: 12, color: C.text3 }}>No tasks need immediate attention.</p>
-                      </div>
-                    ) : (
-                      <div>
-                        {dueSoonTasks.map((t, i) => (
-                          <div key={t.id} style={{ borderBottom: i < dueSoonTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                            <TaskRow t={t} showDate={false}/>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* RIGHT: Annual Schedule */}
-                  <div style={{ ...card() }}>
-                    <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: "0 0 4px" }}>Annual Schedule</p>
-                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 16px" }}>Your full year at a glance</p>
-                    <div>
-                      {annualTasks.map((t, i) => (
-                        <div key={t.id} style={{ borderBottom: i < annualTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                          <TaskRow t={t} showDate={true}/>
-                        </div>
+                {/* ── Checklist Card ── */}
+                <div style={{ ...card() }}>
+                  {/* Filter tabs */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
+                    <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: 0 }}>Maintenance Checklist</p>
+                    <div style={{ display: "flex", gap: 6 }}>
+                      {(["all","due","done"] as const).map(f => (
+                        <button key={f} onClick={() => setMaintFilter(f)}
+                          style={{ fontSize: 12, fontWeight: 700, padding: "5px 13px", borderRadius: 20, border: "none", cursor: "pointer",
+                            background: maintFilter === f ? C.accent : C.surface2,
+                            color: maintFilter === f ? "white" : C.text3 }}>
+                          {f === "all" ? "All" : f === "due" ? "Needs Action" : "Done"}
+                        </button>
                       ))}
                     </div>
                   </div>
 
+                  {/* Task rows */}
+                  {filteredTasks.length === 0 ? (
+                    <div style={{ textAlign: "center", padding: "28px 0" }}>
+                      <CheckCircle2 size={28} color={C.green} style={{ margin: "0 auto 10px" }}/>
+                      <p style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: "0 0 4px" }}>
+                        {maintFilter === "done" ? "Nothing marked done yet" : "All caught up!"}
+                      </p>
+                      <p style={{ fontSize: 12, color: C.text3 }}>
+                        {maintFilter === "done" ? "Complete tasks to see them here." : "No tasks need immediate attention."}
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      {filteredTasks.map((t, i) => (
+                        <div key={t.id} style={{ borderBottom: i < filteredTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                          <TaskRow t={t} showDate={true}/>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 {/* ── Schedule / Status Modal ── */}
@@ -7456,6 +7515,7 @@ export default function Dashboard() {
                 if (dueDate < today) dueDate.setMonth(dueDate.getMonth() + 1);
                 const daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
                 const isUrgent = daysUntilDue <= 7 && !!mortgage?.payment;
+                const dueDateLabel = dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
                 return (
                   <div style={{ borderRadius: 16, overflow: "hidden", background: "linear-gradient(145deg, #1C2B3A 0%, #2A3E54 100%)", boxShadow: "0 1px 4px rgba(15,31,61,0.10)" }}>
                     {/* Dark header */}
@@ -7463,11 +7523,11 @@ export default function Dashboard() {
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <div style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <DollarSign size={15} color="rgba(255,255,255,0.8)"/>
+                          <HomeIcon size={15} color="rgba(255,255,255,0.8)"/>
                         </div>
                         <div>
-                          <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.55)", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>Mortgage</p>
-                          {mortgage?.lender && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: 0 }}>{mortgage.lender}</p>}
+                          <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.55)", letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>Mortgage</p>
+                          {mortgage?.lender && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", margin: 0 }}>{mortgage.lender}</p>}
                         </div>
                       </div>
                       <button onClick={() => setShowMortgageForm(f => !f)} style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.6)", background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
@@ -7480,15 +7540,14 @@ export default function Dashboard() {
                           ${mortgage.payment?.toLocaleString() ?? mortgage.balance?.toLocaleString() ?? "—"}
                           {mortgage.payment && <span style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.5)" }}>/mo</span>}
                         </p>
-                        {isUrgent ? (
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.4)" }}>
-                            <AlertTriangle size={11} color="#fbbf24"/>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24" }}>Due in {daysUntilDue} day{daysUntilDue !== 1 ? "s" : ""}</span>
-                          </div>
-                        ) : mortgage.due_day ? (
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                            <Clock size={11} color="rgba(255,255,255,0.5)"/>
-                            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Due day {dueDay} · {daysUntilDue}d</span>
+                        {mortgage.due_day ? (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 20,
+                            background: isUrgent ? "rgba(251,191,36,0.22)" : "rgba(255,255,255,0.1)",
+                            border: `1px solid ${isUrgent ? "rgba(251,191,36,0.5)" : "rgba(255,255,255,0.18)"}` }}>
+                            <Clock size={11} color={isUrgent ? "#fbbf24" : "rgba(255,255,255,0.55)"}/>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: isUrgent ? "#fbbf24" : "rgba(255,255,255,0.7)" }}>
+                              Due {dueDateLabel}{isUrgent ? ` — ${daysUntilDue} day${daysUntilDue !== 1 ? "s" : ""}` : ""}
+                            </span>
                           </div>
                         ) : null}
                       </>

@@ -35,6 +35,33 @@ export async function POST(req) {
       return Response.json({ error: error.message }, { status: 500 });
     }
 
+    // Email notification via Resend
+    if (process.env.RESEND_API_KEY) {
+      const fromEmail = process.env.RESEND_FROM_EMAIL ?? "BTLR <onboarding@resend.dev>";
+      const emailBody = [
+        `<h2 style="color:#E8742A;margin:0 0 16px">New BTLR Feedback</h2>`,
+        `<p><strong>What happened:</strong><br>${whatHappened.trim().replace(/\n/g, "<br>")}</p>`,
+        whatTrying?.trim() ? `<p><strong>What they were trying to do:</strong><br>${whatTrying.trim().replace(/\n/g, "<br>")}</p>` : "",
+        userEmail ? `<p><strong>User:</strong> ${userEmail}</p>` : "",
+        currentPage ? `<p><strong>Page:</strong> ${currentPage}</p>` : "",
+        userAgent ? `<p style="font-size:11px;color:#888"><strong>User agent:</strong> ${userAgent}</p>` : "",
+      ].filter(Boolean).join("\n");
+
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${process.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          from: fromEmail,
+          to: "btlr.info@gmail.com",
+          subject: `[BTLR Feedback] ${whatHappened.trim().slice(0, 60)}${whatHappened.trim().length > 60 ? "…" : ""}`,
+          html: emailBody,
+        }),
+      }).catch(e => console.warn("[feedback] email send failed:", e.message));
+    }
+
     return Response.json({ success: true });
   } catch (err) {
     console.error("[feedback] error:", err.message);
