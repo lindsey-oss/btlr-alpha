@@ -5932,9 +5932,23 @@ export default function Dashboard() {
             const annualTasks = [...MAINT_TASKS].sort((a, b) => getNextDue(a).getTime() - getNextDue(b).getTime());
 
             // Maintenance score
-            const wDone  = MAINT_TASKS.filter(t => ["done","booked"].includes(taskStates[t.id])).reduce((s,t) => s+t.weight, 0);
+            // Time-decay maintenance score
+            // Each task freshness = 1.0 (just done) → 0.0 (full period elapsed since completion)
+            // Never-done tasks count as 0 once the user has any history
+            // Score = weighted average of freshness across all tasks (0–100)
+            // Hit 100 by completing all tasks; clock resets per-task on completion
             const wTotal = MAINT_TASKS.reduce((s,t) => s+t.weight, 0);
-            const maintScore = wTotal > 0 ? Math.round((wDone / wTotal) * 100) : null;
+            const wFresh = MAINT_TASKS.reduce((s,t) => {
+              const lastDone = maintCompletions[t.id];
+              if (!lastDone) {
+                // No history at all → show "—" not a harsh 0
+                return hasAnyHistory ? s : s + t.weight;
+              }
+              const daysSince = (todayMs - new Date(lastDone).getTime()) / 86400000;
+              const freshness = Math.max(0, 1 - daysSince / PERIOD_DAYS[t.freq]);
+              return s + freshness * t.weight;
+            }, 0);
+            const maintScore = hasAnyHistory ? Math.round((wFresh / wTotal) * 100) : null;
             const urgentCount = MAINT_TASKS.filter(t => ["overdue","due"].includes(taskStates[t.id])).length;
 
             function openSchedule(t: MaintTask) {
