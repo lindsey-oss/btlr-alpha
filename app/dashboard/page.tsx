@@ -2382,9 +2382,11 @@ export default function Dashboard() {
   const [warrantyDocUrl, setWarrantyDocUrl]   = useState<string | null>(null);
   const [insuranceDocUrls, setInsuranceDocUrls] = useState<string[]>([]);
 
-  const inspRef  = useRef<HTMLInputElement>(null);
-  const docRef   = useRef<HTMLInputElement>(null);
-  const photoRef = useRef<HTMLInputElement>(null);
+  const inspRef    = useRef<HTMLInputElement>(null);
+  const docRef     = useRef<HTMLInputElement>(null);
+  const photoRef   = useRef<HTMLInputElement>(null);
+  const scanDocRef = useRef<HTMLInputElement>(null);
+  const [scanningDoc, setScanningDoc] = useState<"" | "inspection" | "insurance" | "warranty" | "mortgage">("");
 
   // ── User tier + inspection source ─────────────────────────────────────────
   const [userTier, setUserTier]               = useState<"free" | "pro">("free");
@@ -3183,6 +3185,176 @@ export default function Dashboard() {
     }
     setPhotoAnalyzing(false);
     if (photoRef.current) photoRef.current.value = "";
+  }
+
+  // ── Scan document photos (inspection report, insurance, warranty, mortgage) ──
+  async function handleDocumentScan(e: React.ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length || !scanningDoc) return;
+    const docType = scanningDoc;
+
+    // Convert images to base64
+    const toBase64 = (f: File): Promise<string> => new Promise((res, rej) => {
+      const reader = new FileReader();
+      reader.onload  = () => res(reader.result as string);
+      reader.onerror = rej;
+      reader.readAsDataURL(f);
+    });
+
+    try {
+      const photoUrls = await Promise.all(files.slice(0, 6).map(toBase64));
+      const { data: { session } } = await supabase.auth.getSession();
+      const userId = session?.user?.id;
+      const propId = activePropertyIdRef.current;
+
+      // Show appropriate loading state
+      if (docType === "inspection") { setInspecting(true); setInspectErr(""); }
+      if (docType === "insurance")  setParsingInsurance(true);
+      if (docType === "warranty")   setParsingWarranty(true);
+      if (docType === "mortgage")   setMortgageStatLoading(true);
+
+      showToast(`Scanning ${docType} document…`, "info");
+
+      const headers = await getAuthHeader();
+      const res = await fetch("/api/scan-document", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", ...headers },
+        body:    JSON.stringify({ photoUrls, documentType: docType, userId, propertyId: propId?.toString() }),
+      });
+
+      if (!res.ok) { showToast("Scan failed — please try again", "error"); return; }
+      const result = await res.json();
+      if (!result.success) { showToast(result.error ?? "Scan failed", "error"); return; }
+
+      const d = result.data;
+
+      if (docType === "inspection") {
+        const newFindings: Finding[] = (d.findings ?? []).map((f: Finding) => ({ ...f, source: "photo" as const }));
+        if (!newFindings.length) { showToast("No findings detected — try clearer photos", "info"); return; }
+        const freshStatuses: Record<string, FindingStatus> = {};
+        setFindingStatuses(freshStatuses);
+        const inspPayload = {
+          inspection_findings:  newFindings,
+          inspection_type:      "Home Inspection",
+          inspection_summary:   d.summary     ?? null,
+          inspection_date:      d.inspection_date ?? null,
+          inspector_company:    d.inspector_name  ?? null,
+          finding_statuses:     freshStatuses,
+          ...(d.property_address ? { address: d.property_address } : {}),
+          updated_at: new Date().toISOString(),
+        };
+        if (propId) {
+          const { error } = await supabase.from("properties").update(inspPayload).eq("id", propId);
+          if (error) showToast("Scan saved but couldn't persist to DB — refresh if issues persist", "error");
+        }
+        // Run scoring engine (same pipeline as uploadInspection)
+        const roofAge = roofYear ? (new Date().getFullYear() - parseInt(roofYear)) : null;
+        const hvacAge = hvacYear ? (new Date().getFullYear() - parseInt(hvacYear)) : null;
+        const norm = normalizeLegacyFindings(newFindings, roofAge, hvacAge);
+        const { report } = runScoringPipeline({ items: norm, propertyId: propId ?? 0 });
+        setInspectionResult({ findings: newFindings, summary: d.summary ?? undefined });
+        setHomeHealthReport(report);
+        setInspectDone(true);
+        addEvent(`Inspection scanned: ${newFindings.length} finding${newFindings.length !== 1 ? "s" : ""} extracted`);
+        showToast(`✓ Found ${newFindings.length} items — inspection loaded`, "success");
+
+      } else if (docType === "insurance") {
+        // Map parsed fields → client-side insurance object (same mapping as uploadInsurance)
+        const ins = {
+          provider:                d.provider           ?? null,
+          policyNumber:            d.policyNumber        ?? null,
+          policyType:              d.policyType          ?? null,
+          agentName:               d.agentName           ?? null,
+          agentPhone:              d.agentPhone          ?? null,
+          annualPremium:           d.annualPremium        ?? null,
+          premium:                 d.annualPremium        ?? null,
+          dwellingCoverage:        d.dwellingCoverage     ?? null,
+          otherStructures:         d.otherStructures      ?? null,
+          personalProperty:        d.personalProperty     ?? null,
+          lossOfUse:               d.lossOfUse            ?? null,
+          liabilityCoverage:       d.liabilityCoverage    ?? null,
+          deductibleStandard:      d.deductibleStandard   ?? null,
+          deductibleWind:          d.deductibleWind       ?? null,
+          deductibleHurricane:     d.deductibleHurricane  ?? null,
+          effectiveDate:           d.effectiveDate        ?? null,
+          expirationDate:          d.expirationDate       ?? null,
+          autoRenews:              d.autoRenews           ?? null,
+          coverageItems:           d.coverageItems        ?? [],
+          exclusions:              d.exclusions           ?? [],
+          endorsements:            d.endorsements         ?? [],
+          replacementCostDwelling: d.replacementCostDwelling ?? null,
+          replacementCostContents: d.replacementCostContents ?? null,
+          claimPhone:              d.claimPhone           ?? null,
+          claimUrl:                d.claimUrl             ?? null,
+          claimEmail:              d.claimEmail           ?? null,
+          additionalPolicies:      [],
+        };
+        setInsurance(ins);
+        showToast("✓ Insurance policy scanned and loaded", "success");
+
+      } else if (docType === "warranty") {
+        setWarranty({
+          provider:          d.provider         ?? null,
+          planName:          d.planName          ?? null,
+          policyNumber:      d.policyNumber      ?? null,
+          serviceFee:        d.serviceFee        ?? null,
+          coverageItems:     d.coverageItems     ?? [],
+          exclusions:        d.exclusions        ?? [],
+          effectiveDate:     d.effectiveDate     ?? null,
+          expirationDate:    d.expirationDate    ?? null,
+          autoRenews:        d.autoRenews        ?? null,
+          paymentAmount:     d.paymentAmount     ?? null,
+          paymentFrequency:  d.paymentFrequency  ?? null,
+          claimPhone:        d.claimPhone        ?? null,
+          claimUrl:          d.claimUrl          ?? null,
+          waitingPeriod:     d.waitingPeriod     ?? null,
+          responseTime:      d.responseTime      ?? null,
+          maxAnnualBenefit:  d.maxAnnualBenefit  ?? null,
+        });
+        showToast("✓ Warranty scanned and loaded", "success");
+
+      } else if (docType === "mortgage") {
+        const m = {
+          lender:    d.lender    ?? "Mortgage",
+          balance:   d.balance   ?? undefined,
+          payment:   d.payment   ?? undefined,
+          due_day:   d.due_day   ?? undefined,
+          rate:      d.rate      ?? undefined,
+        };
+        setMortgage(m);
+        setMortgageForm({
+          lender:    m.lender,
+          balance:   m.balance?.toString()  ?? "",
+          payment:   m.payment?.toString()  ?? "",
+          due_day:   m.due_day?.toString()  ?? "1",
+          rate:      m.rate ? (m.rate * 100).toFixed(3) : "",
+        });
+        // Save to DB
+        if (propId) {
+          supabase.from("properties").update({
+            mortgage_lender:  m.lender,
+            mortgage_balance: m.balance  ?? null,
+            mortgage_payment: m.payment  ?? null,
+            mortgage_due_day: m.due_day  ?? null,
+            mortgage_rate:    m.rate     ?? null,
+          }).eq("id", propId).then(({ error }) => {
+            if (error) console.warn("[scanMortgage] DB save failed:", error.message);
+          });
+        }
+        showToast("✓ Mortgage statement scanned and loaded", "success");
+      }
+
+    } catch (err) {
+      console.error("[handleDocumentScan]", err);
+      showToast("Scan failed — please try again", "error");
+    } finally {
+      setScanningDoc("");
+      if (docType === "inspection") setInspecting(false);
+      if (docType === "insurance")  setParsingInsurance(false);
+      if (docType === "warranty")   setParsingWarranty(false);
+      if (docType === "mortgage")   setMortgageStatLoading(false);
+      if (scanDocRef.current) scanDocRef.current.value = "";
+    }
   }
 
   // ── Load all properties for the user ───────────────────────────────────
@@ -6786,11 +6958,11 @@ export default function Dashboard() {
                                       <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
                                     </label>
                                     <div style={{ display: "flex", gap: 8 }}>
-                                      <button onClick={() => photoRef.current?.click()} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                                        <Camera size={14}/> Take or Upload Photos
+                                      <button onClick={() => { setScanningDoc("inspection"); setTimeout(() => scanDocRef.current?.click(), 50); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                                        <Camera size={14}/> Scan Report Pages
                                       </button>
-                                      <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                                        <CheckCircle2 size={14}/> Self-Inspection
+                                      <button onClick={() => photoRef.current?.click()} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                                        <Camera size={14}/> Photo Home Issues
                                       </button>
                                     </div>
                                     {photoErr && <p style={{ fontSize: 12, color: C.red, margin: 0 }}>{photoErr}</p>}
@@ -8067,6 +8239,9 @@ export default function Dashboard() {
                             {mortgageStatLoading ? <><Loader2 size={11} className="animate-spin"/>Parsing…</> : <><Upload size={11}/>PDF</>}
                             <input ref={mortgageStatRef} type="file" accept=".pdf" style={{ display: "none" }} onChange={uploadMortgageStatement} disabled={mortgageStatLoading}/>
                           </label>
+                          <button onClick={() => { setScanningDoc("mortgage"); setTimeout(() => scanDocRef.current?.click(), 50); }} disabled={!!scanningDoc} style={{ padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, fontSize: 12, fontWeight: 600, color: C.text2, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                            <Camera size={11}/>{scanningDoc === "mortgage" ? "…" : "Scan"}
+                          </button>
                         </div>
                         <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
                           <button onClick={connectPlaid} disabled={connectingPlaid} style={{ width: "100%", padding: "8px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: connectingPlaid ? 0.6 : 1 }}>
@@ -8172,11 +8347,16 @@ export default function Dashboard() {
                   </>
                 ) : (
                   <>
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0f766e", background: "transparent", color: "#0f766e", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                      {parsingInsurance ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
-                      {parsingInsurance ? "Parsing…" : "Upload Policy"}
-                      <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
-                    </label>
+                    <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0f766e", background: "transparent", color: "#0f766e", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        {parsingInsurance ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
+                        {parsingInsurance ? "Parsing…" : "Upload Policy PDF"}
+                        <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                      </label>
+                      <button onClick={() => { setScanningDoc("insurance"); setTimeout(() => scanDocRef.current?.click(), 50); }} disabled={!!scanningDoc} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0f766e", background: "transparent", color: "#0f766e", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        <Camera size={11}/> {scanningDoc === "insurance" ? "Scanning…" : "Scan Pages"}
+                      </button>
+                    </div>
                     {insuranceError && <p style={{ fontSize: 11, color: C.red, margin: "8px 0 0", lineHeight: 1.4 }}>⚠ {insuranceError}</p>}
                   </>
                 )}
@@ -8472,11 +8652,16 @@ export default function Dashboard() {
                   </>
                 ) : (
                   <>
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                      {parsingWarranty ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
-                      {parsingWarranty ? "Parsing…" : "Upload Warranty"}
-                      <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
-                    </label>
+                    <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        {parsingWarranty ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
+                        {parsingWarranty ? "Parsing…" : "Upload Warranty PDF"}
+                        <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
+                      </label>
+                      <button onClick={() => { setScanningDoc("warranty"); setTimeout(() => scanDocRef.current?.click(), 50); }} disabled={!!scanningDoc} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        <Camera size={11}/> {scanningDoc === "warranty" ? "Scanning…" : "Scan Pages"}
+                      </button>
+                    </div>
                     {warrantyError && <p style={{ fontSize: 11, color: C.red, margin: "8px 0 0", lineHeight: 1.4 }}>⚠ {warrantyError}</p>}
                   </>
                 )}
@@ -9167,6 +9352,8 @@ export default function Dashboard() {
 
       {/* Always-rendered hidden photo input — needed by both Dashboard and Documents tabs */}
       <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoCapture} disabled={photoAnalyzing}/>
+      {/* Hidden input for document photo scanning */}
+      <input ref={scanDocRef} type="file" accept="image/*,image/heic,image/heif" capture="environment" multiple style={{ display: "none" }} onChange={handleDocumentScan} disabled={!!scanningDoc}/>
 
       {/* ── Tutorial walkthrough ─────────────────────────────────────── */}
       <TutorialModal open={showTutorial} onClose={handleTutorialClose}/>
