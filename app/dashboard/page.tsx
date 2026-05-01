@@ -2386,6 +2386,7 @@ export default function Dashboard() {
   const docRef     = useRef<HTMLInputElement>(null);
   const photoRef   = useRef<HTMLInputElement>(null);
   const scanDocRef = useRef<HTMLInputElement>(null);
+  const scanningDocRef = useRef<string>(""); // tracks current scan type without triggering re-render
   const [scanningDoc, setScanningDoc] = useState<"" | "inspection" | "insurance" | "warranty" | "mortgage">("");
 
   // ── User tier + inspection source ─────────────────────────────────────────
@@ -3190,8 +3191,8 @@ export default function Dashboard() {
   // ── Scan document photos (inspection report, insurance, warranty, mortgage) ──
   async function handleDocumentScan(e: React.ChangeEvent<HTMLInputElement>) {
     const files = Array.from(e.target.files ?? []);
-    if (!files.length || !scanningDoc) return;
-    const docType = scanningDoc;
+    const docType = scanningDocRef.current;
+    if (!files.length || !docType) return;
 
     // Convert images to base64
     const toBase64 = (f: File): Promise<string> => new Promise((res, rej) => {
@@ -3348,6 +3349,7 @@ export default function Dashboard() {
       console.error("[handleDocumentScan]", err);
       showToast("Scan failed — please try again", "error");
     } finally {
+      scanningDocRef.current = "";
       setScanningDoc("");
       if (docType === "inspection") setInspecting(false);
       if (docType === "insurance")  setParsingInsurance(false);
@@ -3898,6 +3900,9 @@ export default function Dashboard() {
     setSavingName(true); setNameSaved(false);
     try {
       await supabase.auth.updateUser({ data: { first_name: profileName.trim() } });
+      // Refresh local user state so greeting updates immediately
+      const { data: { user: refreshed } } = await supabase.auth.getUser();
+      if (refreshed) setUser(refreshed as any);
       setNameSaved(true);
       setTimeout(() => setNameSaved(false), 3000);
     } catch (err) { console.error("Name save error:", err); }
@@ -6191,7 +6196,13 @@ export default function Dashboard() {
               }
               const sched = maintScheduled[t.id];
               if (sched) return sched.status as FullState;
-              if (!hasAnyHistory) return "upcoming";
+              if (!hasAnyHistory) {
+                // On a fresh account, show tasks due within the current month as "due"
+                const nextDue = getNextDue(t);
+                const now = new Date(todayMs);
+                const dueThisMonth = nextDue.getFullYear() === now.getFullYear() && nextDue.getMonth() === now.getMonth();
+                return dueThisMonth ? "due" : "upcoming";
+              }
               return lastDone ? "overdue" : "due";
             }
 
@@ -6958,7 +6969,7 @@ export default function Dashboard() {
                                       <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
                                     </label>
                                     <div style={{ display: "flex", gap: 8 }}>
-                                      <button onClick={() => { setScanningDoc("inspection"); setTimeout(() => scanDocRef.current?.click(), 50); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                                      <button onClick={() => { scanningDocRef.current = "inspection"; setScanningDoc("inspection"); scanDocRef.current?.click(); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
                                         <Camera size={14}/> Scan Report Pages
                                       </button>
                                       <button onClick={() => photoRef.current?.click()} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
@@ -8239,7 +8250,7 @@ export default function Dashboard() {
                             {mortgageStatLoading ? <><Loader2 size={11} className="animate-spin"/>Parsing…</> : <><Upload size={11}/>PDF</>}
                             <input ref={mortgageStatRef} type="file" accept=".pdf" style={{ display: "none" }} onChange={uploadMortgageStatement} disabled={mortgageStatLoading}/>
                           </label>
-                          <button onClick={() => { setScanningDoc("mortgage"); setTimeout(() => scanDocRef.current?.click(), 50); }} disabled={!!scanningDoc} style={{ padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, fontSize: 12, fontWeight: 600, color: C.text2, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
+                          <button onClick={() => { scanningDocRef.current = "mortgage"; setScanningDoc("mortgage"); scanDocRef.current?.click(); }} disabled={!!scanningDoc} style={{ padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.bg, fontSize: 12, fontWeight: 600, color: C.text2, cursor: "pointer", display: "flex", alignItems: "center", gap: 5 }}>
                             <Camera size={11}/>{scanningDoc === "mortgage" ? "…" : "Scan"}
                           </button>
                         </div>
@@ -8353,7 +8364,7 @@ export default function Dashboard() {
                         {parsingInsurance ? "Parsing…" : "Upload Policy PDF"}
                         <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                       </label>
-                      <button onClick={() => { setScanningDoc("insurance"); setTimeout(() => scanDocRef.current?.click(), 50); }} disabled={!!scanningDoc} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0f766e", background: "transparent", color: "#0f766e", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      <button onClick={() => { scanningDocRef.current = "insurance"; setScanningDoc("insurance"); scanDocRef.current?.click(); }} disabled={!!scanningDoc} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0f766e", background: "transparent", color: "#0f766e", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                         <Camera size={11}/> {scanningDoc === "insurance" ? "Scanning…" : "Scan Pages"}
                       </button>
                     </div>
@@ -8658,7 +8669,7 @@ export default function Dashboard() {
                         {parsingWarranty ? "Parsing…" : "Upload Warranty PDF"}
                         <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
                       </label>
-                      <button onClick={() => { setScanningDoc("warranty"); setTimeout(() => scanDocRef.current?.click(), 50); }} disabled={!!scanningDoc} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      <button onClick={() => { scanningDocRef.current = "warranty"; setScanningDoc("warranty"); scanDocRef.current?.click(); }} disabled={!!scanningDoc} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                         <Camera size={11}/> {scanningDoc === "warranty" ? "Scanning…" : "Scan Pages"}
                       </button>
                     </div>
@@ -9353,7 +9364,7 @@ export default function Dashboard() {
       {/* Always-rendered hidden photo input — needed by both Dashboard and Documents tabs */}
       <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoCapture} disabled={photoAnalyzing}/>
       {/* Hidden input for document photo scanning */}
-      <input ref={scanDocRef} type="file" accept="image/*,image/heic,image/heif" capture="environment" multiple style={{ display: "none" }} onChange={handleDocumentScan} disabled={!!scanningDoc}/>
+      <input ref={scanDocRef} type="file" accept="image/*,image/heic,image/heif" capture="environment" multiple style={{ display: "none" }} onChange={handleDocumentScan}/>
 
       {/* ── Tutorial walkthrough ─────────────────────────────────────── */}
       <TutorialModal open={showTutorial} onClose={handleTutorialClose}/>
