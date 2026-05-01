@@ -29,12 +29,13 @@ export default function LoginPage() {
       if (params.get("signup") === "1") setMode("signup");
     }
   }, []);
-  const [email, setEmail]       = useState("");
-  const [password, setPassword] = useState("");
-  const [showPw, setShowPw]     = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState("");
-  const [success, setSuccess]   = useState("");
+  const [firstName, setFirstName] = useState("");
+  const [email, setEmail]         = useState("");
+  const [password, setPassword]   = useState("");
+  const [showPw, setShowPw]       = useState(false);
+  const [loading, setLoading]     = useState(false);
+  const [error, setError]         = useState("");
+  const [success, setSuccess]     = useState("");
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -43,7 +44,10 @@ export default function LoginPage() {
     setSuccess("");
 
     if (mode === "signup") {
-      const { error } = await supabase.auth.signUp({ email, password });
+      const { error } = await supabase.auth.signUp({
+        email, password,
+        options: { data: { first_name: firstName.trim() } },
+      });
       if (error) {
         setError(error.message);
         logError({ error_type: "signup_error", message: (error as any).message, severity: "warning", metadata: { event: "signup_error" } });
@@ -174,6 +178,22 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            {/* First Name — signup only */}
+            {mode === "signup" && (
+              <div>
+                <label style={{ display: "block", fontSize: 16, fontWeight: 600, color: C.text2, marginBottom: 6 }}>
+                  First name
+                </label>
+                <input
+                  type="text" required={mode === "signup"} value={firstName}
+                  onChange={e => setFirstName(e.target.value)}
+                  placeholder="Lindsey"
+                  style={{ width: "100%", padding: "11px 14px", borderRadius: 10, fontSize: 16,
+                    border: `1px solid ${C.border}`, background: C.bg, color: C.text,
+                    outline: "none", boxSizing: "border-box" }}
+                />
+              </div>
+            )}
             {/* Email */}
             <div>
               <label style={{ display: "block", fontSize: 16, fontWeight: 600, color: C.text2, marginBottom: 6 }}>

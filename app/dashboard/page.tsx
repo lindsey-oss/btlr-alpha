@@ -36,6 +36,15 @@ interface TimelineEvent { date: string; event: string }
 interface Doc { id: string; name: string; path: string; url?: string; document_type: string }
 type FindingStatus = "repair_needed" | "completed" | "monitored" | "not_needed";
 
+interface TrustedContact {
+  id: string;
+  name: string;
+  company: string | null;
+  role: string;
+  category: string;
+  phone: string | null;
+}
+
 interface Finding {
   category: string;
   description: string;
@@ -2141,14 +2150,62 @@ export default function Dashboard() {
   function toggleMaintTask(taskId: string) {
     setMaintCompletions(prev => {
       const next = { ...prev };
-      if (next[taskId]) {
-        delete next[taskId];
-      } else {
-        next[taskId] = new Date().toISOString();
-      }
+      if (next[taskId]) { delete next[taskId]; } else { next[taskId] = new Date().toISOString(); }
       try { localStorage.setItem("btlr_maint_v1", JSON.stringify(next)); } catch { /* silent */ }
       return next;
     });
+  }
+
+  // ── Maintenance scheduled state (date + vendor + status) ─────────────
+  const [maintScheduled, setMaintScheduled] = useState<Record<string, { date: string; status: "scheduled" | "booked"; vendor?: string }>>(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem("btlr_maint_sched_v1") : null;
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  });
+  const [scheduleModal, setScheduleModal] = useState<{ taskId: string; taskName: string } | null>(null);
+  const [schedDate, setSchedDate]     = useState("");
+  const [schedVendor, setSchedVendor] = useState("");
+  const [trustedContacts, setTrustedContacts] = useState<TrustedContact[]>([]);
+
+  // ── Theme customization ────────────────────────────────────────────────
+  interface CustomTheme { accent?: string; navy?: string; bgImage?: string; }
+  const [customTheme, setCustomTheme] = useState<CustomTheme>(() => {
+    try { const s = typeof window !== "undefined" ? localStorage.getItem("btlr_custom_theme") : null; return s ? JSON.parse(s) : {}; } catch { return {}; }
+  });
+  const [showCustomize, setShowCustomize] = useState(false);
+  // Draft state for the customize panel (only applied on Save)
+  const [draftAccent, setDraftAccent]  = useState(customTheme.accent ?? C.accent);
+  const [draftNavy,   setDraftNavy]    = useState(customTheme.navy   ?? C.navy);
+  const [draftBgImg,  setDraftBgImg]   = useState(customTheme.bgImage ?? "");
+
+  function applyTheme(t: CustomTheme) {
+    setCustomTheme(t);
+    try { localStorage.setItem("btlr_custom_theme", JSON.stringify(t)); } catch {}
+  }
+  function saveCustomize() {
+    applyTheme({ accent: draftAccent, navy: draftNavy, bgImage: draftBgImg || undefined });
+    setShowCustomize(false);
+  }
+  function resetTheme() {
+    setDraftAccent(C.accent); setDraftNavy(C.navy); setDraftBgImg("");
+    applyTheme({});
+    setShowCustomize(false);
+  }
+  // Effective theme values — used in key places throughout the render
+  const themeAccent = customTheme.accent ?? C.accent;
+  const themeNavy   = customTheme.navy   ?? C.navy;
+
+  function saveSchedule(taskId: string, s: "scheduled" | "booked") {
+    const next = { ...maintScheduled, [taskId]: { date: schedDate, status: s, vendor: schedVendor.trim() || undefined } };
+    setMaintScheduled(next);
+    try { localStorage.setItem("btlr_maint_sched_v1", JSON.stringify(next)); } catch {}
+    setScheduleModal(null); setSchedDate(""); setSchedVendor("");
+  }
+  function clearSchedule(taskId: string) {
+    const next = { ...maintScheduled }; delete next[taskId];
+    setMaintScheduled(next);
+    try { localStorage.setItem("btlr_maint_sched_v1", JSON.stringify(next)); } catch {}
   }
 
   const [q, setQ]               = useState("");
@@ -2436,6 +2493,7 @@ export default function Dashboard() {
     checkAuth().then(async authed => {
       if (authed) {
         loadDocs(); // runs independently — not gated on propId so docs always show
+        loadTrustedContacts(); // load Home Team contacts for maintenance vendor auto-suggest
         const propId = await loadAllProperties();
         if (propId) {
           loadProperty(propId);
@@ -2487,7 +2545,11 @@ export default function Dashboard() {
     setShowHealthModal(false);
     setShowCostModal(false);
     setVendorPrefill(toVendorKey(trade));
-    setVendorContext(context ?? null);
+    // Format context: if it looks like a raw DB key (underscores, no spaces), convert to human-readable
+    const formattedCtx = context
+      ? (context.includes("_") && !context.includes(" ") ? categoryLabel(context) : context)
+      : null;
+    setVendorContext(formattedCtx);
     setVendorIssue(issue ?? null);
     setNav("Vendors");
   }
@@ -2895,6 +2957,19 @@ export default function Dashboard() {
     supabase.from("user_profiles").select("tier").eq("id", session.user.id).maybeSingle()
       .then(({ data: profile }) => { if (profile?.tier) setUserTier(profile.tier as "free" | "pro"); });
     return true;
+  }
+
+  // Fetch saved contacts (Home Team) so we can auto-suggest them in the maintenance modal
+  async function loadTrustedContacts() {
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) return;
+      const { data } = await supabase
+        .from("saved_contacts")
+        .select("id, name, company, role, category, phone")
+        .eq("user_id", u.id);
+      if (data) setTrustedContacts(data as TrustedContact[]);
+    } catch { /* non-critical — schedule modal still works without it */ }
   }
 
   async function logout() {
@@ -5099,11 +5174,117 @@ export default function Dashboard() {
         />
       )}
 
+      {/* ── Customize Modal ─────────────────────────────────────────── */}
+      {showCustomize && (() => {
+        const THEMES = [
+          { name: "Ember",    navy: "#1C2B3A", accent: "#E8742A", bg: "#FFF7F0", isDefault: true },
+          { name: "Ocean",    navy: "#0F3460", accent: "#2563EB", bg: "#EFF6FF" },
+          { name: "Forest",   navy: "#1A3C34", accent: "#16A34A", bg: "#F0FDF4" },
+          { name: "Midnight", navy: "#0A0A18", accent: "#06B6D4", bg: "#0A0A18" },
+          { name: "Rose",     navy: "#3D1A3D", accent: "#E11D48", bg: "#FFF1F2" },
+          { name: "Walnut",   navy: "#3D2B1F", accent: "#D97706", bg: "#FFFBEB" },
+          { name: "Violet",   navy: "#2D1B69", accent: "#7C3AED", bg: "#F5F3FF" },
+          { name: "Slate",    navy: "#1E293B", accent: "#38BDF8", bg: "#F0F9FF" },
+        ];
+        const BG_PRESETS = [
+          { name: "None",         url: "" },
+          { name: "Warm Kitchen", url: "https://images.unsplash.com/photo-1556909114-f6e7ad7d3136?w=1200&q=80" },
+          { name: "Living Room",  url: "https://images.unsplash.com/photo-1600210492493-0946911123ea?w=1200&q=80" },
+          { name: "Modern Home",  url: "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=1200&q=80" },
+          { name: "Backyard",     url: "https://images.unsplash.com/photo-1416879595882-3373a0480b5b?w=1200&q=80" },
+          { name: "Front Porch",  url: "https://images.unsplash.com/photo-1570129477492-45c003edd2be?w=1200&q=80" },
+          { name: "Cozy Den",     url: "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=1200&q=80" },
+          { name: "Open Kitchen", url: "https://images.unsplash.com/photo-1556909172-54557c7e4fb7?w=1200&q=80" },
+          { name: "Master Suite", url: "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=1200&q=80" },
+          { name: "Night Exterior",url:"https://images.unsplash.com/photo-1564013799919-ab600027ffc6?w=1200&q=80" },
+          { name: "Garden Path",  url: "https://images.unsplash.com/photo-1585320806297-9794b3e4aaae?w=1200&q=80" },
+          { name: "Sunset View",  url: "https://images.unsplash.com/photo-1506905925346-21bda4d32df4?w=1200&q=80" },
+        ];
+        const selTheme = THEMES.find(t => t.navy === draftNavy && t.accent === draftAccent);
+        return (
+          <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+            onClick={e => { if (e.target === e.currentTarget) setShowCustomize(false); }}>
+            <div style={{ background: "white", borderRadius: 24, width: "100%", maxWidth: 520, maxHeight: "90vh", overflowY: "auto", boxShadow: "0 24px 80px rgba(0,0,0,0.25)" }}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "22px 24px 18px", borderBottom: "1px solid #f1f5f9", position: "sticky", top: 0, background: "white", zIndex: 1, borderRadius: "24px 24px 0 0" }}>
+                <p style={{ fontSize: 18, fontWeight: 800, color: C.text, margin: 0, letterSpacing: "-0.3px" }}>Customize Dashboard</p>
+                <button onClick={() => setShowCustomize(false)}
+                  style={{ width: 32, height: 32, borderRadius: "50%", background: "#f1f5f9", border: "none", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: C.text3 }}>
+                  <X size={15}/>
+                </button>
+              </div>
+
+              <div style={{ padding: "20px 24px 28px", display: "flex", flexDirection: "column", gap: 24 }}>
+                {/* Color Themes */}
+                <div>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 12px" }}>Color Theme</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                    {THEMES.map(t => {
+                      const isSel = selTheme?.name === t.name;
+                      return (
+                        <div key={t.name} style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                          <button onClick={() => { setDraftNavy(t.navy); setDraftAccent(t.accent); }}
+                            style={{ display: "flex", alignItems: "stretch", borderRadius: 14, border: `2px solid ${isSel ? t.accent : "#e2e8f0"}`, background: "white", cursor: "pointer", overflow: "hidden", padding: 0, transition: "border-color 0.15s", textAlign: "left", width: "100%" }}>
+                            <div style={{ width: 56, background: t.navy, flexShrink: 0, minHeight: 64 }}/>
+                            <div style={{ flex: 1, padding: "12px 14px", background: t.bg }}>
+                              <div style={{ height: 4, borderRadius: 2, background: t.accent, width: "60%", marginBottom: 7 }}/>
+                              <div style={{ height: 3, borderRadius: 2, background: "#94a3b8", width: "85%", marginBottom: 5 }}/>
+                              <div style={{ height: 3, borderRadius: 2, background: "#cbd5e1", width: "70%" }}/>
+                            </div>
+                          </button>
+                          <p style={{ fontSize: 12, fontWeight: 600, color: C.text, margin: "0 2px", display: "flex", alignItems: "center", gap: 5 }}>
+                            {t.name}
+                            {t.isDefault && <span style={{ fontSize: 10, background: "#f1f5f9", color: C.text3, borderRadius: 4, padding: "1px 6px" }}>Default</span>}
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Background Image */}
+                <div>
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 12px" }}>Greeting Background</p>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, marginBottom: 14 }}>
+                    {BG_PRESETS.map(p => {
+                      const isSel = draftBgImg === p.url;
+                      return (
+                        <button key={p.name} onClick={() => setDraftBgImg(p.url)}
+                          style={{ position: "relative", height: 80, borderRadius: 10, border: `2.5px solid ${isSel ? draftAccent : "#e2e8f0"}`, cursor: "pointer", overflow: "hidden", background: p.url ? `url(${p.url}) center/cover` : "#f8fafc", padding: 0, transition: "border-color 0.15s" }}>
+                          {p.url && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.35)" }}/>}
+                          <span style={{ position: "absolute", bottom: 5, left: 0, right: 0, textAlign: "center", fontSize: 11, fontWeight: 700, color: p.url ? "white" : C.text3, textShadow: p.url ? "0 1px 3px rgba(0,0,0,0.6)" : "none" }}>{p.name}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p style={{ fontSize: 12, color: C.text3, margin: "0 0 8px" }}>Or paste your own image URL</p>
+                  <input type="url" value={draftBgImg} onChange={e => setDraftBgImg(e.target.value)}
+                    placeholder="https://..."
+                    style={{ width: "100%", padding: "10px 14px", borderRadius: 10, border: "1.5px solid #e2e8f0", fontSize: 14, color: C.text, outline: "none", boxSizing: "border-box" }}/>
+                </div>
+
+                {/* Actions */}
+                <div style={{ display: "flex", gap: 10 }}>
+                  <button onClick={resetTheme}
+                    style={{ flex: 0, padding: "11px 18px", borderRadius: 12, border: "1.5px solid #e2e8f0", background: "white", color: C.text3, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                    Reset
+                  </button>
+                  <button onClick={saveCustomize}
+                    style={{ flex: 1, padding: "11px", borderRadius: 12, border: "none", background: draftNavy, color: "white", fontSize: 15, fontWeight: 700, cursor: "pointer" }}>
+                    Apply Theme
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* ── Sidebar ──────────────────────────────────────────────────── */}
-      <aside style={{ width: 216, flexShrink: 0, display: isMobile ? "none" : "flex", flexDirection: "column", background: C.navy, height: "100vh", overflowY: "auto" }}>
+      <aside style={{ width: 216, flexShrink: 0, display: isMobile ? "none" : "flex", flexDirection: "column", background: themeNavy, height: "100vh", overflowY: "auto" }}>
         <div style={{ padding: "24px 20px 20px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <div style={{ width: 32, height: 32, borderRadius: 10, background: `linear-gradient(135deg, ${C.accent}, ${C.accentDk})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 8px ${C.accent}80` }}>
+            <div style={{ width: 32, height: 32, borderRadius: 10, background: `linear-gradient(135deg, ${themeAccent}, ${C.accentDk})`, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 8px ${themeAccent}80` }}>
               <HomeIcon size={15} color="white"/>
             </div>
             <span style={{ fontWeight: 700, fontSize: 17, color: "white", letterSpacing: "-0.3px" }}>BTLR</span>
@@ -5205,7 +5386,7 @@ export default function Dashboard() {
 
       {/* ── Main ─────────────────────────────────────────────────────── */}
       <main style={{ flex: 1, minWidth: 0, height: "100vh", overflowY: "auto", overflowX: "hidden" }}>
-        <div style={{ maxWidth: 940, margin: "0 auto", padding: isMobile ? "16px 14px 110px" : "32px 28px", display: "flex", flexDirection: "column", gap: isMobile ? 14 : 18, minWidth: 0 }}>
+        <div style={{ maxWidth: 1400, margin: "0 auto", padding: isMobile ? "16px 14px 110px" : "24px 24px 40px", display: "flex", flexDirection: "column", gap: isMobile ? 14 : 18, minWidth: 0 }}>
 
           {/* Mobile Property Selector */}
           {isMobile && (
@@ -5629,15 +5810,9 @@ export default function Dashboard() {
           {/* Maintenance = recurring home care habits. NO inspection findings here. */}
           {/* Inspection findings (repairs) live exclusively in the Repairs tab.     */}
           {nav === "Maintenance" && (() => {
-            const today       = new Date();
-            const todayMs     = today.getTime();
-            const mo          = today.getMonth();
-            const season: "winter" | "spring" | "summer" | "fall" =
-              mo <= 1 || mo === 11 ? "winter" : mo <= 4 ? "spring" : mo <= 7 ? "summer" : "fall";
-            const seasonLabel = season.charAt(0).toUpperCase() + season.slice(1);
+            const today   = new Date();
+            const todayMs = today.getTime();
 
-            // ── Recurring task definitions ────────────────────────────────
-            // weight: 3=high 2=medium 1=low — affects Maintenance Score
             type MaintTask = {
               id: string; task: string; system: string;
               freq: "monthly" | "quarterly" | "semi_annual" | "annual";
@@ -5648,384 +5823,283 @@ export default function Dashboard() {
               monthly: 30, quarterly: 91, semi_annual: 182, annual: 365,
             };
             const MAINT_TASKS: MaintTask[] = [
-              // ── Monthly ────────────────────────────────────────────────
-              { id: "hvac_filter",        task: "Check / replace HVAC filter",          system: "HVAC",        freq: "monthly",     freqLabel: "Monthly",    weight: 2, tip: "1–2\" filters monthly; 4–5\" every 3–6 months",    icon: <Wind     size={13} color={C.accent}/> },
-              { id: "dishwasher_filter",  task: "Clean dishwasher filter",              system: "Appliances",  freq: "monthly",     freqLabel: "Monthly",    weight: 1, tip: "Twist out bottom filter, rinse under warm water",    icon: <Wrench   size={13} color={C.accent}/> },
-              { id: "garbage_disposal",   task: "Clean garbage disposal",               system: "Plumbing",    freq: "monthly",     freqLabel: "Monthly",    weight: 1, tip: "Ice cubes + salt, then citrus peel for odor",        icon: <Droplets size={13} color={C.accent}/> },
-              { id: "range_hood",         task: "Degrease range hood filter",           system: "Appliances",  freq: "monthly",     freqLabel: "Monthly",    weight: 1, tip: "Soak in hot soapy water or run through dishwasher",   icon: <Wrench   size={13} color={C.accent}/> },
-              // ── Quarterly ──────────────────────────────────────────────
-              { id: "smoke_detector",     task: "Test smoke & CO detectors",            system: "Safety",      freq: "quarterly",   freqLabel: "Quarterly",  weight: 3, tip: "Press test button — replace batteries once a year",   icon: <Shield   size={13} color="#f59e0b"/> },
-              { id: "exterior_walk",      task: "Exterior walkthrough inspection",      system: "Exterior",    freq: "quarterly",   freqLabel: "Quarterly",  weight: 2, tip: "Check siding, caulk, and foundation for new cracks",  icon: <Eye      size={13} color="#f59e0b"/> },
-              { id: "gfci_test",          task: "Test all GFCI outlets",                system: "Electrical",  freq: "quarterly",   freqLabel: "Quarterly",  weight: 2, tip: "Press TEST then RESET on every GFCI outlet",          icon: <Zap      size={13} color="#f59e0b"/> },
-              { id: "water_heater_chk",   task: "Check water heater temp & valve",      system: "Plumbing",    freq: "quarterly",   freqLabel: "Quarterly",  weight: 2, tip: "Set to 120°F; test pressure-relief valve handle",      icon: <Droplets size={13} color="#f59e0b"/> },
-              { id: "landscaping",        task: "Trim vegetation near structure",       system: "Exterior",    freq: "quarterly",   freqLabel: "Quarterly",  weight: 1, tip: "Keep plants 12\"+ from siding and roof edge",          icon: <Activity size={13} color="#f59e0b"/> },
-              // ── Semi-annual ────────────────────────────────────────────
-              { id: "gutter_clean",       task: "Clean gutters & downspouts",           system: "Roof",        freq: "semi_annual", freqLabel: "Twice / Yr", weight: 2, tip: "Spring after pollen, fall after leaves",               icon: <HomeIcon size={13} color="#8b5cf6"/> },
-              { id: "hvac_tune",          task: "Schedule HVAC tune-up",                system: "HVAC",        freq: "semi_annual", freqLabel: "Twice / Yr", weight: 3, tip: "Once before heat season, once before cool season",     icon: <Wind     size={13} color="#8b5cf6"/> },
-              { id: "dryer_vent",         task: "Clean dryer vent & lint duct",         system: "Appliances",  freq: "semi_annual", freqLabel: "Twice / Yr", weight: 3, tip: "Leading cause of house fires — don't skip this one",   icon: <Wrench   size={13} color="#8b5cf6"/> },
-              { id: "fire_ext",           task: "Inspect fire extinguisher",            system: "Safety",      freq: "semi_annual", freqLabel: "Twice / Yr", weight: 2, tip: "Check pressure gauge and expiration date",              icon: <Shield   size={13} color="#8b5cf6"/> },
-              // ── Annual ─────────────────────────────────────────────────
-              { id: "roof_inspect",       task: "Inspect roof for damage",              system: "Roof",        freq: "annual",      freqLabel: "Annual",     weight: 2, tip: "Look for missing shingles and damaged flashing",        icon: <HomeIcon size={13} color={C.green}/> },
-              { id: "water_heater_flush", task: "Flush water heater sediment",          system: "Plumbing",    freq: "annual",      freqLabel: "Annual",     weight: 2, tip: "Extends life 2–3 years; improves efficiency",           icon: <Droplets size={13} color={C.green}/> },
-              { id: "caulking",           task: "Inspect & reapply caulking",           system: "Exterior",    freq: "annual",      freqLabel: "Annual",     weight: 1, tip: "Windows, doors, tub/shower, exterior penetrations",    icon: <Eye      size={13} color={C.green}/> },
-              { id: "pest_inspect",       task: "Schedule pest / termite inspection",   system: "Safety",      freq: "annual",      freqLabel: "Annual",     weight: 3, tip: "Early detection prevents structural damage",             icon: <Bug      size={13} color={C.green}/> },
-              { id: "chimney",            task: "Chimney & fireplace inspection",       system: "Fireplace",   freq: "annual",      freqLabel: "Annual",     weight: 2, tip: "NFPA recommends annual inspection before first use",    icon: <Activity size={13} color={C.green}/> },
+              { id: "hvac_filter",        task: "HVAC Filter Replacement",         system: "HVAC",        freq: "monthly",     freqLabel: "Every 30 days",  weight: 2, tip: "1–2\" filters monthly; 4–5\" every 3–6 months",    icon: <Wind     size={13} color={C.accent}/> },
+              { id: "dishwasher_filter",  task: "Clean Dishwasher Filter",         system: "Appliances",  freq: "monthly",     freqLabel: "Monthly",        weight: 1, tip: "Twist out bottom filter, rinse under warm water",    icon: <Wrench   size={13} color={C.accent}/> },
+              { id: "garbage_disposal",   task: "Clean Garbage Disposal",          system: "Plumbing",    freq: "monthly",     freqLabel: "Monthly",        weight: 1, tip: "Ice cubes + salt, then citrus peel for odor",        icon: <Droplets size={13} color={C.accent}/> },
+              { id: "range_hood",         task: "Degrease Range Hood Filter",      system: "Appliances",  freq: "monthly",     freqLabel: "Monthly",        weight: 1, tip: "Soak in hot soapy water or run through dishwasher",   icon: <Wrench   size={13} color={C.accent}/> },
+              { id: "smoke_detector",     task: "Smoke Detector Test",             system: "Safety",      freq: "quarterly",   freqLabel: "Quarterly",      weight: 3, tip: "Press test button — replace batteries once a year",   icon: <Shield   size={13} color="#f59e0b"/> },
+              { id: "exterior_walk",      task: "Exterior Walkthrough",            system: "Exterior",    freq: "quarterly",   freqLabel: "Quarterly",      weight: 2, tip: "Check siding, caulk, and foundation for new cracks",  icon: <Eye      size={13} color="#f59e0b"/> },
+              { id: "gfci_test",          task: "Test GFCI Outlets",               system: "Electrical",  freq: "quarterly",   freqLabel: "Quarterly",      weight: 2, tip: "Press TEST then RESET on every GFCI outlet",          icon: <Zap      size={13} color="#f59e0b"/> },
+              { id: "water_heater_chk",   task: "Water Heater Check",              system: "Plumbing",    freq: "quarterly",   freqLabel: "Quarterly",      weight: 2, tip: "Set to 120°F; test pressure-relief valve handle",      icon: <Droplets size={13} color="#f59e0b"/> },
+              { id: "landscaping",        task: "Trim Vegetation Near Structure",  system: "Exterior",    freq: "quarterly",   freqLabel: "Quarterly",      weight: 1, tip: "Keep plants 12\"+ from siding and roof edge",          icon: <Activity size={13} color="#f59e0b"/> },
+              { id: "gutter_clean",       task: "Clean Gutters & Downspouts",      system: "Roof",        freq: "semi_annual", freqLabel: "Twice / Year",   weight: 2, tip: "Spring after pollen, fall after leaves",               icon: <HomeIcon size={13} color="#8b5cf6"/> },
+              { id: "hvac_tune",          task: "HVAC Tune-Up",                    system: "HVAC",        freq: "semi_annual", freqLabel: "Twice / Year",   weight: 3, tip: "Once before heat season, once before cool season",     icon: <Wind     size={13} color="#8b5cf6"/> },
+              { id: "dryer_vent",         task: "Clean Dryer Vent & Lint Duct",   system: "Appliances",  freq: "semi_annual", freqLabel: "Twice / Year",   weight: 3, tip: "Leading cause of house fires — don't skip this one",   icon: <Wrench   size={13} color="#8b5cf6"/> },
+              { id: "fire_ext",           task: "Inspect Fire Extinguisher",       system: "Safety",      freq: "semi_annual", freqLabel: "Twice / Year",   weight: 2, tip: "Check pressure gauge and expiration date",              icon: <Shield   size={13} color="#8b5cf6"/> },
+              { id: "roof_inspect",       task: "Roof Inspection",                 system: "Roof",        freq: "annual",      freqLabel: "Annual",         weight: 2, tip: "Look for missing shingles and damaged flashing",        icon: <HomeIcon size={13} color={C.green}/> },
+              { id: "water_heater_flush", task: "Flush Water Heater",              system: "Plumbing",    freq: "annual",      freqLabel: "Annual",         weight: 2, tip: "Extends life 2–3 years; improves efficiency",           icon: <Droplets size={13} color={C.green}/> },
+              { id: "caulking",           task: "Inspect & Reapply Caulking",     system: "Exterior",    freq: "annual",      freqLabel: "Annual",         weight: 1, tip: "Windows, doors, tub/shower, exterior penetrations",    icon: <Eye      size={13} color={C.green}/> },
+              { id: "pest_inspect",       task: "Pest & Termite Inspection",      system: "Safety",      freq: "annual",      freqLabel: "Annual",         weight: 3, tip: "Early detection prevents structural damage",             icon: <Bug      size={13} color={C.green}/> },
+              { id: "chimney",            task: "Chimney & Fireplace Inspection", system: "Fireplace",   freq: "annual",      freqLabel: "Annual",         weight: 2, tip: "NFPA recommends annual inspection before first use",    icon: <Activity size={13} color={C.green}/> },
             ];
 
-            // ── Task state computation ────────────────────────────────────
-            type TaskState = "completed" | "due" | "upcoming";
-            const hasAnyHistory = Object.keys(maintCompletions).length > 0;
+            type FullState = "done" | "booked" | "scheduled" | "overdue" | "due" | "upcoming";
+            const hasAnyHistory = Object.keys(maintCompletions).length > 0 || Object.keys(maintScheduled).length > 0;
 
-            function getTaskState(t: MaintTask): TaskState {
-              const lastDoneStr = maintCompletions[t.id];
-              if (!lastDoneStr) return hasAnyHistory ? "due" : "upcoming";
-              const daysSince = (todayMs - new Date(lastDoneStr).getTime()) / 86400000;
-              return daysSince < PERIOD_DAYS[t.freq] ? "completed" : "due";
-            }
-            const taskStates = Object.fromEntries(
-              MAINT_TASKS.map(t => [t.id, getTaskState(t)])
-            ) as Record<string, TaskState>;
-
-            // ── Maintenance Score (weighted completed / weighted due+completed) ──
-            const completedTasks2 = MAINT_TASKS.filter(t => taskStates[t.id] === "completed");
-            const dueTasks2       = MAINT_TASKS.filter(t => taskStates[t.id] === "due");
-            const wCompleted = completedTasks2.reduce((s, t) => s + t.weight, 0);
-            const wDue       = dueTasks2.reduce((s, t) => s + t.weight, 0);
-            const wTotal     = wCompleted + wDue;
-            const maintScore = wTotal > 0 ? Math.round((wCompleted / wTotal) * 100) : null;
-
-            const statusLevel = maintScore === null ? "New"
-              : maintScore >= 80 ? "Excellent"
-              : maintScore >= 55 ? "On Track"
-              : "Needs Attention";
-            const statusColor = maintScore === null ? C.text3
-              : maintScore >= 80 ? C.green
-              : maintScore >= 55 ? "#f59e0b"
-              : C.red;
-            const statusBg = maintScore === null ? C.bg
-              : maintScore >= 80 ? C.greenBg
-              : maintScore >= 55 ? "#fffbeb"
-              : C.redBg;
-
-            // ── ISO week key ──────────────────────────────────────────────
-            function isoWeek(d: Date): string {
-              const tmp = new Date(d);
-              tmp.setHours(0, 0, 0, 0);
-              tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7));
-              const ys = new Date(tmp.getFullYear(), 0, 1);
-              const wk = Math.ceil(((tmp.getTime() - ys.getTime()) / 86400000 + 1) / 7);
-              return `${tmp.getFullYear()}-W${String(wk).padStart(2, "0")}`;
-            }
-            const thisWeek   = isoWeek(today);
-            const WEEKLY_GOAL = 3;
-
-            // ── Weekly completions (count tasks completed this week) ──────
-            const completionsThisWeek = Object.values(maintCompletions)
-              .filter(d => isoWeek(new Date(d)) === thisWeek).length;
-
-            // ── Streak: consecutive past weeks with >= WEEKLY_GOAL ────────
-            const weekCounts: Record<string, number> = {};
-            for (const d of Object.values(maintCompletions)) {
-              const wk = isoWeek(new Date(d));
-              weekCounts[wk] = (weekCounts[wk] ?? 0) + 1;
-            }
-            let streak = 0;
-            // Current week counts if already at goal
-            if ((weekCounts[thisWeek] ?? 0) >= WEEKLY_GOAL) streak++;
-            // Walk back through prior weeks
-            const walkDate = new Date(today);
-            walkDate.setDate(walkDate.getDate() - 7);
-            for (let i = 0; i < 52; i++) {
-              const wk = isoWeek(walkDate);
-              if ((weekCounts[wk] ?? 0) >= WEEKLY_GOAL) {
-                streak++;
-                walkDate.setDate(walkDate.getDate() - 7);
-              } else { break; }
+            function getFullState(t: MaintTask): FullState {
+              const lastDone = maintCompletions[t.id];
+              if (lastDone) {
+                const daysSince = (todayMs - new Date(lastDone).getTime()) / 86400000;
+                if (daysSince < PERIOD_DAYS[t.freq]) return "done";
+              }
+              const sched = maintScheduled[t.id];
+              if (sched) return sched.status as FullState;
+              if (!hasAnyHistory) return "upcoming";
+              return lastDone ? "overdue" : "due";
             }
 
-            // ── Tasks due this week (due state + high/med weight) ─────────
-            const dueSoon = MAINT_TASKS.filter(t => taskStates[t.id] === "due")
-              .sort((a, b) => b.weight - a.weight).slice(0, 4);
-
-            // ── Frequency groups ──────────────────────────────────────────
-            const FREQ_GROUPS = [
-              { key: "monthly",     label: "Monthly",      color: C.accent,  bg: "#eff6ff",               border: `${C.accent}25` },
-              { key: "quarterly",   label: "Quarterly",    color: "#f59e0b", bg: "rgba(245,158,11,0.09)", border: "rgba(245,158,11,0.25)" },
-              { key: "semi_annual", label: "Twice / Year", color: "#8b5cf6", bg: "rgba(139,92,246,0.09)", border: "rgba(139,92,246,0.25)" },
-              { key: "annual",      label: "Annual",       color: C.green,   bg: C.greenBg,               border: `${C.green}40` },
-            ];
-
-            // ── Seasonal checklist data ───────────────────────────────────
-            const SEASONAL: Record<string, Array<{ task: string; system: string; freq: string; icon: React.ReactNode }>> = {
-              winter: [
-                { task: "Check pipe insulation in unheated spaces",   system: "Plumbing",   freq: "Prevent freezing",        icon: <Droplets size={13} color={C.text3}/> },
-                { task: "Test heating system — replace filters",       system: "HVAC",       freq: "Before cold snap",        icon: <Wind size={13} color={C.text3}/> },
-                { task: "Inspect window & door weatherstripping",      system: "Envelope",   freq: "Energy savings",          icon: <Eye size={13} color={C.text3}/> },
-                { task: "Test smoke & CO detectors",                   system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
-                { task: "Check roof for ice dams after snowfall",      system: "Roof",       freq: "After heavy snow",        icon: <HomeIcon size={13} color={C.text3}/> },
-              ],
-              spring: [
-                { task: "Clean gutters & downspouts",                  system: "Roof",       freq: "After last frost",        icon: <HomeIcon size={13} color={C.text3}/> },
-                { task: "Schedule A/C tune-up before summer heat",     system: "HVAC",       freq: "Before heat season",      icon: <Wind size={13} color={C.text3}/> },
-                { task: "Inspect roof for winter damage",              system: "Roof",       freq: "Annual",                  icon: <HomeIcon size={13} color={C.text3}/> },
-                { task: "Check deck / patio for winter damage",        system: "Exterior",   freq: "Annual",                  icon: <Activity size={13} color={C.text3}/> },
-                { task: "Test all GFCI outlets",                       system: "Electrical", freq: "Annual",                  icon: <Zap size={13} color={C.text3}/> },
-                { task: "Inspect foundation for new cracks",           system: "Structure",  freq: "Annual",                  icon: <Activity size={13} color={C.text3}/> },
-              ],
-              summer: [
-                { task: "Replace HVAC filters",                        system: "HVAC",       freq: "Every 3 months",          icon: <Wind size={13} color={C.text3}/> },
-                { task: "Test smoke & CO detectors",                   system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
-                { task: "Inspect exterior caulking & paint",           system: "Exterior",   freq: "Annual",                  icon: <Eye size={13} color={C.text3}/> },
-                { task: "Schedule pest / termite inspection",          system: "Safety",     freq: "Annual",                  icon: <Bug size={13} color={C.text3}/> },
-                { task: "Flush water heater to clear sediment",        system: "Plumbing",   freq: "Annual — extends life 2–3 yrs", icon: <Droplets size={13} color={C.text3}/> },
-              ],
-              fall: [
-                { task: "Schedule furnace / boiler tune-up",           system: "HVAC",       freq: "Before heating season",   icon: <Wind size={13} color={C.text3}/> },
-                { task: "Clean gutters — leaves & debris",             system: "Roof",       freq: "Before first freeze",     icon: <HomeIcon size={13} color={C.text3}/> },
-                { task: "Drain outdoor hose bibbs & irrigation",       system: "Plumbing",   freq: "Before freeze",           icon: <Droplets size={13} color={C.text3}/> },
-                { task: "Inspect chimney & fireplace (if applicable)", system: "Fireplace",  freq: "Before first use",        icon: <Activity size={13} color={C.text3}/> },
-                { task: "Test smoke & CO detectors",                   system: "Safety",     freq: "Every 6 months",          icon: <Shield size={13} color={C.text3}/> },
-                { task: "Replace HVAC filters",                        system: "HVAC",       freq: "Before heating season",   icon: <Wind size={13} color={C.text3}/> },
-              ],
+            const STATE_CFG: Record<FullState, { dot: string; label: string; bg: string; color: string; border: string }> = {
+              done:      { dot: C.green,   label: "Done",      bg: C.greenBg, color: C.green,  border: `${C.green}40` },
+              booked:    { dot: "#16a34a", label: "Booked",    bg: "#f0fdf4", color: "#16a34a",border: "#86efac" },
+              scheduled: { dot: "#2563eb", label: "Scheduled", bg: "#eff6ff", color: "#2563eb",border: "#bfdbfe" },
+              overdue:   { dot: C.red,     label: "Overdue",   bg: C.redBg,   color: C.red,    border: `${C.red}40` },
+              due:       { dot: C.amber,   label: "Due Soon",  bg: C.amberBg, color: C.amber,  border: `${C.amber}40` },
+              upcoming:  { dot: "#94a3b8", label: "Planned",   bg: C.surface2,color: C.text3,  border: C.border },
             };
-            const seasonTasks = SEASONAL[season];
 
-            return (
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            const MAINT_TRADE: Record<string, string> = {
+              HVAC: "HVAC", Roof: "Roofing", Safety: "General Contractor",
+              Plumbing: "Plumbing", Electrical: "Electrical",
+              Appliances: "General Contractor", Exterior: "General Contractor", Fireplace: "Chimney Service",
+            };
 
-                {/* ── MAINTENANCE SCORE HERO ──────────────────────────── */}
-                <div style={{
-                  background: "linear-gradient(135deg, #1C2B3A 0%, #2A3E54 100%)",
-                  borderRadius: 18, padding: isMobile ? "18px 18px" : "22px 28px",
-                  position: "relative", overflow: "hidden",
-                }}>
-                  <div style={{ position: "absolute", top: 0, right: 0, width: 180, height: 180, borderRadius: "50%", background: "rgba(255,255,255,0.04)", transform: "translate(50px,-50px)", pointerEvents: "none" }}/>
-                  <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 8px" }}>Maintenance Score</p>
-                  <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 12, flexWrap: "wrap" }}>
-                    {/* Score ring */}
-                    <div style={{ position: "relative", width: 72, height: 72, flexShrink: 0 }}>
-                      <svg width={72} height={72} viewBox="0 0 72 72" style={{ transform: "rotate(-90deg)" }}>
-                        <circle cx={36} cy={36} r={28} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={7}/>
-                        <circle cx={36} cy={36} r={28} fill="none"
-                          stroke={maintScore === null ? "rgba(255,255,255,0.25)" : statusColor}
-                          strokeWidth={7}
-                          strokeDasharray={`${2 * Math.PI * 28}`}
-                          strokeDashoffset={`${2 * Math.PI * 28 * (1 - (maintScore ?? 0) / 100)}`}
-                          strokeLinecap="round"
-                          style={{ transition: "stroke-dashoffset 0.5s ease" }}
-                        />
-                      </svg>
-                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
-                        <span style={{ fontSize: maintScore === null ? 12 : 18, fontWeight: 800, color: "white", lineHeight: 1 }}>
-                          {maintScore === null ? "—" : maintScore}
-                        </span>
-                        {maintScore !== null && <span style={{ fontSize: 9, color: "rgba(255,255,255,0.5)", marginTop: 1 }}>/100</span>}
-                      </div>
-                    </div>
-                    {/* Status + descriptor */}
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                        <span style={{ fontSize: 20, fontWeight: 800, color: "white", letterSpacing: "-0.5px" }}>{statusLevel}</span>
-                        {streak > 0 && (
-                          <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 20, background: "rgba(255,255,255,0.15)", color: "white", border: "1px solid rgba(255,255,255,0.2)", display: "inline-flex", alignItems: "center", gap: 5 }}>
-                            <TrendingUp size={11} color="white"/>{streak} week{streak !== 1 ? "s" : ""}
-                          </span>
-                        )}
-                      </div>
-                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", margin: 0, lineHeight: 1.5 }}>
-                        {maintScore === null
-                          ? "Start checking off tasks to build your score."
-                          : maintScore >= 80
-                          ? "Great habits — your home is well cared for."
-                          : maintScore >= 55
-                          ? "Good progress. A few tasks are waiting."
-                          : "Some tasks need attention — no worries, just get started."}
-                      </p>
-                    </div>
+            // Maps maintenance task system → saved_contacts role keys (priority order)
+            const MAINT_SYSTEM_ROLES: Record<string, string[]> = {
+              HVAC:        ["hvac_tech"],
+              Roof:        ["roofer", "gutter_cleaner"],
+              Plumbing:    ["plumber"],
+              Electrical:  ["electrician"],
+              Safety:      ["pest_control", "general_contractor", "handyman"],
+              Appliances:  ["general_contractor", "handyman"],
+              Exterior:    ["landscaper", "general_contractor", "handyman"],
+              Fireplace:   ["general_contractor", "handyman"],
+            };
+
+            // Find the first saved contact that matches a maintenance task's system
+            function findTrustedVendor(system: string): TrustedContact | null {
+              const roles = MAINT_SYSTEM_ROLES[system] ?? [];
+              for (const role of roles) {
+                const match = trustedContacts.find(c => c.role === role);
+                if (match) return match;
+              }
+              return null;
+            }
+
+            const taskStates = Object.fromEntries(MAINT_TASKS.map(t => [t.id, getFullState(t)])) as Record<string, FullState>;
+
+            function getNextDue(t: MaintTask): Date {
+              const sched = maintScheduled[t.id];
+              if (sched?.date) return new Date(sched.date + "T12:00:00");
+              const lastDone = maintCompletions[t.id];
+              if (lastDone) return new Date(new Date(lastDone).getTime() + PERIOD_DAYS[t.freq] * 86400000);
+              return new Date(todayMs + PERIOD_DAYS[t.freq] * 86400000);
+            }
+
+            function fmtDate(d: Date): string {
+              return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+            }
+
+            // Left: tasks needing action (overdue/due) + scheduled/booked
+            const dueSoonTasks = MAINT_TASKS.filter(t => ["overdue","due","scheduled","booked"].includes(taskStates[t.id]));
+            // Right: all tasks sorted by next due date (annual schedule view)
+            const annualTasks = [...MAINT_TASKS].sort((a, b) => getNextDue(a).getTime() - getNextDue(b).getTime());
+
+            // Maintenance score
+            const wDone  = MAINT_TASKS.filter(t => ["done","booked"].includes(taskStates[t.id])).reduce((s,t) => s+t.weight, 0);
+            const wTotal = MAINT_TASKS.reduce((s,t) => s+t.weight, 0);
+            const maintScore = wTotal > 0 ? Math.round((wDone / wTotal) * 100) : null;
+            const urgentCount = MAINT_TASKS.filter(t => ["overdue","due"].includes(taskStates[t.id])).length;
+
+            function openSchedule(t: MaintTask) {
+              const sched = maintScheduled[t.id];
+              // Pre-fill vendor: use saved schedule vendor first, then fall back to trusted contact
+              const trusted = findTrustedVendor(t.system ?? "");
+              const vendorDefault = sched?.vendor ?? (trusted ? (trusted.company ?? trusted.name) : "");
+              setSchedDate(sched?.date ?? "");
+              setSchedVendor(vendorDefault);
+              setScheduleModal({ taskId: t.id, taskName: t.task });
+            }
+
+            function TaskRow({ t, showDate }: { t: MaintTask; showDate: boolean }) {
+              const state = taskStates[t.id];
+              const cfg   = STATE_CFG[state];
+              const sched = maintScheduled[t.id];
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 0" }}>
+                  <div style={{ width: 10, height: 10, borderRadius: "50%", background: cfg.dot, flexShrink: 0 }}/>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: state === "done" ? C.text3 : C.text, margin: 0, textDecoration: state === "done" ? "line-through" : "none" }}>{t.task}</p>
+                    <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0 0" }}>{t.freqLabel}{sched?.vendor ? ` · ${sched.vendor}` : ` · ${t.system}`}</p>
                   </div>
-                  {/* Score chips */}
-                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.65)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                      {completedTasks2.length} completed
-                    </span>
-                    <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.65)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                      {dueTasks2.length} due
-                    </span>
-                    <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.65)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                      {MAINT_TASKS.filter(t => taskStates[t.id] === "upcoming").length} upcoming
-                    </span>
+                  <div style={{ textAlign: "right", flexShrink: 0 }}>
+                    {showDate && (
+                      <p style={{ fontSize: 11, color: C.text3, margin: "0 0 4px" }}>{fmtDate(getNextDue(t))}</p>
+                    )}
+                    {state === "done" ? (
+                      <button onClick={() => toggleMaintTask(t.id)} style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40`, cursor: "pointer" }}>✓ Done</button>
+                    ) : state === "booked" ? (
+                      <button onClick={() => openSchedule(t)} style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: "#f0fdf4", color: "#16a34a", border: "1px solid #86efac", cursor: "pointer" }}>Booked</button>
+                    ) : state === "scheduled" ? (
+                      <button onClick={() => openSchedule(t)} style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: "#eff6ff", color: "#2563eb", border: "1px solid #bfdbfe", cursor: "pointer" }}>Scheduled</button>
+                    ) : state === "overdue" ? (
+                      <button onClick={() => openSchedule(t)} style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: C.redBg, color: C.red, border: `1px solid ${C.red}40`, cursor: "pointer" }}>Overdue</button>
+                    ) : state === "due" ? (
+                      <button onClick={() => openSchedule(t)} style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 10, background: C.amberBg, color: C.amber, border: `1px solid ${C.amber}40`, cursor: "pointer" }}>Due Soon</button>
+                    ) : (
+                      <button onClick={() => openSchedule(t)} style={{ fontSize: 11, fontWeight: 600, padding: "3px 10px", borderRadius: 10, background: C.surface2, color: C.text3, border: `1px solid ${C.border}`, cursor: "pointer" }}>Planned</button>
+                    )}
                   </div>
                 </div>
+              );
+            }
 
-                {/* ── WEEKLY GOAL PROGRESS ────────────────────────────── */}
-                <div style={{ ...card({ padding: "16px 18px" }) }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                    <div>
-                      <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>Weekly Goal</p>
-                      <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>
-                        {completionsThisWeek >= WEEKLY_GOAL
-                          ? "Goal reached — great work this week."
-                          : `Complete ${WEEKLY_GOAL - completionsThisWeek} more task${WEEKLY_GOAL - completionsThisWeek !== 1 ? "s" : ""} to hit your goal`}
-                      </p>
-                    </div>
-                    <span style={{ fontSize: 13, fontWeight: 800, color: completionsThisWeek >= WEEKLY_GOAL ? C.green : C.text2 }}>
-                      {completionsThisWeek} / {WEEKLY_GOAL}
-                    </span>
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+                {/* ── Header ── */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10 }}>
+                  <div>
+                    <p style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, color: C.text, margin: "0 0 2px", letterSpacing: "-0.3px" }}>Maintenance</p>
+                    <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
+                      {maintScore !== null ? `${maintScore}% on track` : "Preventive care schedule"}
+                      {urgentCount > 0 && <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 700, padding: "2px 9px", borderRadius: 20, background: C.amberBg, color: C.amber, border: `1px solid ${C.amber}40` }}>{urgentCount} need attention</span>}
+                    </p>
                   </div>
-                  {/* Progress bar */}
-                  <div style={{ height: 8, borderRadius: 6, background: C.bg, overflow: "hidden", marginBottom: dueSoon.length > 0 ? 14 : 0 }}>
-                    <div style={{
-                      height: "100%", borderRadius: 6,
-                      background: completionsThisWeek >= WEEKLY_GOAL
-                        ? C.green
-                        : `linear-gradient(90deg, ${C.accent}, ${C.accentLt})`,
-                      width: `${Math.min(100, Math.round((completionsThisWeek / WEEKLY_GOAL) * 100))}%`,
-                      transition: "width 0.4s ease",
-                    }}/>
-                  </div>
-                  {/* Due soon list */}
-                  {dueSoon.length > 0 && (
-                    <div>
-                      <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Ready to complete</p>
-                      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                        {dueSoon.map(t => (
-                          <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 12px", borderRadius: 10, background: C.bg, border: `1px solid ${C.border}` }}>
-                            <button onClick={() => toggleMaintTask(t.id)} style={{ width: 20, height: 20, borderRadius: 5, border: `2px solid ${C.border}`, background: "white", cursor: "pointer", flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}/>
-                            <span style={{ fontSize: 13, fontWeight: 600, color: C.text, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.task}</span>
-                            <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: t.weight === 3 ? `${C.red}12` : t.weight === 2 ? "#fffbeb" : C.bg, color: t.weight === 3 ? C.red : t.weight === 2 ? "#92400e" : C.text3, border: `1px solid ${t.weight === 3 ? `${C.red}25` : t.weight === 2 ? "#fde68a" : C.border}`, flexShrink: 0 }}>
-                              {t.weight === 3 ? "High" : t.weight === 2 ? "Med" : "Low"}
-                            </span>
+                  <button
+                    onClick={() => { setScheduleModal({ taskId: "__custom__", taskName: "New Task" }); setSchedDate(""); setSchedVendor(""); }}
+                    style={{ fontSize: 13, fontWeight: 700, padding: "9px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+                    <Plus size={14}/> Add Task
+                  </button>
+                </div>
+
+                {/* ── Two-column layout ── */}
+                <div style={{ display: isMobile ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}>
+
+                  {/* LEFT: Due Soon */}
+                  <div style={{ ...card() }}>
+                    <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: "0 0 4px" }}>Due Soon</p>
+                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 16px" }}>Tap any status to schedule</p>
+                    {dueSoonTasks.length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "24px 0" }}>
+                        <CheckCircle2 size={28} color={C.green} style={{ margin: "0 auto 10px" }}/>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: "0 0 4px" }}>All caught up</p>
+                        <p style={{ fontSize: 12, color: C.text3 }}>No tasks need immediate attention.</p>
+                      </div>
+                    ) : (
+                      <div>
+                        {dueSoonTasks.map((t, i) => (
+                          <div key={t.id} style={{ borderBottom: i < dueSoonTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                            <TaskRow t={t} showDate={false}/>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  )}
-                </div>
-
-                {/* ── RECURRING TASK LIST BY FREQUENCY ───────────────── */}
-                {FREQ_GROUPS.map(group => {
-                  const groupTasks  = MAINT_TASKS.filter(t => t.freq === group.key);
-                  const groupDone   = groupTasks.filter(t => taskStates[t.id] === "completed").length;
-                  return (
-                    <div key={group.key} style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                      <div style={{ padding: "12px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: group.bg, color: group.color, border: `1px solid ${group.border}` }}>
-                            {group.label}
-                          </span>
-                          <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>{groupTasks.length} tasks</p>
-                        </div>
-                        {groupDone > 0 && (
-                          <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
-                            {groupDone}/{groupTasks.length} done
-                          </span>
-                        )}
-                      </div>
-                      {groupTasks.map((item, i) => {
-                        const state  = taskStates[item.id] as TaskState;
-                        const isDone = state === "completed";
-                        return (
-                          <div key={item.id} style={{
-                            display: "flex", alignItems: "center", gap: 12, padding: "12px 18px",
-                            borderBottom: i < groupTasks.length - 1 ? `1px solid ${C.border}` : "none",
-                            background: isDone ? C.greenBg : state === "due" ? "transparent" : "transparent",
-                            opacity: state === "upcoming" ? 0.65 : 1,
-                            transition: "background 0.2s",
-                          }}>
-                            {/* Checkbox */}
-                            <button onClick={() => toggleMaintTask(item.id)} style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, cursor: "pointer", border: `2px solid ${isDone ? C.green : C.border}`, background: isDone ? C.green : "white", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
-                              {isDone && <Check size={11} color="white" strokeWidth={3}/>}
-                            </button>
-                            {/* Icon */}
-                            <div style={{ width: 30, height: 30, borderRadius: 8, background: isDone ? `${C.green}18` : C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                              {isDone ? <CheckCircle2 size={13} color={C.green}/> : item.icon}
-                            </div>
-                            {/* Label + tip */}
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                              <p style={{ fontSize: 13, fontWeight: 600, color: isDone ? C.text3 : C.text, margin: 0, textDecoration: isDone ? "line-through" : "none" }}>{item.task}</p>
-                              <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.system} · {item.tip}</p>
-                            </div>
-                            {/* State + find vendor */}
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
-                              {isDone ? (
-                                <span style={{ fontSize: 11, fontWeight: 700, color: C.green }}>✓ Done</span>
-                              ) : state === "due" ? (
-                                <>
-                                  <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: group.bg, color: group.color, border: `1px solid ${group.border}` }}>Due</span>
-                                  {(() => {
-                                    const MAINT_TRADE: Record<string,string> = {
-                                      HVAC: "HVAC", Roof: "Roofing", Safety: "General Contractor",
-                                      Plumbing: "Plumbing", Electrical: "Electrical",
-                                      Appliances: "General Contractor", Exterior: "General Contractor",
-                                      Fireplace: "Chimney Service",
-                                    };
-                                    const trade = MAINT_TRADE[item.system] ?? "General Contractor";
-                                    return (
-                                      <button
-                                        onClick={e => { e.stopPropagation(); handleFindVendors(trade, item.system, item.task); }}
-                                        style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 8,
-                                          background: C.accent, border: "none", color: "white", cursor: "pointer",
-                                          display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" }}>
-                                        <Users size={9}/> Schedule
-                                      </button>
-                                    );
-                                  })()}
-                                </>
-                              ) : (
-                                <span style={{ fontSize: 10, color: C.text3 }}>Upcoming</span>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  );
-                })}
-
-                {/* ── SEASONAL CHECKLIST ──────────────────────────────── */}
-                <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                  <div style={{ padding: "14px 18px 10px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                      <div style={{ width: 28, height: 28, borderRadius: 8, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                        <Activity size={14} color={C.accent}/>
-                      </div>
-                      <div>
-                        <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0 }}>{seasonLabel} Checklist</p>
-                        <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>Seasonal tasks for this time of year</p>
-                      </div>
-                    </div>
-                    {seasonTasks.filter(t => doneTasks.has(`${season}-${t.task}`)).length > 0 && (
-                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
-                        {seasonTasks.filter(t => doneTasks.has(`${season}-${t.task}`)).length}/{seasonTasks.length} done
-                      </span>
                     )}
                   </div>
-                  {seasonTasks.map((item, i) => {
-                    const taskKey = `${season}-${item.task}`;
-                    const isDone  = doneTasks.has(taskKey);
-                    return (
-                      <div key={i} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", borderBottom: i < seasonTasks.length - 1 ? `1px solid ${C.border}` : "none", background: isDone ? C.greenBg : "transparent", transition: "background 0.2s" }}>
-                        <button onClick={() => toggleDoneTask(taskKey)} style={{ width: 24, height: 24, borderRadius: 6, flexShrink: 0, cursor: "pointer", border: `2px solid ${isDone ? C.green : C.border}`, background: isDone ? C.green : "white", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
-                          {isDone && <Check size={13} color="white" strokeWidth={3}/>}
-                        </button>
-                        <div style={{ width: 28, height: 28, borderRadius: 7, background: isDone ? `${C.green}18` : C.bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-                          {isDone ? <CheckCircle2 size={13} color={C.green}/> : item.icon}
+
+                  {/* RIGHT: Annual Schedule */}
+                  <div style={{ ...card() }}>
+                    <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: "0 0 4px" }}>Annual Schedule</p>
+                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 16px" }}>Your full year at a glance</p>
+                    <div>
+                      {annualTasks.map((t, i) => (
+                        <div key={t.id} style={{ borderBottom: i < annualTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                          <TaskRow t={t} showDate={true}/>
                         </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <p style={{ fontSize: 13, fontWeight: 600, color: isDone ? C.text3 : C.text, margin: 0, textDecoration: isDone ? "line-through" : "none" }}>{item.task}</p>
-                          <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0" }}>{item.system} · {item.freq}</p>
-                        </div>
-                        {!isDone ? (
-                          <button onClick={() => handleFindVendors(item.system, item.task)} style={{ padding: "5px 12px", borderRadius: 8, border: `1px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 11, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
-                            Find Pro
-                          </button>
-                        ) : (
-                          <span style={{ fontSize: 11, fontWeight: 700, color: C.green, flexShrink: 0 }}>✓ Done</span>
-                        )}
-                      </div>
-                    );
-                  })}
+                      ))}
+                    </div>
+                  </div>
+
                 </div>
+
+                {/* ── Schedule / Status Modal ── */}
+                {scheduleModal && scheduleModal.taskId !== "__custom__" && (
+                  <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.45)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+                    onClick={e => { if (e.target === e.currentTarget) setScheduleModal(null); }}>
+                    <div style={{ background: "white", borderRadius: 20, padding: "28px 28px 24px", width: "100%", maxWidth: 400, boxShadow: "0 20px 60px rgba(0,0,0,0.2)" }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>Schedule Task</p>
+                      <p style={{ fontSize: 18, fontWeight: 800, color: C.text, margin: "0 0 20px", letterSpacing: "-0.3px" }}>{scheduleModal.taskName}</p>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 22 }}>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: C.text2, display: "block", marginBottom: 6 }}>Date</label>
+                          <input type="date" value={schedDate} onChange={e => setSchedDate(e.target.value)}
+                            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, color: C.text, background: C.bg, outline: "none", boxSizing: "border-box" }}/>
+                        </div>
+                        <div>
+                          <label style={{ fontSize: 12, fontWeight: 700, color: C.text2, display: "block", marginBottom: 6 }}>Vendor <span style={{ fontWeight: 400, color: C.text3 }}>(optional)</span></label>
+                          <input type="text" value={schedVendor} onChange={e => setSchedVendor(e.target.value)}
+                            placeholder="e.g. ABC HVAC Services"
+                            style={{ width: "100%", padding: "10px 12px", borderRadius: 10, border: `1px solid ${C.border}`, fontSize: 14, color: C.text, background: C.bg, outline: "none", boxSizing: "border-box" }}/>
+                          {/* Home Team suggestion — show when vendor field was auto-filled from saved contacts */}
+                          {(() => {
+                            const taskSystem = MAINT_TASKS.find(t => t.id === scheduleModal.taskId)?.system ?? "";
+                            const trusted = findTrustedVendor(taskSystem);
+                            if (!trusted) return null;
+                            const trustedDisplay = trusted.company ?? trusted.name;
+                            return (
+                              <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8, padding: "8px 10px", borderRadius: 8, background: "#f0f9ff", border: "1px solid #bae6fd" }}>
+                                <Users size={12} color="#0369a1"/>
+                                <span style={{ fontSize: 12, color: "#0369a1", flex: 1 }}>
+                                  <strong>Your Home Team:</strong> {trustedDisplay}
+                                  {trusted.phone && <span style={{ color: "#0284c7" }}> · {trusted.phone}</span>}
+                                </span>
+                                {schedVendor !== trustedDisplay && (
+                                  <button onClick={() => setSchedVendor(trustedDisplay)}
+                                    style={{ fontSize: 11, fontWeight: 700, color: "#0284c7", background: "none", border: "none", cursor: "pointer", padding: 0, whiteSpace: "nowrap" }}>
+                                    Use →
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })()}
+                        </div>
+                      </div>
+
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <button onClick={() => { if (schedDate) saveSchedule(scheduleModal.taskId, "scheduled"); }}
+                            disabled={!schedDate}
+                            style={{ flex: 1, padding: "11px", borderRadius: 10, border: `1px solid ${C.border}`, background: schedDate ? "#eff6ff" : C.surface2, color: schedDate ? "#2563eb" : C.text3, fontSize: 13, fontWeight: 700, cursor: schedDate ? "pointer" : "not-allowed" }}>
+                            📅 Scheduled
+                          </button>
+                          <button onClick={() => { if (schedDate) saveSchedule(scheduleModal.taskId, "booked"); }}
+                            disabled={!schedDate}
+                            style={{ flex: 1, padding: "11px", borderRadius: 10, border: `1px solid ${schedDate ? "#86efac" : C.border}`, background: schedDate ? "#f0fdf4" : C.surface2, color: schedDate ? "#16a34a" : C.text3, fontSize: 13, fontWeight: 700, cursor: schedDate ? "pointer" : "not-allowed" }}>
+                            ✓ Booked
+                          </button>
+                        </div>
+                        <button onClick={() => { toggleMaintTask(scheduleModal.taskId); clearSchedule(scheduleModal.taskId); setScheduleModal(null); }}
+                          style={{ padding: "11px", borderRadius: 10, border: `1px solid ${C.green}40`, background: C.greenBg, color: C.green, fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                          ✓ Mark as Done
+                        </button>
+                        {maintScheduled[scheduleModal.taskId] && (
+                          <button onClick={() => { clearSchedule(scheduleModal.taskId); setScheduleModal(null); }}
+                            style={{ padding: "9px", borderRadius: 10, border: `1px solid ${C.border}`, background: "white", color: C.text3, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                            Clear schedule
+                          </button>
+                        )}
+                        <button onClick={() => { handleFindVendors(MAINT_TRADE[MAINT_TASKS.find(t => t.id === scheduleModal.taskId)?.system ?? ""] ?? "General Contractor", scheduleModal.taskName, scheduleModal.taskName); setScheduleModal(null); }}
+                          style={{ padding: "9px", borderRadius: 10, border: `1px solid ${C.accent}30`, background: C.accentBg, color: C.accent, fontSize: 12, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 5 }}>
+                          <Users size={12}/> Find a Vendor First
+                        </button>
+                        <button onClick={() => setScheduleModal(null)}
+                          style={{ padding: "9px", borderRadius: 10, border: "none", background: "none", color: C.text3, fontSize: 12, cursor: "pointer" }}>
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
               </div>
             );
@@ -6607,23 +6681,42 @@ export default function Dashboard() {
             {(() => {
               const hour = new Date().getHours();
               const tod  = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
-              const firstName = user?.email
+              // Prefer name from auth metadata (set at signup), fall back to email prefix
+              const metaName: string = (user as any)?.user_metadata?.first_name
+                || (user as any)?.user_metadata?.full_name?.split(" ")[0]
+                || "";
+              const emailName = user?.email
                 ? user.email.split("@")[0].replace(/[._+-].*/, "").replace(/^(.)/, c => c.toUpperCase())
                 : "";
+              const firstName = metaName || emailName;
               const shortAddr = address && address !== "My Home"
                 ? toTitleCase(address).split(",")[0]
                 : null;
-              const lastUpd = inspectionResult?.inspection_date
-                ? `Last updated ${new Date(inspectionResult.inspection_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                : inspectDone ? "Last updated today" : "Add your home data to get started";
+              // Guard against null / invalid inspection_date values
+              const rawInspDate = inspectionResult?.inspection_date;
+              const parsedInspDate = rawInspDate ? new Date(rawInspDate + "T12:00:00") : null;
+              const validInspDate = parsedInspDate && !isNaN(parsedInspDate.getTime()) ? parsedInspDate : null;
+              const lastUpd = validInspDate
+                ? `Last updated ${validInspDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                : inspectDone ? "Last updated recently" : "Add your home data to get started";
               return (
-                <div style={{ background: C.navy, borderRadius: 16, padding: isMobile ? "18px 20px" : "22px 28px" }}>
-                  <p style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, color: "white", margin: "0 0 4px", letterSpacing: "-0.3px" }}>
-                    Good {tod}{firstName ? <>, <strong>{firstName}.</strong></> : "."}
-                  </p>
-                  <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0 }}>
-                    {shortAddr ?? "Your Home"}{" · "}{lastUpd}
-                  </p>
+                <div style={{ background: customTheme.bgImage ? `url(${customTheme.bgImage}) center/cover no-repeat` : themeNavy, borderRadius: 16, padding: isMobile ? "18px 20px" : "22px 28px", position: "relative", overflow: "hidden" }}>
+                  {customTheme.bgImage && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.50)", borderRadius: 16, pointerEvents: "none" }}/>}
+                  <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                    <div>
+                      <p style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, color: "white", margin: "0 0 4px", letterSpacing: "-0.3px" }}>
+                        Good {tod}{firstName ? <>, <strong>{firstName}.</strong></> : "."}
+                      </p>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0 }}>
+                        {shortAddr ?? "Your Home"}{" · "}{lastUpd}
+                      </p>
+                    </div>
+                    {/* Customize button */}
+                    <button onClick={e => { e.stopPropagation(); setDraftAccent(customTheme.accent ?? C.accent); setDraftNavy(customTheme.navy ?? C.navy); setDraftBgImg(customTheme.bgImage ?? ""); setShowCustomize(true); }}
+                      style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 20, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer", backdropFilter: "blur(4px)" }}>
+                      <Settings size={12}/> Customize
+                    </button>
+                  </div>
                 </div>
               );
             })()}
@@ -6717,7 +6810,7 @@ export default function Dashboard() {
 
             {/* ── TOP TWO-COLUMN LAYOUT ─────────────────────────────── */}
             <div style={{ display: isMobile ? "flex" : "grid", flexDirection: "column",
-              gridTemplateColumns: "1fr 300px", gap: 16, alignItems: "start" }}>
+              gridTemplateColumns: "1fr 380px", gap: 16, alignItems: "start" }}>
 
             {/* LEFT: Health Score Card */}
             {(inspectDone || roofYear || hvacYear) ? (
@@ -6780,9 +6873,12 @@ export default function Dashboard() {
                         Full Breakdown
                       </div>
                       <span style={{ fontSize: 11, color: C.text3 }}>
-                        {inspectionResult?.inspection_date
-                          ? `Last updated ${new Date(inspectionResult.inspection_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                          : "Last updated today"}
+                        {(() => {
+                          const d = inspectionResult?.inspection_date ? new Date(inspectionResult.inspection_date + "T12:00:00") : null;
+                          return d && !isNaN(d.getTime())
+                            ? `Last updated ${d.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                            : "Last updated recently";
+                        })()}
                       </span>
                     </div>
                   )}
@@ -7048,9 +7144,13 @@ export default function Dashboard() {
                     <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>
                       {userTier === "pro"
                         ? `Last inspection is ${homeHealthReport.decay.label.toLowerCase()} — schedule with a certified BTLR inspector to stay verified`
-                        : inspectionResult?.inspection_date
-                          ? `Last inspected ${new Date(inspectionResult.inspection_date + "T12:00:00").toLocaleDateString("en-US", { month: "long", year: "numeric" })} — answer a quick 7-step check-in to refresh your score`
-                          : "Answer a quick 7-step check-in to refresh your score"}
+                        : (() => {
+                            const d = inspectionResult?.inspection_date ? new Date(inspectionResult.inspection_date + "T12:00:00") : null;
+                            const validD = d && !isNaN(d.getTime()) ? d : null;
+                            return validD
+                              ? `Last inspected ${validD.toLocaleDateString("en-US", { month: "long", year: "numeric" })} — answer a quick 7-step check-in to refresh your score`
+                              : "Answer a quick 7-step check-in to refresh your score";
+                          })()}
                     </p>
                   </div>
                 </div>
