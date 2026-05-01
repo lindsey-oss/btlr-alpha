@@ -10,7 +10,7 @@ import {
   LogOut, User, MapPin, Link as LinkIcon, TrendingDown, Briefcase,
   DollarSign, Shield, Zap, Droplets, Wind, Eye, Bug,
   ExternalLink, ArrowRight, BarChart3, Clock, TrendingUp,
-  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera, Phone, Mail, Trash2, RefreshCw,
+  Mic, MicOff, Volume2, VolumeX, Check, Plus, PiggyBank, Camera, Phone, Mail, Trash2, RefreshCw, Download,
 } from "lucide-react";
 import { phCapture, phIdentify, phReset } from "../../lib/monitoring";
 import VendorsView from "../components/VendorsView";
@@ -2379,7 +2379,8 @@ export default function Dashboard() {
   const [parsingWarranty, setParsingWarranty]     = useState(false);
   const [warrantyError, setWarrantyError]         = useState<string | null>(null);
   const [showWarrantyDetail, setShowWarrantyDetail] = useState(false);
-  const [openDocSection, setOpenDocSection] = useState<string | null>(null);
+  const [openDocSection, setOpenDocSection]     = useState<string | null>(null);
+  const [generatingReport, setGeneratingReport] = useState(false);
   const [monthlyContribution, setMonthlyContribution] = useState<number>(0);
   const [smartSaveMode, setSmartSaveMode] = useState(false);
   const [editingContribution, setEditingContribution] = useState(false);
@@ -3618,6 +3619,100 @@ export default function Dashboard() {
     } catch (err: unknown) { console.error(err); }
     setMortgageStatLoading(false);
     if (mortgageStatRef.current) mortgageStatRef.current.value = "";
+  }
+
+  function generateHomeReport() {
+    setGeneratingReport(true);
+    try {
+      const generatedOn = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
+      const score = homeHealthReport?.overall_score ?? inspectionResult?.home_health_score ?? null;
+      const criticals = allFindings.filter(f => f.severity === "critical" && !completedFindings.includes(f));
+      const warnings  = allFindings.filter(f => f.severity === "warning"  && !completedFindings.includes(f));
+      const resolved  = completedFindings;
+      const fmt$ = (n: number) => n >= 1000 ? `$${(n/1000).toFixed(0)}k` : `$${Math.round(n).toLocaleString()}`;
+
+      const severityBadge = (sev: string) => {
+        if (sev === "critical") return `<span style="background:#fee2e2;color:#dc2626;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">High Priority</span>`;
+        if (sev === "warning")  return `<span style="background:#fef3c7;color:#d97706;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">Plan Ahead</span>`;
+        return `<span style="background:#f1f5f9;color:#64748b;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">Monitor</span>`;
+      };
+
+      const findingRows = (findings: typeof allFindings) => findings.map(f => {
+        const sysKey = ({structural:"structure_foundation",foundation:"structure_foundation",structure_foundation:"structure_foundation",roof:"roof_drainage_exterior",roof_drainage_exterior:"roof_drainage_exterior",electrical:"electrical",plumbing:"plumbing",hvac:"hvac",appliances:"appliances_water_heater",appliances_water_heater:"appliances_water_heater",interior:"interior_windows_doors",safety:"safety_environmental",safety_environmental:"safety_environmental",exterior:"site_grading_drainage",site_grading_drainage:"site_grading_drainage"} as Record<string,string>)[f.category?.toLowerCase() ?? ""] ?? null;
+        const repType = f.severity === "critical" ? "major_repair" : "minor_repair";
+        const range = sysKey ? regionalRanges?.[sysKey]?.[repType] : null;
+        const costStr = range
+          ? `${fmt$(range.estimated_cost_min)}–${fmt$(range.estimated_cost_max)}${regionalLocation?.city ? ` (${regionalLocation.city} regional est.)` : ""}`
+          : f.estimated_cost ? `~$${f.estimated_cost.toLocaleString()}` : "—";
+        return `
+          <div style="margin-bottom:18px;padding:14px 16px;border:1px solid #e2e8f0;border-left:4px solid ${f.severity==="critical"?"#dc2626":"#d97706"};border-radius:6px;background:#fff">
+            <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12;margin-bottom:6px">
+              <div>
+                <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#94a3b8">${categoryLabel(f.category ?? "General")}</span>
+                <p style="font-size:15px;font-weight:700;color:#0f172a;margin:3px 0 0">${f.title || f.issue_type || "Issue"}</p>
+              </div>
+              ${severityBadge(f.severity ?? "warning")}
+            </div>
+            ${f.description ? `<p style="font-size:13px;color:#475569;margin:6px 0;line-height:1.55">${f.description}</p>` : ""}
+            <p style="font-size:12px;color:#94a3b8;margin:6px 0 0">Estimated repair cost: <strong style="color:#0f172a">${costStr}</strong></p>
+          </div>`;
+      }).join("");
+
+      const html = `<!DOCTYPE html>
+<html><head><meta charset="UTF-8">
+<title>BTLR Home Report — ${address}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif; color: #0f172a; margin: 0; padding: 40px; background: #fff; max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 28px; font-weight: 900; letter-spacing: -0.5px; margin: 0 0 4px; }
+  h2 { font-size: 16px; font-weight: 800; color: #0f172a; margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 2px solid #f1f5f9; text-transform: uppercase; letter-spacing: 0.06em; }
+  @media print { body { padding: 20px; } }
+</style>
+</head><body>
+
+  <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:24px">
+    <div>
+      <p style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#E8742A;margin:0 0 6px">BTLR Home Report</p>
+      <h1>${address || "Home Report"}</h1>
+      <p style="font-size:13px;color:#94a3b8;margin:4px 0 0">Generated ${generatedOn}</p>
+    </div>
+    ${score !== null ? `<div style="text-align:center;padding:16px 20px;background:#0f1f3d;border-radius:12px;color:white"><p style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:rgba(255,255,255,0.5);margin:0 0 4px">Home Health</p><p style="font-size:36px;font-weight:900;margin:0;letter-spacing:-2px">${score}</p><p style="font-size:11px;color:rgba(255,255,255,0.4);margin:2px 0 0">out of 100</p></div>` : ""}
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:32px">
+    <div style="background:#fee2e2;border-radius:8px;padding:14px 16px"><p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#dc2626;margin:0 0 4px">High Priority</p><p style="font-size:24px;font-weight:900;color:#dc2626;margin:0">${criticals.length}</p></div>
+    <div style="background:#fef3c7;border-radius:8px;padding:14px 16px"><p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#d97706;margin:0 0 4px">Plan Ahead</p><p style="font-size:24px;font-weight:900;color:#d97706;margin:0">${warnings.length}</p></div>
+    <div style="background:#f0fdf4;border-radius:8px;padding:14px 16px"><p style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#16a34a;margin:0 0 4px">Resolved</p><p style="font-size:24px;font-weight:900;color:#16a34a;margin:0">${resolved.length}</p></div>
+  </div>
+
+  ${criticals.length > 0 ? `<h2 style="color:#dc2626">High Priority Items (${criticals.length})</h2>${findingRows(criticals)}` : ""}
+  ${warnings.length  > 0 ? `<h2 style="color:#d97706">Plan Ahead — Recommended Repairs (${warnings.length})</h2>${findingRows(warnings)}` : ""}
+  ${resolved.length  > 0 ? `
+    <h2 style="color:#16a34a">Resolved / Completed (${resolved.length})</h2>
+    ${resolved.map(f => `<div style="margin-bottom:10px;padding:10px 14px;border:1px solid #bbf7d0;border-radius:6px;background:#f0fdf4;display:flex;gap:10px;align-items:flex-start">
+      <span style="color:#16a34a;font-weight:900;flex-shrink:0">✓</span>
+      <div><p style="font-size:13px;font-weight:700;color:#15803d;margin:0">${f.title || f.issue_type || "Issue"}</p><p style="font-size:12px;color:#166534;margin:2px 0 0">${categoryLabel(f.category ?? "General")}</p></div>
+    </div>`).join("")}
+  ` : ""}
+
+  <h2>Disclosure Notes</h2>
+  <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:16px 18px;font-size:13px;color:#475569;line-height:1.65">
+    <p style="margin:0 0 8px">This report was generated by BTLR based on available home inspection data${inspectionResult?.inspection_date ? ` dated ${inspectionResult.inspection_date}` : ""}. Cost estimates are regional approximations${regionalLocation?.city ? ` for the ${regionalLocation.city} market` : ""} and may vary based on specific conditions, contractor availability, and scope of work.</p>
+    <p style="margin:0">Items listed as "High Priority" represent findings that may affect habitability, safety, or structural integrity. Items listed as "Plan Ahead" represent deferred maintenance or recommended improvements. All estimates should be verified by licensed contractors prior to purchase or sale decisions.</p>
+  </div>
+
+  <p style="margin-top:32px;font-size:11px;color:#cbd5e1;text-align:center">Generated by BTLR — Your Home, Managed · btlr.io</p>
+</body></html>`;
+
+      const win = window.open("", "_blank");
+      if (win) {
+        win.document.write(html);
+        win.document.close();
+        setTimeout(() => win.print(), 400);
+      }
+    } finally {
+      setGeneratingReport(false);
+    }
   }
 
   async function saveProfileName() {
@@ -6483,8 +6578,77 @@ export default function Dashboard() {
               },
             ];
 
+            // Summary counts for the report card
+            const reportFindings     = inspectionResult?.findings ?? [];
+            const reportCritical     = reportFindings.filter(f => f.severity === "critical").length;
+            const reportWarnings     = reportFindings.filter(f => f.severity === "warning").length;
+            const reportResolved     = Object.values(findingStatuses).filter(s => s === "completed").length;
+            const reportMaintDone    = doneTasks.size;
+            const hasReportData      = reportFindings.length > 0 || reportResolved > 0;
+
             return (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+              {/* ── Generate Full Home Report ─────────────────────────── */}
+              <div style={{ ...card({ padding: "20px 22px" }), background: themeNavy, color: "white" }}>
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                      <FileText size={18} color="rgba(255,255,255,0.85)"/>
+                      <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "white" }}>Full Home Report</p>
+                    </div>
+                    <p style={{ margin: "0 0 10px", fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>
+                      Compile all repairs, maintenance, and system data into a printable report — useful for selling disclosures, buyer negotiations, or briefing contractors.
+                    </p>
+                    {hasReportData && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                        {reportCritical > 0 && (
+                          <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(220,38,38,0.25)", color: "#fca5a5", borderRadius: 20, padding: "3px 10px" }}>
+                            {reportCritical} critical
+                          </span>
+                        )}
+                        {reportWarnings > 0 && (
+                          <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(217,119,6,0.25)", color: "#fcd34d", borderRadius: 20, padding: "3px 10px" }}>
+                            {reportWarnings} warnings
+                          </span>
+                        )}
+                        {reportResolved > 0 && (
+                          <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(22,163,74,0.25)", color: "#86efac", borderRadius: 20, padding: "3px 10px" }}>
+                            {reportResolved} resolved
+                          </span>
+                        )}
+                        {reportMaintDone > 0 && (
+                          <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.75)", borderRadius: 20, padding: "3px 10px" }}>
+                            {reportMaintDone} maintenance tasks done
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {!hasReportData && (
+                      <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
+                        Upload an inspection report to include findings.
+                      </p>
+                    )}
+                  </div>
+                  <button
+                    onClick={generateHomeReport}
+                    disabled={generatingReport}
+                    style={{
+                      flexShrink: 0, padding: "11px 20px", borderRadius: 12,
+                      background: generatingReport ? "rgba(255,255,255,0.1)" : "white",
+                      color: generatingReport ? "rgba(255,255,255,0.4)" : themeNavy,
+                      border: "none", fontWeight: 700, fontSize: 13,
+                      cursor: generatingReport ? "not-allowed" : "pointer",
+                      display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
+                    }}
+                  >
+                    {generatingReport
+                      ? <><span className="animate-spin" style={{ display: "inline-block" }}>⟳</span> Generating…</>
+                      : <><Download size={14}/> Generate Report</>
+                    }
+                  </button>
+                </div>
+              </div>
 
               {/* Accordion card */}
               <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
