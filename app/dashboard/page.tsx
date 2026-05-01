@@ -1844,7 +1844,7 @@ function RepairCompleteModal({
               <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 8, border: `1px dashed ${C.border}`, cursor: "pointer", background: C.bg }}>
                 <CloudUpload size={14} color={C.text3}/>
                 <span style={{ fontSize: 13, color: C.text3 }}>Upload receipt or invoice</span>
-                <input ref={fileRef} type="file" style={{ display: "none" }} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" onChange={e => { const f = e.target.files?.[0]; if (f) setReceiptFile(f); }}/>
+                <input ref={fileRef} type="file" style={{ display: "none" }} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" capture="environment" onChange={e => { const f = e.target.files?.[0]; if (f) setReceiptFile(f); }}/>
               </label>
             )}
           </div>
@@ -7229,7 +7229,7 @@ export default function Dashboard() {
                                 ? <><Loader2 size={20} color={C.green} className="animate-spin"/><span style={{ fontSize: 14, color: C.green }}>Parsing repair document…</span></>
                                 : <><CheckCircle2 size={20} color={C.green}/><span style={{ fontSize: 14, color: C.text }}>Upload invoice, receipt, or contractor report</span><span style={{ fontSize: 12, color: C.text3 }}>PDF, image, or document</span></>
                               }
-                              <input ref={repairRef} type="file" style={{ display: "none" }} onChange={uploadRepairDoc} disabled={uploadingRepair} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"/>
+                              <input ref={repairRef} type="file" style={{ display: "none" }} onChange={uploadRepairDoc} disabled={uploadingRepair} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" capture="environment"/>
                             </label>
                             {repairDocs.length > 0 && (
                               <div style={{ marginTop: 16 }}>
@@ -7272,7 +7272,7 @@ export default function Dashboard() {
                             <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>Warranties, permits, HOA docs, and other property files.</p>
                             <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${docLoading ? C.accent : C.border}`, background: docLoading ? C.accentBg : C.bg }}>
                               {docLoading ? <><Loader2 size={20} color={C.accent} className="animate-spin"/><span style={{ fontSize: 14, color: C.accent }}>Uploading…</span></> : <><CloudUpload size={20} color={C.text3}/><span style={{ fontSize: 14, color: C.text }}>Click to upload file</span></>}
-                              <input ref={docRef} type="file" style={{ display: "none" }} onChange={uploadDoc} disabled={docLoading}/>
+                              <input ref={docRef} type="file" style={{ display: "none" }} onChange={uploadDoc} disabled={docLoading} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" capture="environment"/>
                             </label>
                             {docs.length > 0 && (
                               <div style={{ marginTop: 14 }}>
@@ -7748,7 +7748,7 @@ export default function Dashboard() {
                   daysUntilNext = t.freqDays - daysSince;
                   nextDueDate = new Date(lastMs + t.freqDays * 86400000);
                 }
-                let status: "overdue" | "due-soon" | "scheduled" | "done" = "scheduled";
+                let status: "overdue" | "due-soon" | "scheduled" | "done" | "upcoming" = "upcoming";
                 if (lastDone) {
                   if (daysUntilNext < 0) status = "overdue";
                   else if (daysUntilNext <= 14) status = "due-soon";
@@ -7781,6 +7781,7 @@ export default function Dashboard() {
                         t.status === "overdue"   ? { label: "Overdue",   bg: C.redBg,   color: C.red,     border: `${C.red}40` } :
                         t.status === "due-soon"  ? { label: "Due Soon",  bg: C.amberBg, color: C.amber,   border: `${C.amber}40` } :
                         t.status === "done"      ? { label: "Booked",    bg: C.greenBg, color: C.green,   border: `${C.green}40` } :
+                        t.status === "upcoming"  ? { label: "Planned",   bg: C.surface2, color: C.text3,  border: C.border } :
                                                    { label: "Scheduled", bg: "#eff6ff",  color: "#2563eb", border: "#bfdbfe" };
                       return (
                         <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 0",
@@ -7866,10 +7867,6 @@ export default function Dashboard() {
                 )}
               </div>
             )}
-
-            {/* Street View — directly under home score */}
-            <HousePhoto address={toTitleCase(address)} height={isMobile ? 140 : 200} />
-
 
             {/* ── AI BUTLER ─────────────────────────────────────────── */}
             <div style={{ ...card(), background: C.surface, border: `1px solid ${C.border}`, padding: 0, overflow: "hidden" }}>
@@ -8144,7 +8141,21 @@ export default function Dashboard() {
               `}</style>
             </div>
 
-            {/* Roof + HVAC status row — removed, shown in health score card and repairs */}
+            {/* ── Property Card ─────────────────────────────────────── */}
+            <div style={{ ...card(), padding: 0, overflow: "hidden" }}>
+              {/* Label row */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px 0" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.text3 }}>Your Property</span>
+                {address && address !== "My Home" && (
+                  <span style={{ fontSize: 11, color: C.text3, display: "flex", alignItems: "center", gap: 4 }}>
+                    <MapPin size={10}/>{toTitleCase(address).split(",")[0]}
+                  </span>
+                )}
+              </div>
+              <div style={{ padding: "10px 0 0" }}>
+                <HousePhoto address={toTitleCase(address)} height={isMobile ? 130 : 170} />
+              </div>
+            </div>
 
             {/* Financial row */}
             <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 14 }}>
