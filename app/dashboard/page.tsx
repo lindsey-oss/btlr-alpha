@@ -8003,7 +8003,7 @@ export default function Dashboard() {
                     <div style={{ background: "white", padding: "16px 22px 20px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
                     {mortgage && !showMortgageForm ? (
                       <>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 14 }}>
                           {mortgage.rate && (
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
                               <span style={{ fontSize: 12, color: C.text3 }}>Rate</span>
@@ -8019,11 +8019,11 @@ export default function Dashboard() {
                           {mortgage.payment && mortgage.due_day && (
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
                               <span style={{ fontSize: 12, color: C.text3 }}>Next payment</span>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: C.accent }}>${mortgage.payment.toLocaleString()} · Day {dueDay}</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: C.accent }}>${mortgage.payment.toLocaleString()} · {dueDateLabel}</span>
                             </div>
                           )}
                         </div>
-                        <button style={{ width: "100%", padding: "10px", borderRadius: 10, background: C.navy, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                        <button style={{ width: "100%", padding: "11px", borderRadius: 10, background: "linear-gradient(135deg, #1C2B3A 0%, #2A3E54 100%)", border: "1px solid rgba(255,255,255,0.08)", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
                           Make Payment
                         </button>
                       </>
@@ -8126,7 +8126,7 @@ export default function Dashboard() {
                 <div style={{ background: "white", padding: "16px 22px 20px" }}>
                 {insurance ? (
                   <>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 14 }}>
                       {insurance.policyNumber && (
                         <div style={{ display: "flex", justifyContent: "space-between" }}>
                           <span style={{ fontSize: 12, color: C.text3 }}>Policy #</span>
@@ -8393,25 +8393,26 @@ export default function Dashboard() {
                   <>
                     {warranty.expirationDate && (() => {
                       const days = Math.round((new Date(warranty.expirationDate).getTime() - Date.now()) / 86400000);
-                      return (
-                        <p style={{ fontSize: 28, fontWeight: 800, color: "white", letterSpacing: "-0.5px", margin: "0 0 6px", lineHeight: 1 }}>
-                          Expires {warranty.expirationDate}
-                        </p>
-                      );
-                    })()}
-                    {warranty.expirationDate && (() => {
-                      const days = Math.round((new Date(warranty.expirationDate).getTime() - Date.now()) / 86400000);
                       const isExpiringSoon = days <= 60;
+                      const expLabel = new Date(warranty.expirationDate).toLocaleDateString("en-US", { month: "short", year: "numeric" });
                       return (
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20,
-                          background: isExpiringSoon ? "rgba(251,191,36,0.2)" : "rgba(255,255,255,0.1)",
-                          border: isExpiringSoon ? "1px solid rgba(251,191,36,0.4)" : "1px solid rgba(255,255,255,0.15)" }}>
-                          <span style={{ fontSize: 12, color: isExpiringSoon ? "#fbbf24" : "rgba(255,255,255,0.6)" }}>
-                            {isExpiringSoon ? `⚠ Renewal needed soon` : `${Math.round(days / 30)}mo remaining`}
-                          </span>
-                        </div>
+                        <>
+                          <p style={{ fontSize: 36, fontWeight: 800, color: "white", letterSpacing: "-1px", margin: "0 0 8px", lineHeight: 1 }}>
+                            Expires {expLabel}
+                          </p>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20,
+                            background: isExpiringSoon ? "rgba(251,191,36,0.2)" : "rgba(255,255,255,0.1)",
+                            border: `1px solid ${isExpiringSoon ? "rgba(251,191,36,0.4)" : "rgba(255,255,255,0.15)"}` }}>
+                            <span style={{ fontSize: 12, color: isExpiringSoon ? "#fbbf24" : "rgba(255,255,255,0.6)" }}>
+                              {isExpiringSoon ? "⚠ Renewal needed soon" : `${Math.round(days / 30)} months remaining`}
+                            </span>
+                          </div>
+                        </>
                       );
                     })()}
+                    {!warranty.expirationDate && (
+                      <p style={{ fontSize: 20, fontWeight: 700, color: "white", margin: 0 }}>{warranty.planName ?? "Active"}</p>
+                    )}
                   </>
                 ) : (
                   <p style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.4)", margin: 0 }}>No warranty on file</p>
@@ -8421,27 +8422,25 @@ export default function Dashboard() {
                 <div style={{ background: "white", padding: "16px 22px 20px" }}>
                 {warranty ? (
                   <>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
-                      <div style={{ display: "flex", justifyContent: "space-between" }}>
-                        <span style={{ fontSize: 12, color: C.text3 }}>Plan</span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{warranty.planName ?? "—"}</span>
-                      </div>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 14 }}>
+                      {warranty.planName && (
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 12, color: C.text3 }}>Plan</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{warranty.planName}</span>
+                        </div>
+                      )}
+                      {(warranty.coverageItems?.length ?? 0) > 0 && (
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                          <span style={{ fontSize: 12, color: C.text3, flexShrink: 0 }}>Covers</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text, textAlign: "right" }}>{warranty.coverageItems!.slice(0, 3).join(", ")}{warranty.coverageItems!.length > 3 ? ` +${warranty.coverageItems!.length - 3} more` : ""}</span>
+                        </div>
+                      )}
                       {warranty.serviceFee && (
                         <div style={{ display: "flex", justifyContent: "space-between" }}>
-                          <span style={{ fontSize: 12, color: C.text3 }}>Service Fee</span>
+                          <span style={{ fontSize: 12, color: C.text3 }}>Service fee</span>
                           <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>${warranty.serviceFee}/claim</span>
                         </div>
                       )}
-                      {warranty.expirationDate && (() => {
-                        const days = Math.round((new Date(warranty.expirationDate).getTime() - Date.now()) / 86400000);
-                        const color = days <= 0 ? C.red : days < 60 ? C.amber : C.text;
-                        return (
-                          <div style={{ display: "flex", justifyContent: "space-between" }}>
-                            <span style={{ fontSize: 12, color: C.text3 }}>Status</span>
-                            <span style={{ fontSize: 12, fontWeight: 600, color }}>{days <= 0 ? "Expired" : days < 60 ? `Expires in ${days}d` : "Active"}</span>
-                          </div>
-                        );
-                      })()}
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {warranty.claimUrl && (
