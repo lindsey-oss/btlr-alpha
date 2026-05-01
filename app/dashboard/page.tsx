@@ -2254,6 +2254,8 @@ export default function Dashboard() {
     company_name?: string;
   } | null>(null);
   const [homeHealthReport, setHomeHealthReport] = useState<HomeHealthReport | null>(null);
+  const [regionalRanges,  setRegionalRanges]    = useState<Record<string, Record<string, { estimated_cost_min: number; estimated_cost_max: number }>> | null>(null);
+  const [regionalLocation, setRegionalLocation] = useState<{ city?: string; state?: string } | null>(null);
 
   // Photo analysis (upload UI removed; state kept for backward-compat with saved data)
   const [photoFindings, setPhotoFindings]       = useState<Finding[]>([]);
@@ -3340,6 +3342,8 @@ export default function Dashboard() {
       if (cachedRanges?.ranges) {
         // Apply cached ranges immediately — scoring engine uses them on next run
         registerCostOverrides(cachedRanges.ranges);
+        setRegionalRanges(cachedRanges.ranges);
+        setRegionalLocation(cachedRanges.location ?? null);
         console.log(`[loadProperty] Regional cost ranges loaded (${cachedRanges.location?.city ?? "unknown"}, source: cached)`);
       }
 
@@ -3358,6 +3362,8 @@ export default function Dashboard() {
               const fresh = await res.json();
               if (fresh?.ranges) {
                 registerCostOverrides(fresh.ranges);
+                setRegionalRanges(fresh.ranges);
+                setRegionalLocation(fresh.location ?? null);
                 console.log(`[loadProperty] Regional cost ranges refreshed (${fresh.location?.city ?? "unknown"}, ${fresh.location?.state ?? ""})`);
               }
             } else {
@@ -5558,9 +5564,19 @@ export default function Dashboard() {
 
                       {/* ── Near-term priority ── */}
                       {repUrgentTotal > 0 && (
-                        <div style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.3)", borderRadius: 12, padding: "10px 14px", marginBottom: 10 }}>
-                          <p style={{ margin: 0, fontSize: 12, fontWeight: 700, color: "#fca5a5", letterSpacing: "0.05em", textTransform: "uppercase" }}>Needs attention this year</p>
-                          <p style={{ margin: "2px 0 0", fontSize: 22, fontWeight: 800, color: "white", letterSpacing: "-0.5px" }}>{repFmt(repUrgentTotal)}</p>
+                        <div style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.12)", borderRadius: 12, padding: "10px 14px", marginBottom: 10 }}>
+                          <p style={{ margin: 0, fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Priority repairs if addressed</p>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginTop: 3 }}>
+                            <p style={{ margin: 0, fontSize: 20, fontWeight: 800, color: "white", letterSpacing: "-0.5px" }}>
+                              {repFmt(repUrgentPreds.reduce((s,p) => s + p.cost_range.estimated_cost_min, 0))}–{repFmt(repUrgentPreds.reduce((s,p) => s + p.cost_range.estimated_cost_max, 0))}
+                            </p>
+                            {regionalLocation?.city && (
+                              <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 500 }}>est. for {regionalLocation.city}</span>
+                            )}
+                          </div>
+                          <p style={{ margin: "4px 0 0", fontSize: 11, color: "rgba(255,255,255,0.4)", lineHeight: 1.4 }}>
+                            Spread over time — not all due immediately.
+                          </p>
                         </div>
                       )}
 
@@ -5709,12 +5725,43 @@ export default function Dashboard() {
                                     )}
                                     {/* Bottom row: cost + single impact indicator + action buttons */}
                                     <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6, flexWrap: "wrap" }}>
-                                      {/* Cost */}
-                                      {f.estimated_cost != null && (
-                                        <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>
-                                          Est. ${f.estimated_cost.toLocaleString()}
-                                        </span>
-                                      )}
+                                      {/* Regional cost estimate */}
+                                      {(() => {
+                                        // Map finding category → regional ranges system key
+                                        const CAT_TO_SYS: Record<string, string> = {
+                                          structural: "structure_foundation", foundation: "structure_foundation",
+                                          structure_foundation: "structure_foundation",
+                                          roof: "roof_drainage_exterior", roof_drainage_exterior: "roof_drainage_exterior",
+                                          electrical: "electrical",
+                                          plumbing: "plumbing",
+                                          hvac: "hvac",
+                                          appliances: "appliances_water_heater", appliances_water_heater: "appliances_water_heater",
+                                          interior: "interior_windows_doors", windows: "interior_windows_doors", interior_windows_doors: "interior_windows_doors",
+                                          safety: "safety_environmental", safety_environmental: "safety_environmental", environmental: "safety_environmental",
+                                          exterior: "site_grading_drainage", site_grading_drainage: "site_grading_drainage", drainage: "site_grading_drainage",
+                                        };
+                                        const SEV_TO_TYPE: Record<string, string> = {
+                                          critical: "major_repair", warning: "minor_repair", info: "maintenance",
+                                        };
+                                        const sysKey = CAT_TO_SYS[f.category?.toLowerCase() ?? ""] ?? null;
+                                        const repType = SEV_TO_TYPE[f.severity ?? "warning"] ?? "minor_repair";
+                                        const range = sysKey ? regionalRanges?.[sysKey]?.[repType] : null;
+                                        if (!range && f.estimated_cost == null) return null;
+                                        const fmt = (n: number) => n >= 1000 ? `$${(n/1000).toFixed(0)}k` : `$${n.toLocaleString()}`;
+                                        if (range) {
+                                          return (
+                                            <span style={{ fontSize: 11, fontWeight: 600, color: C.text3, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                              📍 {fmt(range.estimated_cost_min)}–{fmt(range.estimated_cost_max)}
+                                              {regionalLocation?.city && <span style={{ color: C.text3, fontWeight: 400 }}> in {regionalLocation.city}</span>}
+                                            </span>
+                                          );
+                                        }
+                                        return (
+                                          <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>
+                                            Est. ${f.estimated_cost!.toLocaleString()}
+                                          </span>
+                                        );
+                                      })()}
                                       {/* Single impact indicator — active repairs only */}
                                       {!isResolved && impact.affects && (
                                         <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 10px", borderRadius: 20, background: impact.color + "14", color: impact.color }}>
