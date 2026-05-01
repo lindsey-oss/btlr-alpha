@@ -39,7 +39,6 @@ export default function ApplyPage() {
   return (
     <div style={{ minHeight: "100vh", background: C.bg, fontFamily: INTER, color: C.text }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;600&family=Outfit:wght@300;700;800&family=Syne:wght@600;700;800&display=swap');
         @media(max-width:768px){
           .apply-nav-label{display:none !important}
           .apply-hero{grid-template-columns:1fr !important;gap:40px !important;padding:80px 24px 56px !important}

@@ -9,8 +9,6 @@ const C = {
   surface: "#F7F2EC", border: "rgba(28,25,20,0.09)", borderGold: "rgba(44,95,138,0.22)",
   white:   "#FFFFFF", error: "#DC2626", success: "#15803D",
 };
-const DM   = "'DM Sans', sans-serif";
-const SYNE = "'Syne', sans-serif";
 
 const STATUS_META: Record<string, { label: string; color: string; bg: string }> = {
   draft:           { label: "Draft",           color: "#6B6558", bg: "#F7F2EC" },

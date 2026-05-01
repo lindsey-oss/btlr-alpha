@@ -8,7 +8,6 @@ const C = {
   surface: "#F7F2EC", border: "rgba(28,25,20,0.09)",
   white:   "#FFFFFF",
 };
-const DM = "'DM Sans', sans-serif";
 
 type App = {
   id: string;

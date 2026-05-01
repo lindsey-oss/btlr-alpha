@@ -1721,13 +1721,13 @@ function ScoreRing({ score, color, size = 130, textColor, trackColor, disableGlo
       />
       {/* Score number */}
       <text x={cx} y={cy - size * 0.04} textAnchor="middle" dominantBaseline="middle"
-        fill={numColor} fontSize={size * 0.28} fontWeight="800" fontFamily="'DM Sans', -apple-system, sans-serif"
+        fill={numColor} fontSize={size * 0.28} fontWeight="800" fontFamily="'Inter', -apple-system, sans-serif"
         style={{ letterSpacing: "-2px" }}>
         {score}
       </text>
       {/* /100 label */}
       <text x={cx} y={cy + size * 0.18} textAnchor="middle" dominantBaseline="middle"
-        fill={subColor} fontSize={size * 0.09} fontFamily="'DM Sans', -apple-system, sans-serif">
+        fill={subColor} fontSize={size * 0.09} fontFamily="'Inter', -apple-system, sans-serif">
         / 100
       </text>
     </svg>
@@ -3625,7 +3625,7 @@ export default function Dashboard() {
     setGeneratingReport(true);
     try {
       const generatedOn = new Date().toLocaleDateString("en-US", { year: "numeric", month: "long", day: "numeric" });
-      const score = homeHealthReport?.overall_score ?? inspectionResult?.home_health_score ?? null;
+      const score = homeHealthReport?.home_health_score ?? null;
       const criticals = allFindings.filter(f => f.severity === "critical" && !completedFindings.includes(f));
       const warnings  = allFindings.filter(f => f.severity === "warning"  && !completedFindings.includes(f));
       const resolved  = completedFindings;
@@ -5167,9 +5167,8 @@ export default function Dashboard() {
   ];
 
   return (
-    <div style={{ height: "100vh", overflow: "hidden", display: "flex", background: C.bg, fontFamily: "'DM Sans', 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+    <div style={{ height: "100vh", overflow: "hidden", display: "flex", background: C.bg, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
 
         /* ── Scrollbar ─────────────────────────────────────── */
         ::-webkit-scrollbar { width: 5px; height: 5px; }
