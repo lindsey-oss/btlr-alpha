@@ -8,9 +8,9 @@ const C = {
   surface: "#F7F2EC", surface2: "#EDE5D4", border: "rgba(28,25,20,0.09)",
   white:   "#FFFFFF", success: "#15803D",
 };
-const SYNE   = "'Syne', sans-serif";
-const OUTFIT = "'Outfit', sans-serif";
-const DM     = "'DM Sans', sans-serif";
+const INTER = "'Inter', sans-serif";
+// OUTFIT replaced by Inter
+// DM replaced by Inter
 
 const STEPS = [
   { icon: "✉", title: "Confirmation email sent", desc: "Check your inbox for a copy of your submission." },
@@ -39,10 +39,10 @@ export default function Confirmation() {
   }, []);
 
   return (
-    <div style={{ minHeight: "100vh", background: C.surface, fontFamily: DM }}>
+    <div style={{ minHeight: "100vh", background: C.surface, fontFamily: INTER }}>
       {/* Nav */}
       <nav style={{ background: C.navy, padding: "18px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <Link href="/" style={{ fontFamily: SYNE, fontSize: 18, fontWeight: 800, color: C.gold, letterSpacing: "0.14em", textDecoration: "none" }}>
+        <Link href="/" style={{ fontFamily: INTER, fontSize: 18, fontWeight: 800, color: C.gold, letterSpacing: "0.14em", textDecoration: "none" }}>
           BTLR
         </Link>
         <Link href="/" style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, textDecoration: "none" }}>
@@ -57,7 +57,7 @@ export default function Confirmation() {
           ✓
         </div>
 
-        <h1 style={{ fontFamily: SYNE, fontSize: 38, fontWeight: 800, color: C.text, margin: "0 0 16px", lineHeight: 1.15 }}>
+        <h1 style={{ fontFamily: INTER, fontSize: 38, fontWeight: 800, color: C.text, margin: "0 0 16px", lineHeight: 1.15 }}>
           Application Received
         </h1>
         {businessName && (
@@ -69,7 +69,7 @@ export default function Confirmation() {
 
         {/* What happens next */}
         <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 4, padding: "36px 32px", textAlign: "left", marginBottom: 48 }}>
-          <h2 style={{ fontFamily: SYNE, fontSize: 13, fontWeight: 800, color: C.gold, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 28px" }}>
+          <h2 style={{ fontFamily: INTER, fontSize: 13, fontWeight: 800, color: C.gold, letterSpacing: "0.12em", textTransform: "uppercase", margin: "0 0 28px" }}>
             What Happens Next
           </h2>
 
@@ -107,14 +107,14 @@ export default function Confirmation() {
         <div style={{ display: "flex", justifyContent: "center", gap: 16, flexWrap: "wrap" }}>
           <Link href="/" style={{
             padding: "14px 32px", background: C.navy, color: "#fff",
-            fontFamily: SYNE, fontWeight: 700, fontSize: 14, letterSpacing: "0.06em",
+            fontFamily: INTER, fontWeight: 700, fontSize: 14, letterSpacing: "0.06em",
             textDecoration: "none", borderRadius: 2,
           }}>
             Return to BTLR
           </Link>
           <Link href="/apply" style={{
             padding: "14px 32px", background: "transparent", color: C.gold,
-            fontFamily: SYNE, fontWeight: 700, fontSize: 14, letterSpacing: "0.06em",
+            fontFamily: INTER, fontWeight: 700, fontSize: 14, letterSpacing: "0.06em",
             textDecoration: "none", borderRadius: 2, border: `2px solid ${C.gold}`,
           }}>
             View Application Info

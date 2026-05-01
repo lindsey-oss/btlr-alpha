@@ -42,7 +42,7 @@ function Eyebrow({ children, center = false }: { children: React.ReactNode; cent
     <div style={{
       display: "flex", alignItems: "center", gap: 10,
       justifyContent: center ? "center" : "flex-start",
-      fontFamily: SYNE, fontSize: 11, fontWeight: 600,
+      fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600,
       letterSpacing: "0.22em", textTransform: "uppercase",
       color: C.gold, marginBottom: 18,
     }}>
@@ -88,8 +88,8 @@ function ScoreRing({ score = 84 }: { score?: number }) {
           style={{ transition: "stroke-dashoffset 1.6s cubic-bezier(.4,0,.2,1)" }}/>
       </svg>
       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-        <div style={{ fontFamily: SYNE, fontSize: 54, fontWeight: 800, color: C.text, lineHeight: 1 }}>{animated ? score : 0}</div>
-        <div style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: C.muted, marginTop: 4 }}>Health Score</div>
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 54, fontWeight: 800, color: C.text, lineHeight: 1 }}>{animated ? score : 0}</div>
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: C.muted, marginTop: 4 }}>Health Score</div>
       </div>
     </div>
   );
@@ -148,27 +148,27 @@ function VendorModal({ onClose }: { onClose: () => void }) {
             <div style={{ width: 56, height: 56, borderRadius: "50%", background: C.goldDim, display: "flex", alignItems: "center", justifyContent: "center", margin: "0 auto 20px" }}>
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke={C.gold} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
             </div>
-            <h2 style={{ fontFamily: SYNE, fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 10 }}>You&apos;re on the list!</h2>
-            <p style={{ fontFamily: DM, fontSize: 15, color: C.muted, lineHeight: 1.7 }}>
+            <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 10 }}>You&apos;re on the list!</h2>
+            <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 15, color: C.muted, lineHeight: 1.7 }}>
               We&apos;ll be in touch at <strong>{form.email}</strong> when your vendor profile is ready. We&apos;re onboarding contractors in your area soon.
             </p>
-            <button onClick={onClose} style={{ marginTop: 28, fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "14px 32px", background: C.gold, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>
+            <button onClick={onClose} style={{ marginTop: 28, fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "14px 32px", background: C.gold, color: "#fff", border: "none", borderRadius: 8, cursor: "pointer" }}>
               Close
             </button>
           </div>
         ) : step === "type" ? (
           <>
             <div style={{ marginBottom: 28 }}>
-              <div style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.gold, marginBottom: 10 }}>Join the Trusted Network</div>
-              <h2 style={{ fontFamily: SYNE, fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>What kind of contractor are you?</h2>
-              <p style={{ fontFamily: DM, fontSize: 14, color: C.muted, lineHeight: 1.6 }}>We match homeowners with pre-vetted local pros. Select your trade to get started.</p>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.gold, marginBottom: 10 }}>Join the Trusted Network</div>
+              <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>What kind of contractor are you?</h2>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.muted, lineHeight: 1.6 }}>We match homeowners with pre-vetted local pros. Select your trade to get started.</p>
             </div>
             <div className="vendor-type-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 24 }}>
               {VENDOR_TYPES.map(v => (
                 <button key={v} onClick={() => setSelected(v)} style={{
                   padding: "10px 14px", border: `1.5px solid ${selected === v ? C.gold : C.border}`,
                   borderRadius: 8, background: selected === v ? C.goldDim : "#fff",
-                  fontFamily: DM, fontSize: 13, color: selected === v ? C.gold : C.text,
+                  fontFamily: "'Inter', sans-serif", fontSize: 13, color: selected === v ? C.gold : C.text,
                   fontWeight: selected === v ? 600 : 400,
                   cursor: "pointer", textAlign: "left", transition: "all .15s",
                 }}>
@@ -177,7 +177,7 @@ function VendorModal({ onClose }: { onClose: () => void }) {
               ))}
             </div>
             <button onClick={() => selected && setStep("info")} style={{
-              width: "100%", padding: "14px", fontFamily: SYNE, fontSize: 12, fontWeight: 700,
+              width: "100%", padding: "14px", fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700,
               letterSpacing: "0.1em", textTransform: "uppercase", border: "none", borderRadius: 8,
               background: selected ? C.gold : C.surface2, color: selected ? "#fff" : C.dim,
               cursor: selected ? "pointer" : "default", transition: "background .2s",
@@ -188,9 +188,9 @@ function VendorModal({ onClose }: { onClose: () => void }) {
         ) : (
           <form onSubmit={handleSubmit}>
             <div style={{ marginBottom: 24 }}>
-              <div style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.gold, marginBottom: 10 }}>{selected}</div>
-              <h2 style={{ fontFamily: SYNE, fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>Tell us about your business</h2>
-              <p style={{ fontFamily: DM, fontSize: 14, color: C.muted }}>We&apos;ll reach out to verify and activate your profile.</p>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", textTransform: "uppercase", color: C.gold, marginBottom: 10 }}>{selected}</div>
+              <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: 22, fontWeight: 800, color: C.text, marginBottom: 8 }}>Tell us about your business</h2>
+              <p style={{ fontFamily: "'Inter', sans-serif", fontSize: 14, color: C.muted }}>We&apos;ll reach out to verify and activate your profile.</p>
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12, marginBottom: 24 }}>
               {[
@@ -201,21 +201,21 @@ function VendorModal({ onClose }: { onClose: () => void }) {
                 { key: "zip", label: "Service Area (ZIP)", placeholder: "92101", type: "text" },
               ].map(({ key, label, placeholder, type }) => (
                 <div key={key}>
-                  <label style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, display: "block", marginBottom: 6 }}>{label}</label>
+                  <label style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.muted, display: "block", marginBottom: 6 }}>{label}</label>
                   <input
                     required type={type} placeholder={placeholder}
                     value={form[key as keyof typeof form]}
                     onChange={e => setForm(f => ({ ...f, [key]: e.target.value }))}
-                    style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontFamily: DM, fontSize: 16, color: C.text, outline: "none", background: "#fff" }}
+                    style={{ width: "100%", padding: "11px 14px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontFamily: "'Inter', sans-serif", fontSize: 16, color: C.text, outline: "none", background: "#fff" }}
                   />
                 </div>
               ))}
             </div>
             <div style={{ display: "flex", gap: 10 }}>
-              <button type="button" onClick={() => setStep("type")} style={{ flex: "0 0 auto", padding: "14px 18px", fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", background: C.surface, color: C.muted, border: "none", borderRadius: 8, cursor: "pointer" }}>
+              <button type="button" onClick={() => setStep("type")} style={{ flex: "0 0 auto", padding: "14px 18px", fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", background: C.surface, color: C.muted, border: "none", borderRadius: 8, cursor: "pointer" }}>
                 ← Back
               </button>
-              <button type="submit" disabled={submitting} style={{ flex: 1, padding: "14px", fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", border: "none", borderRadius: 8, background: C.gold, color: "#fff", cursor: "pointer" }}>
+              <button type="submit" disabled={submitting} style={{ flex: 1, padding: "14px", fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", border: "none", borderRadius: 8, background: C.gold, color: "#fff", cursor: "pointer" }}>
                 {submitting ? "Submitting…" : "Request to Join"}
               </button>
             </div>
@@ -415,7 +415,7 @@ export default function LandingPage() {
         boxShadow: scrolled ? `0 1px 0 ${C.border}` : "none",
         transition: "background .4s, box-shadow .4s",
       }}>
-        <Link href="/" style={{ fontFamily: SYNE, fontSize: 20, fontWeight: 800, letterSpacing: "0.14em", color: C.gold, textDecoration: "none" }}>
+        <Link href="/" style={{ fontFamily: "'Inter', sans-serif", fontSize: 20, fontWeight: 800, letterSpacing: "0.14em", color: C.gold, textDecoration: "none" }}>
           BTLR
         </Link>
         <ul className="nav-links-hide" style={{ display: "flex", gap: 44, listStyle: "none" }}>
@@ -431,7 +431,7 @@ export default function LandingPage() {
         </ul>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <Link href="/apply" className="vendor-join-btn" style={{
-            fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em",
+            fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em",
             textTransform: "uppercase", padding: "11px 18px",
             background: "transparent", color: C.gold,
             border: `1.5px solid ${C.borderGold}`, borderRadius: 8,
@@ -439,10 +439,10 @@ export default function LandingPage() {
           }}>
             Join Trusted Network
           </Link>
-          <Link href="/dashboard" style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 14px", color: C.muted, textDecoration: "none", border: `1px solid ${C.border}`, borderRadius: 6 }}>
+          <Link href="/dashboard" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "10px 14px", color: C.muted, textDecoration: "none", border: `1px solid ${C.border}`, borderRadius: 6 }}>
             Log In
           </Link>
-          <a href="#cta" style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 30px", background: C.gold, color: "#fff", textDecoration: "none", transition: "background .2s" }}
+          <a href="#cta" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 30px", background: C.gold, color: "#fff", textDecoration: "none", transition: "background .2s" }}
             className="btn-primary-hover nav-signup-btn">
             Sign Up Free
           </a>
@@ -465,21 +465,21 @@ export default function LandingPage() {
 
         {/* Main content — takes all available space, centers vertically */}
         <div style={{ position: "relative", zIndex: 1, maxWidth: 760, flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-          <p style={{ display: "inline-flex", alignItems: "center", gap: 10, fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.gold, marginBottom: 28, opacity: 0, animation: "fadeUp .7s .15s forwards" }}>
+          <p style={{ display: "inline-flex", alignItems: "center", gap: 10, fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.gold, marginBottom: 28, opacity: 0, animation: "fadeUp .7s .15s forwards" }}>
             <span style={{ width: 28, height: 1, background: C.gold, display: "inline-block" }}/>
             Now in Early Access
           </p>
-          <h1 className="hero-h1" style={{ fontFamily: OUTFIT, fontSize: "clamp(38px,4.5vw,70px)", fontWeight: 300, lineHeight: 1.06, marginBottom: 8, letterSpacing: "-0.02em", opacity: 0, animation: "fadeUp .7s .3s forwards" }}>
+          <h1 className="hero-h1" style={{ fontFamily: "'Inter', sans-serif", fontSize: "clamp(38px,4.5vw,70px)", fontWeight: 300, lineHeight: 1.06, marginBottom: 8, letterSpacing: "-0.02em", opacity: 0, animation: "fadeUp .7s .3s forwards" }}>
             Your Home,
           </h1>
-          <div className="hero-accent" style={{ fontFamily: OUTFIT, fontSize: "clamp(44px,5.5vw,82px)", fontWeight: 700, color: C.gold, lineHeight: 1.03, marginBottom: 32, letterSpacing: "-0.03em", opacity: 0, animation: "fadeUp .7s .48s forwards" }}>
+          <div className="hero-accent" style={{ fontFamily: "'Inter', sans-serif", fontSize: "clamp(44px,5.5vw,82px)", fontWeight: 700, color: C.gold, lineHeight: 1.03, marginBottom: 32, letterSpacing: "-0.03em", opacity: 0, animation: "fadeUp .7s .48s forwards" }}>
             Fully Managed.
           </div>
           <p style={{ fontSize: 17, fontWeight: 300, color: C.muted, lineHeight: 1.78, maxWidth: 580, margin: "0 auto 44px", opacity: 0, animation: "fadeUp .7s .64s forwards" }}>
             BTLR is your AI home operating system — health scores, repair budgeting, mortgage tracking, and a concierge that handles the rest.
           </p>
           <div className="hero-ctas" style={{ display: "flex", gap: 20, alignItems: "center", justifyContent: "center", opacity: 0, animation: "fadeUp .7s .8s forwards", flexWrap: "wrap" }}>
-            <a href="#cta" className="btn-primary-hover" style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "16px 38px", background: C.gold, color: "#fff", textDecoration: "none", display: "inline-block", transition: "all .2s" }}>
+            <a href="#cta" className="btn-primary-hover" style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "16px 38px", background: C.gold, color: "#fff", textDecoration: "none", display: "inline-block", transition: "all .2s" }}>
               Sign Up Free
             </a>
             <a href="#features" style={{ color: C.muted, fontSize: 14, textDecoration: "none", display: "flex", alignItems: "center", gap: 8 }}>
@@ -488,7 +488,7 @@ export default function LandingPage() {
           </div>
           {/* Contractor link — below CTAs, stacked vertically */}
           <p style={{ opacity: 0, animation: "fadeUp .7s .96s forwards", marginTop: 20, marginBottom: 0 }}>
-            <Link href="/apply" style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: C.dim, textDecoration: "none", borderBottom: `1px solid ${C.borderGold}`, paddingBottom: 2 }}>
+            <Link href="/apply" style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: "0.14em", textTransform: "uppercase", color: C.dim, textDecoration: "none", borderBottom: `1px solid ${C.borderGold}`, paddingBottom: 2 }}>
               Are you a contractor? Join our network →
             </Link>
           </p>
@@ -496,7 +496,7 @@ export default function LandingPage() {
 
         {/* Scroll hint — in normal document flow, BELOW all content, hidden on mobile via CSS */}
         <div className="hero-scroll-hint" style={{ position: "relative", zIndex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "28px 0 36px", opacity: 0, animation: "fadeIn 1s 1.4s forwards" }}>
-          <span style={{ fontFamily: SYNE, fontSize: 9, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.dim, opacity: 0.6 }}>Scroll</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 9, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.dim, opacity: 0.6 }}>Scroll</span>
           <div style={{ width: 1, height: 44, background: `linear-gradient(${C.gold},transparent)`, animation: "pulse 2s infinite" }}/>
         </div>
       </section>
@@ -513,10 +513,10 @@ export default function LandingPage() {
 
           {/* Headline */}
           <div className="dh-headline" style={{ position: "relative", zIndex: 2, textAlign: "center", marginBottom: 28, padding: "0 20px" }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.gold, marginBottom: 14 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.gold, marginBottom: 14 }}>
               Your Home, Intelligently Managed
             </div>
-            <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(22px,3.2vw,44px)", fontWeight: 300, color: C.text, lineHeight: 1.2, letterSpacing: "-0.02em" }}>
+            <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: "clamp(22px,3.2vw,44px)", fontWeight: 300, color: C.text, lineHeight: 1.2, letterSpacing: "-0.02em" }}>
               Every corner of your home,<br/><strong style={{ fontWeight: 700 }}>covered and connected.</strong>
             </h2>
           </div>
@@ -549,13 +549,13 @@ export default function LandingPage() {
             ].map(({ label, sub }) => (
               <div key={label} style={{
                 background: "white", border: `1.5px solid ${C.borderGold}`,
-                padding: "8px 14px", fontFamily: SYNE, fontSize: 10, fontWeight: 700,
+                padding: "8px 14px", fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 700,
                 letterSpacing: "0.1em", textTransform: "uppercase", color: C.gold,
                 whiteSpace: "nowrap", boxShadow: "0 2px 10px rgba(28,25,20,.07)",
               }}>
                 <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: C.gold, marginRight: 6, verticalAlign: "middle" }}/>
                 {label}
-                <span style={{ display: "block", fontFamily: DM, fontSize: 10, fontWeight: 400, color: C.muted, letterSpacing: "0.01em", marginTop: 2, textTransform: "none" }}>{sub}</span>
+                <span style={{ display: "block", fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 400, color: C.muted, letterSpacing: "0.01em", marginTop: 2, textTransform: "none" }}>{sub}</span>
               </div>
             ))}
           </div>
@@ -573,14 +573,14 @@ export default function LandingPage() {
               <div key={id} id={id} style={{
                 position: "absolute", ...style,
                 background: "white", border: `1.5px solid ${C.borderGold}`,
-                padding: "11px 20px", fontFamily: SYNE, fontSize: 12, fontWeight: 700,
+                padding: "11px 20px", fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700,
                 letterSpacing: "0.12em", textTransform: "uppercase", color: C.gold,
                 whiteSpace: "nowrap", boxShadow: "0 4px 18px rgba(28,25,20,.08)",
                 opacity: 0, transform: "translateY(6px)", transition: "opacity .45s, transform .45s",
               }}>
                 <span style={{ display: "inline-block", width: 5, height: 5, borderRadius: "50%", background: C.gold, marginRight: 7, verticalAlign: "middle" }}/>
                 {label}
-                <span style={{ display: "block", fontFamily: DM, fontSize: 11, fontWeight: 400, color: C.muted, letterSpacing: "0.02em", marginTop: 3, textTransform: "none" }}>{sub}</span>
+                <span style={{ display: "block", fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 400, color: C.muted, letterSpacing: "0.02em", marginTop: 3, textTransform: "none" }}>{sub}</span>
               </div>
             ))}
           </div>
@@ -589,7 +589,7 @@ export default function LandingPage() {
           <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, height: "10%", background: "linear-gradient(to top,#ffffff 0%,transparent 100%)", pointerEvents: "none", zIndex: 3 }}/>
 
           {/* Scroll hint */}
-          <div className="dh-scroll-hint" style={{ position: "absolute", bottom: 36, left: 32, fontFamily: SYNE, fontSize: 10, fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: C.dim, display: "flex", alignItems: "center", gap: 8, zIndex: 4 }}>
+          <div className="dh-scroll-hint" style={{ position: "absolute", bottom: 36, left: 32, fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 600, letterSpacing: "0.18em", textTransform: "uppercase", color: C.dim, display: "flex", alignItems: "center", gap: 8, zIndex: 4 }}>
             <div style={{ width: 1, height: 40, background: `linear-gradient(${C.gold},transparent)`, animation: "pulse 2s infinite" }}/>
             Scroll to reveal
           </div>
@@ -602,11 +602,11 @@ export default function LandingPage() {
       <section id="reality" className="section-pad" style={{ background: "#3A6491", padding: "120px 64px" }}>
         <div style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 80, alignItems: "start" }} className="two-col">
           <div className="reveal">
-            <div style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: SYNE, fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.goldLt, marginBottom: 18 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 600, letterSpacing: "0.22em", textTransform: "uppercase", color: C.goldLt, marginBottom: 18 }}>
               <span style={{ width: 24, height: 1, background: C.goldLt, display: "inline-block" }}/>
               The Reality
             </div>
-            <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, marginBottom: 20, letterSpacing: "-0.02em", color: "#EDE9DC" }}>
+            <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, marginBottom: 20, letterSpacing: "-0.02em", color: "#EDE9DC" }}>
               Owning a home is a full-time job.<br/><strong style={{ fontWeight: 700, color: "#EDE9DC" }}>Nobody told you that.</strong>
             </h2>
             <p style={{ fontSize: 16, fontWeight: 300, color: "rgba(237,233,220,.88)", lineHeight: 1.82 }}>
@@ -621,7 +621,7 @@ export default function LandingPage() {
               ["04", "No idea what your home is actually costing to maintain"],
             ].map(([n, t]) => (
               <div className="pain-item" key={n} style={{ display: "flex", alignItems: "flex-start", gap: 16, padding: "22px 0", borderBottom: "1px solid rgba(255,255,255,.07)" }}>
-                <div style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, color: C.goldLt, opacity: 0.7, letterSpacing: "0.1em", paddingTop: 2, flexShrink: 0 }}>{n}</div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 700, color: C.goldLt, opacity: 0.7, letterSpacing: "0.1em", paddingTop: 2, flexShrink: 0 }}>{n}</div>
                 <div style={{ fontSize: 15, fontWeight: 300, color: "rgba(237,233,220,.72)", lineHeight: 1.65 }}>{t}</div>
               </div>
             ))}
@@ -633,7 +633,7 @@ export default function LandingPage() {
       <section id="features" className="section-pad" style={{ padding: "120px 64px", maxWidth: 1200, margin: "0 auto" }}>
         <div className="reveal" style={{ textAlign: "center", marginBottom: 72 }}>
           <Eyebrow center>What BTLR Does</Eyebrow>
-          <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(26px,3.6vw,50px)", fontWeight: 300, color: C.text, letterSpacing: "-0.02em" }}>
+          <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: "clamp(26px,3.6vw,50px)", fontWeight: 300, color: C.text, letterSpacing: "-0.02em" }}>
             Tony Stark had Jarvis.<br/><strong style={{ fontWeight: 700, color: C.goldDk }}>You have BTLR.</strong>
           </h2>
         </div>
@@ -652,7 +652,7 @@ export default function LandingPage() {
                   <path d={f.icon}/>
                 </svg>
               </div>
-              <div style={{ fontFamily: SYNE, fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12, letterSpacing: "0.02em" }}>{f.title}</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12, letterSpacing: "0.02em" }}>{f.title}</div>
               <div style={{ fontSize: 14, fontWeight: 300, color: C.muted, lineHeight: 1.72 }}>{f.body}</div>
             </div>
           ))}
@@ -663,13 +663,13 @@ export default function LandingPage() {
       <section id="health-score" className="section-pad two-col" style={{ padding: "140px 64px", maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 100, alignItems: "center" }}>
         <div className="reveal">
           <Eyebrow>Home Health</Eyebrow>
-          <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, marginBottom: 20, letterSpacing: "-0.02em" }}>
+          <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, marginBottom: 20, letterSpacing: "-0.02em" }}>
             Know exactly what&apos;s happening<br/><strong style={{ fontWeight: 700, color: C.goldDk }}>inside your home.</strong>
           </h2>
           <p style={{ fontSize: 16, fontWeight: 300, color: C.muted, lineHeight: 1.82, marginBottom: 28 }}>
             Upload your inspection report and BTLR builds a complete picture of every system — roof, HVAC, plumbing, electrical — with real replacement timelines and a live health score.
           </p>
-          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1px solid ${C.borderGold}`, padding: "7px 16px", fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.gold }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 8, border: `1px solid ${C.borderGold}`, padding: "7px 16px", fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.gold }}>
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none"><circle cx="6" cy="6" r="5" stroke="currentColor" strokeWidth="1.5"/><line x1="6" y1="3" x2="6" y2="6.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/><circle cx="6" cy="8.5" r=".75" fill="currentColor"/></svg>
             Patent-Pending Technology
           </div>
@@ -689,7 +689,7 @@ export default function LandingPage() {
                 <div style={{ flex: 1, height: 5, background: C.surface2, borderRadius: 3, overflow: "hidden" }}>
                   <div style={{ height: "100%", background: b.color, borderRadius: 3, width: `${b.val}%`, transition: "width 1.2s cubic-bezier(.4,0,.2,1)" }}/>
                 </div>
-                <div style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, color: C.muted, width: 28, textAlign: "right" }}>{b.val}</div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, color: C.muted, width: 28, textAlign: "right" }}>{b.val}</div>
               </div>
             ))}
           </div>
@@ -700,7 +700,7 @@ export default function LandingPage() {
       <section id="concierge" className="section-pad two-col" style={{ padding: "140px 64px", maxWidth: 1200, margin: "0 auto", display: "grid", gridTemplateColumns: "1fr 1fr", gap: 100, alignItems: "center" }}>
         <div className="reveal">
           <Eyebrow>AI Concierge</Eyebrow>
-          <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, marginBottom: 20, letterSpacing: "-0.02em" }}>
+          <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, marginBottom: 20, letterSpacing: "-0.02em" }}>
             Ask BTLR anything.<br/><strong style={{ fontWeight: 700, color: C.goldDk }}>Get real answers.</strong>
           </h2>
           <p style={{ fontSize: 16, fontWeight: 300, color: C.muted, lineHeight: 1.82 }}>
@@ -709,9 +709,9 @@ export default function LandingPage() {
         </div>
         <div className="reveal d2" style={{ background: "white", border: `1px solid ${C.border}`, boxShadow: "0 8px 48px rgba(28,25,20,.09)", overflow: "hidden" }}>
           <div style={{ background: C.navy, padding: "16px 20px", display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ width: 36, height: 36, background: C.gold, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SYNE, fontSize: 12, fontWeight: 800, color: "#fff", flexShrink: 0 }}>B</div>
+            <div style={{ width: 36, height: 36, background: C.gold, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 800, color: "#fff", flexShrink: 0 }}>B</div>
             <div>
-              <div style={{ fontFamily: SYNE, fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "0.04em" }}>BTLR</div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 700, color: "#fff", letterSpacing: "0.04em" }}>BTLR</div>
               <div style={{ fontSize: 11, color: "rgba(255,255,255,.55)", display: "flex", alignItems: "center", gap: 5 }}>
                 <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#4A9E6B", display: "inline-block", animation: "dashPulse 2s infinite" }}/>
                 Online · Always watching
@@ -731,8 +731,8 @@ export default function LandingPage() {
             ))}
           </div>
           <div style={{ display: "flex", borderTop: `1px solid ${C.border}` }}>
-            <input readOnly placeholder="Ask BTLR about your home…" style={{ flex: 1, border: "none", padding: "14px 16px", fontFamily: DM, fontSize: 13, color: C.text, outline: "none", background: "white" }}/>
-            <Link href="/dashboard" style={{ background: C.gold, border: "none", padding: "0 20px", color: "#fff", fontFamily: SYNE, fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", display: "flex", alignItems: "center", textDecoration: "none" }}>
+            <input readOnly placeholder="Ask BTLR about your home…" style={{ flex: 1, border: "none", padding: "14px 16px", fontFamily: "'Inter', sans-serif", fontSize: 13, color: C.text, outline: "none", background: "white" }}/>
+            <Link href="/dashboard" style={{ background: C.gold, border: "none", padding: "0 20px", color: "#fff", fontFamily: "'Inter', sans-serif", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", display: "flex", alignItems: "center", textDecoration: "none" }}>
               Try It
             </Link>
           </div>
@@ -744,7 +744,7 @@ export default function LandingPage() {
         <div style={{ maxWidth: 960, margin: "0 auto" }}>
           <div className="reveal" style={{ textAlign: "center", marginBottom: 80 }}>
             <Eyebrow center>How It Works</Eyebrow>
-            <h2 style={{ fontFamily: OUTFIT, fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, letterSpacing: "-0.02em" }}>
+            <h2 style={{ fontFamily: "'Inter', sans-serif", fontSize: "clamp(28px,3.6vw,52px)", fontWeight: 300, lineHeight: 1.15, letterSpacing: "-0.02em" }}>
               Set up in minutes.<br/><strong style={{ fontWeight: 700, color: C.goldDk }}>Runs forever.</strong>
             </h2>
           </div>
@@ -756,10 +756,10 @@ export default function LandingPage() {
               { n: "03", t: "Let BTLR run your home", b: "BTLR watches everything, alerts you when action is needed, and handles what you ask. You just live in your home.", delay: "d3" },
             ].map(s => (
               <div key={s.n} className={`step reveal ${s.delay}`} style={{ textAlign: "center" }}>
-                <div style={{ width: 50, height: 50, border: `1.5px solid ${C.gold}`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: SYNE, fontSize: 18, fontWeight: 800, color: C.gold, margin: "0 auto 24px", background: C.surface, position: "relative", zIndex: 1 }}>
+                <div style={{ width: 50, height: 50, border: `1.5px solid ${C.gold}`, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 800, color: C.gold, margin: "0 auto 24px", background: C.surface, position: "relative", zIndex: 1 }}>
                   {s.n}
                 </div>
-                <div style={{ fontFamily: SYNE, fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>{s.t}</div>
+                <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>{s.t}</div>
                 <div style={{ fontSize: 14, fontWeight: 300, color: C.muted, lineHeight: 1.72 }}>{s.b}</div>
               </div>
             ))}
@@ -776,8 +776,8 @@ export default function LandingPage() {
           { big: "AI",  desc: "Powered inspection parsing" },
         ].map(s => (
           <div key={s.big} className="stat-item" style={{ textAlign: "center" }}>
-            <div style={{ fontFamily: OUTFIT, fontSize: 54, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{s.big}</div>
-            <div style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,.75)", marginTop: 6 }}>{s.desc}</div>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 54, fontWeight: 700, color: "#fff", lineHeight: 1 }}>{s.big}</div>
+            <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase", color: "rgba(255,255,255,.75)", marginTop: 6 }}>{s.desc}</div>
           </div>
         ))}
       </div>
@@ -785,14 +785,14 @@ export default function LandingPage() {
       {/* ── CTA ── */}
       <section id="cta" className="section-pad" style={{ padding: "160px 64px", textAlign: "center", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: 700, height: 700, background: "radial-gradient(circle,rgba(44,95,138,.06),transparent 65%)", pointerEvents: "none" }}/>
-        <h2 className="reveal" style={{ fontFamily: OUTFIT, fontSize: "clamp(38px,5.5vw,80px)", fontWeight: 300, lineHeight: 1.08, marginBottom: 16, letterSpacing: "-0.03em" }}>
+        <h2 className="reveal" style={{ fontFamily: "'Inter', sans-serif", fontSize: "clamp(38px,5.5vw,80px)", fontWeight: 300, lineHeight: 1.08, marginBottom: 16, letterSpacing: "-0.03em" }}>
           Your home deserves<br/>a <em style={{ color: C.gold, fontStyle: "normal", fontWeight: 700 }}>butler.</em>
         </h2>
         <p className="reveal d1" style={{ fontSize: 18, fontWeight: 300, color: C.muted, marginBottom: 48 }}>
           Join the waitlist and be among the first to experience homeownership the way it was supposed to feel.
         </p>
         {submitted ? (
-          <div className="reveal" style={{ maxWidth: 440, margin: "0 auto", padding: "20px", background: "#EBF7F1", border: `1px solid rgba(74,158,107,0.3)`, color: "#2E7D52", fontFamily: SYNE, fontSize: 14, fontWeight: 700, letterSpacing: "0.05em" }}>
+          <div className="reveal" style={{ maxWidth: 440, margin: "0 auto", padding: "20px", background: "#EBF7F1", border: `1px solid rgba(74,158,107,0.3)`, color: "#2E7D52", fontFamily: "'Inter', sans-serif", fontSize: 14, fontWeight: 700, letterSpacing: "0.05em" }}>
             ✓ You&apos;re on the list. We&apos;ll be in touch.
           </div>
         ) : (
@@ -800,9 +800,9 @@ export default function LandingPage() {
             <input
               type="email" required value={email} onChange={e => setEmail(e.target.value)}
               placeholder="Enter your email address"
-              style={{ flex: 1, minWidth: 200, background: "white", border: `1.5px solid ${C.border}`, borderRight: "none", color: C.text, fontFamily: DM, fontSize: 14, padding: "16px 20px", outline: "none" }}
+              style={{ flex: 1, minWidth: 200, background: "white", border: `1.5px solid ${C.border}`, borderRight: "none", color: C.text, fontFamily: "'Inter', sans-serif", fontSize: 14, padding: "16px 20px", outline: "none" }}
             />
-            <button type="submit" style={{ background: C.gold, color: "#fff", fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "16px 28px", border: "none", cursor: "pointer", whiteSpace: "nowrap", transition: "background .2s" }}>
+            <button type="submit" style={{ background: C.gold, color: "#fff", fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "16px 28px", border: "none", cursor: "pointer", whiteSpace: "nowrap", transition: "background .2s" }}>
               Sign Up Free
             </button>
           </form>
@@ -812,7 +812,7 @@ export default function LandingPage() {
 
       {/* ── FOOTER ── */}
       <footer className="footer-flex" style={{ borderTop: `1px solid ${C.border}`, padding: "44px 64px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontFamily: SYNE, fontSize: 18, fontWeight: 800, letterSpacing: "0.14em", color: C.gold }}>BTLR</div>
+        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 800, letterSpacing: "0.14em", color: C.gold }}>BTLR</div>
         <ul style={{ display: "flex", gap: 36, listStyle: "none", flexWrap: "wrap" }}>
           {[
             { label: "Features",     href: "#features" },

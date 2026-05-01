@@ -47,7 +47,7 @@ function Note({ children }: { children: React.ReactNode }) {
 
 export default function PrivacyPage() {
   return (
-    <div style={{ minHeight: "100vh", background: bg, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: bg, fontFamily: "'Inter', sans-serif" }}>
 
       {/* Nav */}
       <nav style={{ padding: "16px 32px", borderBottom: `1px solid ${border}`, background: "white", display: "flex", alignItems: "center", justifyContent: "space-between" }}>

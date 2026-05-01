@@ -158,7 +158,7 @@ export default function JobPage() {
   const alreadyHandled = job.status === "accepted" || job.status === "declined" || done || declined;
 
   return (
-    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif" }}>
+    <div style={{ minHeight: "100vh", background: C.bg, fontFamily: "'Inter', sans-serif" }}>
 
       {/* Header */}
       <div style={{ background: C.navy, padding: "18px 24px", display: "flex", alignItems: "center", gap: 12 }}>

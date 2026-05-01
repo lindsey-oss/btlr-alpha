@@ -39,7 +39,7 @@ export default function Landing() {
 
   return (
     <div style={{
-      fontFamily: "-apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Helvetica Neue', sans-serif",
+      fontFamily: "'Inter', sans-serif",
       background: "#04090f", color: "#fff", overflowX: "hidden",
     }}>
 

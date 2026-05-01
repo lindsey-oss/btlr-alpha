@@ -13,9 +13,9 @@ const C = {
   error:      "#DC2626", errorBg: "#FEF2F2",
   success:    "#15803D", successBg: "#F0FDF4",
 };
-const SYNE   = "'Syne', sans-serif";
-const OUTFIT = "'Outfit', sans-serif";
-const DM     = "'DM Sans', sans-serif";
+const INTER = "'Inter', sans-serif";
+// OUTFIT replaced by Inter
+// DM replaced by Inter
 
 // ── Step metadata ──────────────────────────────────────────────
 const STEPS = [
@@ -51,7 +51,7 @@ const YEARS          = ["Less than 1","1–2","3–5","6–10","11–20","20+"];
 
 // ── Helpers ────────────────────────────────────────────────────
 function inp(style?: React.CSSProperties): React.CSSProperties {
-  return { width: "100%", padding: "11px 14px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontFamily: DM, fontSize: 16, color: C.text, outline: "none", background: C.white, ...style };
+  return { width: "100%", padding: "11px 14px", border: `1.5px solid ${C.border}`, borderRadius: 8, fontFamily: INTER, fontSize: 16, color: C.text, outline: "none", background: C.white, ...style };
 }
 function sel(style?: React.CSSProperties): React.CSSProperties {
   return { ...inp(), appearance: "none" as const, backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236B6558' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E\")", backgroundRepeat: "no-repeat", backgroundPosition: "right 12px center", paddingRight: 36, ...style };
@@ -63,7 +63,7 @@ function ta(style?: React.CSSProperties): React.CSSProperties {
 // ── Sub-components ─────────────────────────────────────────────
 function Label({ children, required }: { children: React.ReactNode; required?: boolean }) {
   return (
-    <label style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: C.muted, display: "block", marginBottom: 6 }}>
+    <label style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase" as const, color: C.muted, display: "block", marginBottom: 6 }}>
       {children}{required && <span style={{ color: C.error, marginLeft: 3 }}>*</span>}
     </label>
   );
@@ -74,7 +74,7 @@ function Field({ label, required, children, hint }: { label: string; required?: 
     <div style={{ marginBottom: 20 }}>
       <Label required={required}>{label}</Label>
       {children}
-      {hint && <p style={{ fontSize: 12, color: C.dim, marginTop: 5, fontFamily: DM }}>{hint}</p>}
+      {hint && <p style={{ fontSize: 12, color: C.dim, marginTop: 5, fontFamily: INTER }}>{hint}</p>}
     </div>
   );
 }
@@ -85,7 +85,7 @@ function CheckGroup({ label, options, value, onChange }: { label: string; option
     <Field label={label}>
       <div style={{ display: "flex", flexWrap: "wrap" as const, gap: 8 }}>
         {options.map(o => (
-          <button key={o} type="button" onClick={() => toggle(o)} style={{ padding: "8px 14px", border: `1.5px solid ${value.includes(o) ? C.gold : C.border}`, borderRadius: 20, background: value.includes(o) ? C.goldDim : C.white, fontFamily: DM, fontSize: 13, color: value.includes(o) ? C.gold : C.text, cursor: "pointer", fontWeight: value.includes(o) ? 600 : 400 }}>
+          <button key={o} type="button" onClick={() => toggle(o)} style={{ padding: "8px 14px", border: `1.5px solid ${value.includes(o) ? C.gold : C.border}`, borderRadius: 20, background: value.includes(o) ? C.goldDim : C.white, fontFamily: INTER, fontSize: 13, color: value.includes(o) ? C.gold : C.text, cursor: "pointer", fontWeight: value.includes(o) ? 600 : 400 }}>
             {o}
           </button>
         ))}
@@ -99,7 +99,7 @@ function YesNo({ label, value, onChange, required }: { label: string; value: boo
     <Field label={label} required={required}>
       <div style={{ display: "flex", gap: 10 }}>
         {[true, false].map(b => (
-          <button key={String(b)} type="button" onClick={() => onChange(b)} style={{ flex: 1, padding: "11px 0", border: `1.5px solid ${value === b ? C.gold : C.border}`, borderRadius: 8, background: value === b ? C.goldDim : C.white, fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: value === b ? C.gold : C.muted, cursor: "pointer" }}>
+          <button key={String(b)} type="button" onClick={() => onChange(b)} style={{ flex: 1, padding: "11px 0", border: `1.5px solid ${value === b ? C.gold : C.border}`, borderRadius: 8, background: value === b ? C.goldDim : C.white, fontFamily: INTER, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: value === b ? C.gold : C.muted, cursor: "pointer" }}>
             {b ? "YES" : "NO"}
           </button>
         ))}
@@ -141,7 +141,7 @@ function UploadField({ label, hint, docType, appId, onUploaded }: {
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={state === "done" ? C.gold : C.dim} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
           {state === "done" ? <polyline points="20 6 9 17 4 12"/> : <><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></>}
         </svg>
-        <span style={{ fontFamily: DM, fontSize: 13, color: state === "done" ? C.gold : C.muted }}>
+        <span style={{ fontFamily: INTER, fontSize: 13, color: state === "done" ? C.gold : C.muted }}>
           {state === "uploading" ? "Uploading…" : state === "done" ? fileName : state === "error" ? "Upload failed — try again" : !appId ? "Save your progress first to enable uploads" : "Click to upload (PDF, JPG, PNG — max 20MB)"}
         </span>
       </label>
@@ -154,7 +154,7 @@ function ReviewRow({ label, value }: { label: string; value: unknown }) {
   const display = Array.isArray(value) ? value.join(", ") : typeof value === "boolean" ? (value ? "Yes" : "No") : String(value);
   return (
     <div style={{ display: "flex", gap: 16, padding: "10px 0", borderBottom: `1px solid ${C.border}` }}>
-      <div style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted, width: 180, flexShrink: 0, paddingTop: 2 }}>{label}</div>
+      <div style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.muted, width: 180, flexShrink: 0, paddingTop: 2 }}>{label}</div>
       <div style={{ fontSize: 14, color: C.text, lineHeight: 1.6, flex: 1 }}>{display}</div>
     </div>
   );
@@ -296,15 +296,15 @@ export default function VendorApplicationForm() {
   const pct = Math.round(((step - 1) / 9) * 100);
 
   return (
-    <div style={{ minHeight: "100vh", background: C.surface, fontFamily: DM, color: C.text }}>
+    <div style={{ minHeight: "100vh", background: C.surface, fontFamily: INTER, color: C.text }}>
 
       {/* Nav */}
       <nav style={{ background: "#1B2D47", padding: "16px 32px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 100 }}>
-        <Link href="/apply" style={{ fontFamily: SYNE, fontSize: 16, fontWeight: 800, letterSpacing: "0.14em", color: "#2C5F8A", textDecoration: "none" }}>BTLR</Link>
-        <div style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,.5)" }}>
+        <Link href="/apply" style={{ fontFamily: INTER, fontSize: 16, fontWeight: 800, letterSpacing: "0.14em", color: "#2C5F8A", textDecoration: "none" }}>BTLR</Link>
+        <div style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,.5)" }}>
           Trusted Network Application
         </div>
-        <button onClick={() => saveDraft()} disabled={saving} style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", padding: "8px 16px", background: saved ? "#15803D" : "rgba(255,255,255,.1)", color: "#fff", border: "none", cursor: "pointer", transition: "background .3s" }}>
+        <button onClick={() => saveDraft()} disabled={saving} style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", padding: "8px 16px", background: saved ? "#15803D" : "rgba(255,255,255,.1)", color: "#fff", border: "none", cursor: "pointer", transition: "background .3s" }}>
           {saving ? "Saving…" : saved ? "✓ Saved" : "Save Progress"}
         </button>
       </nav>
@@ -313,17 +313,17 @@ export default function VendorApplicationForm() {
       <div style={{ background: "#1B2D47", padding: "0 32px 20px" }}>
         <div style={{ maxWidth: 780, margin: "0 auto" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
-            <span style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,.55)" }}>
+            <span style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: "rgba(255,255,255,.55)" }}>
               Step {Math.min(step, 9)} of 9 — {STEPS[Math.min(step, 9) - 1]?.title}
             </span>
-            <span style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,.35)" }}>{pct}%</span>
+            <span style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,.35)" }}>{pct}%</span>
           </div>
           <div style={{ height: 3, background: "rgba(255,255,255,.12)", borderRadius: 2 }}>
             <div style={{ height: "100%", width: `${pct}%`, background: "#2C5F8A", borderRadius: 2, transition: "width .4s" }}/>
           </div>
           <div style={{ display: "flex", gap: 4, marginTop: 10, overflowX: "auto" as const }}>
             {STEPS.map(s => (
-              <div key={s.n} style={{ fontFamily: SYNE, fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: step === s.n ? "#fff" : step > s.n ? "#2C5F8A" : "rgba(255,255,255,.2)", paddingRight: 12, whiteSpace: "nowrap" as const, flexShrink: 0 }}>
+              <div key={s.n} style={{ fontFamily: INTER, fontSize: 9, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: step === s.n ? "#fff" : step > s.n ? "#2C5F8A" : "rgba(255,255,255,.2)", paddingRight: 12, whiteSpace: "nowrap" as const, flexShrink: 0 }}>
                 {step > s.n ? "✓ " : ""}{s.short}
               </div>
             ))}
@@ -334,7 +334,7 @@ export default function VendorApplicationForm() {
       {/* Form card */}
       <div style={{ maxWidth: 780, margin: "0 auto", padding: "40px 24px 80px" }}>
         {error && (
-          <div style={{ background: C.errorBg, border: `1px solid #FECACA`, borderRadius: 8, padding: "12px 16px", marginBottom: 24, fontFamily: DM, fontSize: 14, color: C.error }}>
+          <div style={{ background: C.errorBg, border: `1px solid #FECACA`, borderRadius: 8, padding: "12px 16px", marginBottom: 24, fontFamily: INTER, fontSize: 14, color: C.error }}>
             {error}
           </div>
         )}
@@ -343,8 +343,8 @@ export default function VendorApplicationForm() {
 
           {/* Step header */}
           <div style={{ padding: "28px 36px", borderBottom: `1px solid ${C.border}`, background: C.white }}>
-            <div style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: C.gold, marginBottom: 6 }}>Step {Math.min(step, 9)} of 9</div>
-            <h2 style={{ fontFamily: OUTFIT, fontSize: 26, fontWeight: 700, color: C.text, margin: 0, letterSpacing: "-0.02em" }}>{STEPS[Math.min(step, 9) - 1]?.title}</h2>
+            <div style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.18em", textTransform: "uppercase", color: C.gold, marginBottom: 6 }}>Step {Math.min(step, 9)} of 9</div>
+            <h2 style={{ fontFamily: INTER, fontSize: 26, fontWeight: 700, color: C.text, margin: 0, letterSpacing: "-0.02em" }}>{STEPS[Math.min(step, 9) - 1]?.title}</h2>
           </div>
 
           <div style={{ padding: "36px" }}>
@@ -372,7 +372,7 @@ export default function VendorApplicationForm() {
                   </Field>
                 </div>
                 <div style={{ marginTop: 4 }}>
-                  <p style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 12 }}>Business Address</p>
+                  <p style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 12 }}>Business Address</p>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr", gap: 12 }}>
                     <input style={inp()} value={data.address_street as string} onChange={e => set("address_street", e.target.value)} placeholder="Street address" />
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 120px 100px", gap: 12 }}>
@@ -383,7 +383,7 @@ export default function VendorApplicationForm() {
                   </div>
                 </div>
                 <div style={{ marginTop: 20 }}>
-                  <p style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 12 }}>Social Media (optional)</p>
+                  <p style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.muted, marginBottom: 12 }}>Social Media (optional)</p>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <input style={inp()} value={data.social_instagram as string} onChange={e => set("social_instagram", e.target.value)} placeholder="Instagram URL" />
                     <input style={inp()} value={data.social_facebook as string} onChange={e => set("social_facebook", e.target.value)} placeholder="Facebook URL" />
@@ -405,7 +405,7 @@ export default function VendorApplicationForm() {
             {step === 2 && (
               <div>
                 <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "12px 16px", marginBottom: 24 }}>
-                  <p style={{ fontSize: 13, color: "#92400E", margin: 0, fontFamily: DM }}>
+                  <p style={{ fontSize: 13, color: "#92400E", margin: 0, fontFamily: INTER }}>
                     <strong>Required to submit:</strong> License number and insurance provider. Applications without valid licensing and insurance cannot be approved.
                   </p>
                 </div>
@@ -473,7 +473,7 @@ export default function VendorApplicationForm() {
             {step === 4 && (
               <div>
                 <div style={{ marginBottom: 28 }}>
-                  <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.75, fontFamily: DM, margin: 0 }}>
+                  <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.75, fontFamily: INTER, margin: 0 }}>
                     Upload 5–10 photos of completed work. Clear, professional photos significantly strengthen your application. We review work quality carefully.
                   </p>
                 </div>
@@ -491,7 +491,7 @@ export default function VendorApplicationForm() {
                     <button
                       onClick={() => saveDraft()}
                       disabled={saving}
-                      style={{ padding: "11px 28px", background: C.gold, color: "#fff", border: "none", borderRadius: 8, fontFamily: SYNE, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" as const, cursor: "pointer" }}
+                      style={{ padding: "11px 28px", background: C.gold, color: "#fff", border: "none", borderRadius: 8, fontFamily: INTER, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase" as const, cursor: "pointer" }}
                     >
                       {saving ? "Saving…" : "Save & Enable Uploads"}
                     </button>
@@ -501,10 +501,10 @@ export default function VendorApplicationForm() {
                   <input style={inp()} type="url" value={data.video_walkthrough_url as string} onChange={e => set("video_walkthrough_url", e.target.value)} placeholder="https://youtube.com/watch?v=…" />
                 </Field>
                 <div style={{ marginTop: 28 }}>
-                  <p style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.text, marginBottom: 20 }}>Project Examples</p>
+                  <p style={{ fontFamily: INTER, fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.text, marginBottom: 20 }}>Project Examples</p>
                   {[1,2].map(n => (
                     <div key={n} style={{ background: C.surface, borderRadius: 8, padding: 20, marginBottom: 16, border: `1px solid ${C.border}` }}>
-                      <p style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.gold, marginBottom: 16 }}>Project Example {n}</p>
+                      <p style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.gold, marginBottom: 16 }}>Project Example {n}</p>
                       <Field label="Problem / Challenge">
                         <textarea style={ta({ minHeight: 80 })} value={data[`project_${n}_problem`] as string} onChange={e => set(`project_${n}_problem`, e.target.value)} placeholder="What was the homeowner's issue?" />
                       </Field>
@@ -533,11 +533,11 @@ export default function VendorApplicationForm() {
                   <textarea style={ta({ minHeight: 72 })} value={data.other_review_urls as string} onChange={e => set("other_review_urls", e.target.value)} placeholder="https://bbb.org/…&#10;https://houzz.com/…" />
                 </Field>
                 <div style={{ margin: "24px 0 4px" }}>
-                  <p style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.text, marginBottom: 6 }}>Client References</p>
-                  <p style={{ fontSize: 13, color: C.muted, marginBottom: 20, fontFamily: DM }}>We will contact these references directly. Provide clients who can speak to your professionalism, quality, and communication.</p>
+                  <p style={{ fontFamily: INTER, fontSize: 12, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.text, marginBottom: 6 }}>Client References</p>
+                  <p style={{ fontSize: 13, color: C.muted, marginBottom: 20, fontFamily: INTER }}>We will contact these references directly. Provide clients who can speak to your professionalism, quality, and communication.</p>
                   {[1,2,3].map(n => (
                     <div key={n} style={{ background: C.surface, borderRadius: 8, padding: 20, marginBottom: 12, border: `1px solid ${C.border}` }}>
-                      <p style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.gold, marginBottom: 16 }}>Client Reference {n} {n <= 2 ? "*" : "(optional)"}</p>
+                      <p style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.gold, marginBottom: 16 }}>Client Reference {n} {n <= 2 ? "*" : "(optional)"}</p>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                         <Field label="Name"><input style={inp()} value={data[`ref${n}_name`] as string} onChange={e => set(`ref${n}_name`, e.target.value)} placeholder="Client name" /></Field>
                         <Field label="Phone"><input style={inp()} type="tel" value={data[`ref${n}_phone`] as string} onChange={e => set(`ref${n}_phone`, e.target.value)} placeholder="(619) 555-0100" /></Field>
@@ -548,7 +548,7 @@ export default function VendorApplicationForm() {
                   ))}
                 </div>
                 <div style={{ marginTop: 24, background: C.surface, borderRadius: 8, padding: 20, border: `1px solid ${C.border}` }}>
-                  <p style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.gold, marginBottom: 16 }}>Industry Reference (optional)</p>
+                  <p style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.gold, marginBottom: 16 }}>Industry Reference (optional)</p>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                     <Field label="Name"><input style={inp()} value={data.industry_ref_name as string} onChange={e => set("industry_ref_name", e.target.value)} placeholder="e.g. supplier, inspector, realtor" /></Field>
                     <Field label="Phone"><input style={inp()} type="tel" value={data.industry_ref_phone as string} onChange={e => set("industry_ref_phone", e.target.value)} /></Field>
@@ -620,7 +620,7 @@ export default function VendorApplicationForm() {
                   <div style={{ display: "flex", gap: 10 }}>
                     {[{ label: "Free", val: true }, { label: "Paid", val: false }].map(opt => (
                       <button key={String(opt.val)} type="button" onClick={() => set("estimates_free", opt.val)}
-                        style={{ flex: 1, padding: "11px 0", border: `1.5px solid ${data.estimates_free === opt.val ? C.gold : C.border}`, borderRadius: 8, background: data.estimates_free === opt.val ? C.goldDim : C.white, fontFamily: SYNE, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: data.estimates_free === opt.val ? C.gold : C.muted, cursor: "pointer" }}>
+                        style={{ flex: 1, padding: "11px 0", border: `1.5px solid ${data.estimates_free === opt.val ? C.gold : C.border}`, borderRadius: 8, background: data.estimates_free === opt.val ? C.goldDim : C.white, fontFamily: INTER, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: data.estimates_free === opt.val ? C.gold : C.muted, cursor: "pointer" }}>
                         {opt.label}
                       </button>
                     ))}
@@ -634,7 +634,7 @@ export default function VendorApplicationForm() {
             {/* ── STEP 8: Agreements ── */}
             {step === 8 && (
               <div>
-                <p style={{ fontSize: 15, color: C.muted, lineHeight: 1.8, marginBottom: 28, fontFamily: DM }}>
+                <p style={{ fontSize: 15, color: C.muted, lineHeight: 1.8, marginBottom: 28, fontFamily: INTER }}>
                   To be considered for the BTLR Trusted Network, you must agree to the following standards. These are the expectations every vendor on our platform upholds.
                 </p>
                 {[
@@ -651,7 +651,7 @@ export default function VendorApplicationForm() {
                 ].map(([key, text]) => (
                   <label key={key} style={{ display: "flex", gap: 14, alignItems: "flex-start", padding: "14px 16px", border: `1.5px solid ${data[key] ? C.gold : C.border}`, borderRadius: 8, marginBottom: 10, background: data[key] ? C.goldDim : C.white, cursor: "pointer" }}>
                     <input type="checkbox" checked={!!data[key]} onChange={e => set(key, e.target.checked)} style={{ marginTop: 2, accentColor: C.gold, width: 16, height: 16, flexShrink: 0 }} />
-                    <span style={{ fontSize: 14, color: C.text, lineHeight: 1.65, fontFamily: DM }}>{text}</span>
+                    <span style={{ fontSize: 14, color: C.text, lineHeight: 1.65, fontFamily: INTER }}>{text}</span>
                   </label>
                 ))}
               </div>
@@ -660,7 +660,7 @@ export default function VendorApplicationForm() {
             {/* ── STEP 9: Review & Submit ── */}
             {step === 9 && (
               <div>
-                <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.75, marginBottom: 28, fontFamily: DM }}>Review your application before submitting. Click any section to go back and edit.</p>
+                <p style={{ fontSize: 14, color: C.muted, lineHeight: 1.75, marginBottom: 28, fontFamily: INTER }}>Review your application before submitting. Click any section to go back and edit.</p>
                 {[
                   { title: "Business Profile", stepN: 1, rows: [
                     ["Business Name", data.business_name], ["Owner", data.owner_name],
@@ -692,8 +692,8 @@ export default function VendorApplicationForm() {
                 ].map(({ title, stepN, rows }) => (
                   <div key={title} style={{ marginBottom: 20, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
                     <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 16px", background: C.surface, borderBottom: `1px solid ${C.border}` }}>
-                      <span style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.text }}>{title}</span>
-                      <button type="button" onClick={() => { setStep(stepN); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ fontFamily: SYNE, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.gold, background: "none", border: "none", cursor: "pointer" }}>Edit</button>
+                      <span style={{ fontFamily: INTER, fontSize: 11, fontWeight: 700, letterSpacing: "0.12em", textTransform: "uppercase", color: C.text }}>{title}</span>
+                      <button type="button" onClick={() => { setStep(stepN); window.scrollTo({ top: 0, behavior: "smooth" }); }} style={{ fontFamily: INTER, fontSize: 10, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.gold, background: "none", border: "none", cursor: "pointer" }}>Edit</button>
                     </div>
                     <div style={{ padding: "4px 16px 8px" }}>
                       {rows.map(([label, val]) => <ReviewRow key={String(label)} label={String(label)} value={val} />)}
@@ -703,7 +703,7 @@ export default function VendorApplicationForm() {
                 <div style={{ background: "#FFFBEB", border: "1px solid #FDE68A", borderRadius: 8, padding: "20px 24px", marginTop: 28 }}>
                   <label style={{ display: "flex", gap: 14, alignItems: "flex-start", cursor: "pointer" }}>
                     <input type="checkbox" checked={!!data.final_confirmation} onChange={e => set("final_confirmation", e.target.checked)} style={{ marginTop: 3, accentColor: C.gold, width: 18, height: 18, flexShrink: 0 }} />
-                    <span style={{ fontSize: 15, color: "#92400E", lineHeight: 1.65, fontFamily: DM, fontWeight: 500 }}>
+                    <span style={{ fontSize: 15, color: "#92400E", lineHeight: 1.65, fontFamily: INTER, fontWeight: 500 }}>
                       I understand that submitting this application does not guarantee acceptance into the BTLR Trusted Network. I certify that all information provided is accurate and truthful.
                     </span>
                   </label>
@@ -717,21 +717,21 @@ export default function VendorApplicationForm() {
           <div style={{ padding: "20px 36px", borderTop: `1px solid ${C.border}`, display: "flex", justifyContent: "space-between", alignItems: "center", background: C.surface }}>
             <div>
               {step > 1 && (
-                <button type="button" onClick={back} style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 20px", background: "none", border: `1px solid ${C.border}`, color: C.muted, cursor: "pointer", borderRadius: 8 }}>
+                <button type="button" onClick={back} style={{ fontFamily: INTER, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 20px", background: "none", border: `1px solid ${C.border}`, color: C.muted, cursor: "pointer", borderRadius: 8 }}>
                   ← Back
                 </button>
               )}
             </div>
             <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-              <button type="button" onClick={() => saveDraft()} disabled={saving} style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 20px", background: "none", border: `1px solid ${C.border}`, color: C.muted, cursor: "pointer", borderRadius: 8 }}>
+              <button type="button" onClick={() => saveDraft()} disabled={saving} style={{ fontFamily: INTER, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "12px 20px", background: "none", border: `1px solid ${C.border}`, color: C.muted, cursor: "pointer", borderRadius: 8 }}>
                 {saving ? "Saving…" : "Save Draft"}
               </button>
               {step < 9 ? (
-                <button type="button" onClick={advance} style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "13px 28px", background: C.gold, color: "#fff", border: "none", cursor: "pointer", borderRadius: 8 }}>
+                <button type="button" onClick={advance} style={{ fontFamily: INTER, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "13px 28px", background: C.gold, color: "#fff", border: "none", cursor: "pointer", borderRadius: 8 }}>
                   Save & Continue →
                 </button>
               ) : (
-                <button type="button" onClick={handleSubmit} disabled={submitting || !data.final_confirmation} style={{ fontFamily: SYNE, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "13px 28px", background: data.final_confirmation ? C.gold : C.border, color: data.final_confirmation ? "#fff" : C.muted, border: "none", cursor: data.final_confirmation ? "pointer" : "default", borderRadius: 8 }}>
+                <button type="button" onClick={handleSubmit} disabled={submitting || !data.final_confirmation} style={{ fontFamily: INTER, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", padding: "13px 28px", background: data.final_confirmation ? C.gold : C.border, color: data.final_confirmation ? "#fff" : C.muted, border: "none", cursor: data.final_confirmation ? "pointer" : "default", borderRadius: 8 }}>
                   {submitting ? "Submitting…" : "Submit Application"}
                 </button>
               )}
@@ -739,7 +739,7 @@ export default function VendorApplicationForm() {
           </div>
         </div>
 
-        <p style={{ textAlign: "center", fontSize: 12, color: C.dim, marginTop: 20, fontFamily: SYNE, letterSpacing: "0.06em" }}>
+        <p style={{ textAlign: "center", fontSize: 12, color: C.dim, marginTop: 20, fontFamily: INTER, letterSpacing: "0.06em" }}>
           Your progress is saved automatically. You can return to this form at any time using the same browser.
         </p>
       </div>

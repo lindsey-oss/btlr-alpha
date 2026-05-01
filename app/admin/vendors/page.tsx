@@ -103,10 +103,10 @@ export default function AdminVendors() {
   );
 
   if (!authed) return (
-    <div style={{ minHeight: "100vh", background: C.surface, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: DM }}>
+    <div style={{ minHeight: "100vh", background: C.surface, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif" }}>
       <div style={{ background: C.white, border: `1px solid ${C.border}`, padding: "48px 40px", width: 380, borderRadius: 4 }}>
         <div style={{ marginBottom: 32 }}>
-          <span style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 800, color: C.gold, letterSpacing: "0.14em" }}>BTLR</span>
+          <span style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 800, color: C.gold, letterSpacing: "0.14em" }}>BTLR</span>
           <h1 style={{ fontSize: 22, fontWeight: 700, color: C.text, margin: "12px 0 4px" }}>Admin Login</h1>
           <p style={{ color: C.muted, fontSize: 14, margin: 0 }}>Vendor Application Dashboard</p>
         </div>
@@ -118,7 +118,7 @@ export default function AdminVendors() {
             onChange={e => setPassword(e.target.value)}
             onKeyDown={e => e.key === "Enter" && handleLogin()}
             placeholder="Enter admin password"
-            style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 14, fontFamily: DM, boxSizing: "border-box" }}
+            style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 14, fontFamily: "'Inter', sans-serif", boxSizing: "border-box" }}
           />
           {loginErr && <p style={{ color: "#DC2626", fontSize: 13, marginTop: 6 }}>{loginErr}</p>}
         </div>
@@ -140,11 +140,11 @@ export default function AdminVendors() {
   }, {});
 
   return (
-    <div style={{ minHeight: "100vh", background: C.surface, fontFamily: DM }}>
+    <div style={{ minHeight: "100vh", background: C.surface, fontFamily: "'Inter', sans-serif" }}>
       {/* Header */}
       <div style={{ background: C.navy, padding: "20px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <Link href="/" style={{ fontFamily: "'Syne', sans-serif", fontSize: 18, fontWeight: 800, color: C.gold, letterSpacing: "0.14em", textDecoration: "none" }}>BTLR</Link>
+          <Link href="/" style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 800, color: C.gold, letterSpacing: "0.14em", textDecoration: "none" }}>BTLR</Link>
           <span style={{ color: "rgba(255,255,255,0.4)", fontSize: 18 }}>|</span>
           <span style={{ color: "#fff", fontWeight: 600, fontSize: 15 }}>Vendor Applications</span>
         </div>
@@ -160,7 +160,7 @@ export default function AdminVendors() {
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search by business name, owner, email, or specialty…"
-            style={{ width: "100%", padding: "11px 16px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 14, fontFamily: DM, background: C.white, boxSizing: "border-box" }}
+            style={{ width: "100%", padding: "11px 16px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 14, fontFamily: "'Inter', sans-serif", background: C.white, boxSizing: "border-box" }}
           />
         </div>
 

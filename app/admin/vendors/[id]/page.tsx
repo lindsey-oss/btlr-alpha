@@ -33,7 +33,7 @@ const SCORE_FIELDS = [
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div style={{ marginBottom: 32 }}>
-      <h3 style={{ fontFamily: SYNE, fontSize: 13, fontWeight: 800, color: C.gold, letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 16px", borderBottom: `1px solid ${C.borderGold}`, paddingBottom: 10 }}>
+      <h3 style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 800, color: C.gold, letterSpacing: "0.1em", textTransform: "uppercase", margin: "0 0 16px", borderBottom: `1px solid ${C.borderGold}`, paddingBottom: 10 }}>
         {title}
       </h3>
       {children}
@@ -144,13 +144,13 @@ export default function VendorDetail() {
   };
 
   if (loading) return (
-    <div style={{ minHeight: "100vh", background: C.surface, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: DM, color: C.muted }}>
+    <div style={{ minHeight: "100vh", background: C.surface, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", color: C.muted }}>
       Loading application…
     </div>
   );
 
   if (notFound || !app) return (
-    <div style={{ minHeight: "100vh", background: C.surface, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: DM, gap: 16 }}>
+    <div style={{ minHeight: "100vh", background: C.surface, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", gap: 16 }}>
       <p style={{ color: C.muted }}>Application not found.</p>
       <Link href="/admin/vendors" style={{ color: C.gold }}>← Back to list</Link>
     </div>
@@ -159,11 +159,11 @@ export default function VendorDetail() {
   const statusMeta = STATUS_META[app.status] ?? { label: app.status, color: C.muted, bg: C.surface };
 
   return (
-    <div style={{ minHeight: "100vh", background: C.surface, fontFamily: DM }}>
+    <div style={{ minHeight: "100vh", background: C.surface, fontFamily: "'Inter', sans-serif" }}>
       {/* Header */}
       <div style={{ background: C.navy, padding: "18px 32px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 24 }}>
-          <Link href="/" style={{ fontFamily: SYNE, fontSize: 18, fontWeight: 800, color: C.gold, letterSpacing: "0.14em", textDecoration: "none" }}>BTLR</Link>
+          <Link href="/" style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 800, color: C.gold, letterSpacing: "0.14em", textDecoration: "none" }}>BTLR</Link>
           <span style={{ color: "rgba(255,255,255,0.3)" }}>|</span>
           <Link href="/admin/vendors" style={{ color: "rgba(255,255,255,0.6)", fontSize: 14, textDecoration: "none" }}>Applications</Link>
           <span style={{ color: "rgba(255,255,255,0.3)" }}>›</span>
@@ -351,7 +351,7 @@ export default function VendorDetail() {
 
             {/* Scoring */}
             <div style={{ background: C.white, border: `1px solid ${C.border}`, borderRadius: 4, padding: "24px 20px", marginBottom: 20 }}>
-              <h3 style={{ fontFamily: SYNE, fontSize: 12, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: C.gold, margin: "0 0 18px" }}>
+              <h3 style={{ fontFamily: "'Inter', sans-serif", fontSize: 12, fontWeight: 800, letterSpacing: "0.1em", textTransform: "uppercase", color: C.gold, margin: "0 0 18px" }}>
                 Internal Scoring
               </h3>
 
@@ -371,7 +371,7 @@ export default function VendorDetail() {
                       setScores(s => ({ ...s, [f.key]: e.target.value === "" ? "" : String(v) }));
                     }}
                     placeholder={`0–${f.max}`}
-                    style={{ width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 14, fontFamily: DM, boxSizing: "border-box" }}
+                    style={{ width: "100%", padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 14, fontFamily: "'Inter', sans-serif", boxSizing: "border-box" }}
                   />
                 </div>
               ))}
@@ -380,7 +380,7 @@ export default function VendorDetail() {
               <div style={{ borderTop: `2px solid ${C.border}`, paddingTop: 14, marginTop: 6, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <span style={{ fontWeight: 700, fontSize: 14, color: C.text }}>Total Score</span>
                 <span style={{
-                  fontFamily: SYNE, fontSize: 22, fontWeight: 800,
+                  fontFamily: "'Inter', sans-serif", fontSize: 22, fontWeight: 800,
                   color: totalScore >= 70 ? C.success : totalScore >= 50 ? "#92400E" : totalScore > 0 ? C.error : C.dim,
                 }}>
                   {totalScore}/100
@@ -410,7 +410,7 @@ export default function VendorDetail() {
                 onChange={e => setNotes(e.target.value)}
                 placeholder="Internal notes about this applicant…"
                 rows={4}
-                style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 13, fontFamily: DM, resize: "vertical", boxSizing: "border-box" }}
+                style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 13, fontFamily: "'Inter', sans-serif", resize: "vertical", boxSizing: "border-box" }}
               />
             </div>
 
@@ -424,7 +424,7 @@ export default function VendorDetail() {
                 onChange={e => setMoreInfo(e.target.value)}
                 placeholder="Specify what additional info is needed from the vendor…"
                 rows={3}
-                style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 13, fontFamily: DM, resize: "vertical", boxSizing: "border-box" }}
+                style={{ width: "100%", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: 3, fontSize: 13, fontFamily: "'Inter', sans-serif", resize: "vertical", boxSizing: "border-box" }}
               />
             </div>
 
