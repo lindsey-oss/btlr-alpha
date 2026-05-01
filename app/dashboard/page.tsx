@@ -4427,9 +4427,16 @@ export default function Dashboard() {
     // Remove from Storage
     const { error: storageErr } = await supabase.storage.from("documents").remove([doc.path]);
     if (storageErr) { showToast("Delete failed: " + storageErr.message, "error"); return; }
-    // Remove from Postgres documents table — use primary key, not path
-    const { error: dbErr } = await supabase.from("documents").delete().eq("id", doc.id);
-    if (dbErr) console.error("[deleteDoc] db delete error:", dbErr.message);
+    // Remove from Postgres documents table — use primary key + user_id for RLS
+    const { data: { user: cu } } = await supabase.auth.getUser();
+    const { error: dbErr } = await supabase.from("documents").delete()
+      .eq("id", doc.id)
+      .eq("user_id", cu?.id ?? "");
+    if (dbErr) {
+      console.error("[deleteDoc] db delete error:", dbErr.message);
+      showToast("Delete failed — please try again", "error");
+      return;
+    }
     setDocs(prev => prev.filter(d => d.path !== doc.path));
     showToast(`Deleted ${doc.name}`, "success");
   }
@@ -8375,7 +8382,7 @@ export default function Dashboard() {
 
                 {/* Additional / stacked policies (e.g. CA FAIR Plan + DIC) */}
                 {(insurance?.additionalPolicies ?? []).map((ap, i) => (
-                  <div key={i} style={{ borderTop: `1px solid #bae6fd`, padding: "14px 22px" }}>
+                  <div key={i} style={{ borderTop: `1px solid #e2e8f0`, padding: "14px 22px", background: "white" }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
                       <div>
                         <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
@@ -8383,7 +8390,7 @@ export default function Dashboard() {
                           {ap.policyType ? ` · ${ap.policyType}` : ""}
                         </span>
                         {ap.policyNumber && (
-                          <span style={{ fontSize: 11, color: C.text3, marginLeft: 8, fontFamily: "monospace" }}>#{ap.policyNumber}</span>
+                          <span style={{ fontSize: 11, color: C.text2, marginLeft: 8, fontFamily: "monospace" }}>#{ap.policyNumber}</span>
                         )}
                       </div>
                       <button onClick={async () => {
@@ -8420,7 +8427,7 @@ export default function Dashboard() {
                               )}
                             </div>
                           ) : (
-                            <p style={{ fontSize: 11, color: C.text3, margin: "0 0 8px", fontStyle: "italic" }}>No details parsed — upload a declarations page for coverage info.</p>
+                            <p style={{ fontSize: 12, color: C.text2, margin: "0 0 8px" }}>No details parsed — upload a declarations page for coverage info.</p>
                           )}
                           {(ap.claimPhone || ap.claimUrl) && (
                             <button onClick={() => {
