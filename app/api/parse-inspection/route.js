@@ -380,6 +380,7 @@ function buildPrompt(addressCandidates) {
   "company_name": "string | null",
   "inspector_name": "string | null",
   "summary": "string | null",
+  "property_type": "single_family" | "condo" | "townhouse" | "multi_family" | null,
   "roof_year": number | null,
   "hvac_year": number | null,
   "findings": [
@@ -434,6 +435,14 @@ roof_year:
 hvac_year:
   - Year the HVAC was last REPLACED or INSTALLED
   - Only populate if explicitly mentioned as a replacement/installation
+
+property_type:
+  - The type of dwelling being inspected
+  - Return "condo" if the report mentions: "condominium", "condo unit", "HOA", "common area", "unit #", "homeowners association", "association-maintained", or if the report explicitly excludes roof/exterior/structure as "HOA responsibility" or "association maintained"
+  - Return "townhouse" if the report mentions: "townhouse", "townhome", "row house", or similar attached dwelling with its own roof
+  - Return "multi_family" if the report mentions: "duplex", "triplex", "fourplex", "multi-family", "investment property" with multiple units
+  - Return "single_family" if the report clearly describes a detached single-family home
+  - Return null if uncertain — do NOT guess
 
 findings:
   - Extract ALL deficiencies, repair items, maintenance items, and observations
@@ -545,6 +554,7 @@ Respond ONLY with valid JSON in exactly this shape:
   "company_name": "string | null",
   "inspector_name": "string | null",
   "summary": "string | null",
+  "property_type": "single_family" | "condo" | "townhouse" | "multi_family" | null,
   "roof_year": number | null,
   "hvac_year": number | null,
   "findings": [

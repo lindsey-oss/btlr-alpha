@@ -24,7 +24,7 @@ import { registerCostOverrides } from "../../lib/scoring-cost-ranges";
 import { isScorable } from "../../lib/findings/scorableRules";
 import { computeExtendedCondition, type ExtendedConditionResult } from "../../lib/scoring-extended";
 import { isEnabled } from "../../lib/feature-flags";
-import { SELF_INSPECT_STEPS, generateSelfInspectionFindings, type SelfInspectAnswers, isStepComplete } from "../../lib/self-inspection-questionnaire";
+import { SELF_INSPECT_STEPS, generateSelfInspectionFindings, type SelfInspectAnswers, type SelfInspectQuestion, type SelfInspectOption, isStepComplete } from "../../lib/self-inspection-questionnaire";
 
 // Wire Supabase client into the snapshot store so audit snapshots persist to DB.
 // Module-level: runs once on import, safe for server/client boundary (store is
@@ -469,14 +469,14 @@ interface CostItem {
 
 // ── Design tokens ─────────────────────────────────────────────────────────
 const C = {
-  bg:       "#F7F2EC",   // warm linen
+  bg:       "#EDE8E0",   // warm cream
   surface:  "#FFFFFF",   // card white
-  surface2: "#EDE5D4",   // warm gray for subtle sections
-  navy:     "#1B2D47",   // dark navy (sidebar, headings)
-  accent:   "#2C5F8A",   // steel blue
-  accentDk: "#1E4568",   // darker steel blue for hover/active
-  accentLt: "#5C8FB8",   // light steel blue for subtle tints
-  accentBg: "rgba(44,95,138,0.08)", // tint bg
+  surface2: "#F5F1EB",   // soft warm secondary bg
+  navy:     "#1C2B3A",   // dark navy (sidebar, headings)
+  accent:   "#E8742A",   // brand orange
+  accentDk: "#C07828",   // darker orange for hover/active
+  accentLt: "#F59842",   // light orange for subtle tints
+  accentBg: "rgba(232,116,42,0.08)", // tint bg
   text:     "#1C1914",   // warm near-black
   text2:    "#4A453E",   // warm medium
   text3:    "#6B6558",   // warm muted
@@ -576,12 +576,12 @@ function HousePhoto({ address, height = 200 }: { address: string; height?: numbe
     <svg viewBox="0 0 900 200" style={{ width: "100%", height: "100%", position: "absolute", inset: 0 }} preserveAspectRatio="xMidYMid slice">
       <defs>
         <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stopColor="#1B2D47"/><stop offset="100%" stopColor="#2C5F8A"/>
+          <stop offset="0%" stopColor="#1C2B3A"/><stop offset="100%" stopColor="#2A3E54"/>
         </linearGradient>
         <linearGradient id="glow" x1="0" y1="0" x2="1" y2="0">
-          <stop offset="0%" stopColor="#2C5F8A" stopOpacity="0"/>
-          <stop offset="50%" stopColor="#2C5F8A" stopOpacity="0.15"/>
-          <stop offset="100%" stopColor="#2C5F8A" stopOpacity="0"/>
+          <stop offset="0%" stopColor="#E8742A" stopOpacity="0"/>
+          <stop offset="50%" stopColor="#E8742A" stopOpacity="0.15"/>
+          <stop offset="100%" stopColor="#E8742A" stopOpacity="0"/>
         </linearGradient>
       </defs>
       <rect width="900" height="200" fill="url(#sky)"/>
@@ -872,6 +872,243 @@ function RichScoreDimensions({ report }: { report: HomeHealthReport }) {
   );
 }
 
+// ── Category → Self-Inspect step key mapping ──────────────────────────────────
+const CATEGORY_TO_STEP_KEY: Record<string, string> = {
+  structure_foundation:    "structure",
+  roof_drainage_exterior:  "roof",
+  electrical:              "electrical",
+  plumbing:                "plumbing",
+  hvac:                    "hvac",
+  appliances_water_heater: "appliances",
+  safety_environmental:    "safety",
+};
+
+// ── Per-System Assessment Modal ───────────────────────────────────────────────
+// Focused single-step version of the full self-inspection modal.
+// Shows just the questions for one system, with photo capture.
+// Maps an AI photo result to the best-matching option value for a given question.
+// Returns null if no confident mapping is possible.
+function autoSelectFromPhoto(
+  question: SelfInspectQuestion,
+  result: { findings?: Array<{ severity: string }>; manufacture_year?: number | null },
+): string | null {
+  const { findings = [], manufacture_year } = result;
+
+  // ── Age questions: map manufacture_year → option ────────────────────────────
+  if (manufacture_year && question.options.some((o: SelfInspectOption) => o.age_years != null)) {
+    const age = new Date().getFullYear() - manufacture_year;
+    // Sort options by age_years ascending so [0]=young [1]=mid [2]=old
+    const sorted = [...question.options].filter((o: SelfInspectOption) => o.age_years != null)
+      .sort((a: SelfInspectOption, b: SelfInspectOption) => (a.age_years ?? 0) - (b.age_years ?? 0));
+    const midAge  = sorted[1]?.age_years ?? 8;
+    const oldAge  = sorted[2]?.age_years ?? 11;
+    if (age < midAge)  return sorted[0]?.value ?? null;
+    if (age < oldAge)  return sorted[1]?.value ?? null;
+    return sorted[2]?.value ?? null;
+  }
+
+  // ── Condition questions: map top finding severity → option ───────────────────
+  const topSeverity = findings[0]?.severity;
+  if (!topSeverity) return null;
+  // Prefer an exact severity match; fall back to the nearest option
+  const exact = question.options.find(o => o.severity === topSeverity);
+  if (exact) return exact.value;
+  // If AI says "critical" but no critical option, pick the most severe available
+  if (topSeverity === "critical") {
+    return question.options.find(o => o.severity === "warning")?.value
+      ?? question.options[question.options.length - 1]?.value ?? null;
+  }
+  return null;
+}
+
+function SystemAssessModal({
+  stepKey, answers, onAnswer, onClose, onSave, saving,
+}: {
+  stepKey:  string;
+  answers:  SelfInspectAnswers;
+  onAnswer: (questionId: string, value: string) => void;
+  onClose:  () => void;
+  onSave:   () => void;
+  saving:   boolean;
+}) {
+  const step = SELF_INSPECT_STEPS.find(s => s.key === stepKey);
+  if (!step) return null;
+  const allAnswered = step.questions.every(q => !!answers[q.id]);
+
+  const [photoData, setPhotoData] = useState<Record<string, {
+    previewUrl: string;
+    analyzing:  boolean;
+    suggestion?: string;
+  }>>({});
+
+  // Tracks which options were auto-selected by AI (vs manually chosen by user)
+  const [aiSuggested, setAiSuggested] = useState<Record<string, string>>({});
+
+  async function handlePhoto(questionId: string, e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const previewUrl = URL.createObjectURL(file);
+    setPhotoData(prev => ({ ...prev, [questionId]: { previewUrl, analyzing: true } }));
+    try {
+      const base64 = await new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onload  = () => res(reader.result as string);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const { data: { session } } = await supabase.auth.getSession();
+      const reqHeaders: Record<string, string> = { "Content-Type": "application/json" };
+      if (session?.access_token) reqHeaders["Authorization"] = `Bearer ${session.access_token}`;
+      const resp = await fetch("/api/analyze-photos", {
+        method: "POST", headers: reqHeaders,
+        body: JSON.stringify({ photoUrls: [base64], focusArea: questionId }),
+      });
+      let suggestion = "Photo captured — use it as a reference when answering.";
+      if (resp.ok) {
+        const result = await resp.json();
+        const summary = result.photo_summary as string | undefined;
+        const topFinding = (result.findings ?? [])[0];
+        const mfgYear = result.manufacture_year as number | null | undefined;
+
+        // ── Build suggestion text ──────────────────────────────────────────────
+        if (mfgYear) {
+          const age = new Date().getFullYear() - mfgYear;
+          suggestion = `Manufacture year: ${mfgYear} (${age} yr old). ${summary ?? ""}`.slice(0, 140);
+        } else if (summary) {
+          suggestion = summary.length > 130 ? summary.slice(0, 127) + "…" : summary;
+        } else if (topFinding?.description) {
+          const raw = topFinding.description as string;
+          suggestion = raw.length > 130 ? raw.slice(0, 127) + "…" : raw;
+        }
+
+        // ── Auto-select the best matching answer ───────────────────────────────
+        const question = step?.questions.find(q => q.id === questionId);
+        if (question) {
+          const suggested = autoSelectFromPhoto(question, {
+            findings:        result.findings,
+            manufacture_year: mfgYear ?? null,
+          });
+          if (suggested) {
+            onAnswer(questionId, suggested);
+            setAiSuggested(prev => ({ ...prev, [questionId]: suggested }));
+          }
+        }
+      }
+      setPhotoData(prev => ({ ...prev, [questionId]: { previewUrl, analyzing: false, suggestion } }));
+    } catch {
+      setPhotoData(prev => ({ ...prev, [questionId]: { previewUrl, analyzing: false, suggestion: "Photo captured." } }));
+    }
+    e.target.value = "";
+  }
+
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "flex-end", justifyContent: "center", background: "rgba(15,31,61,0.55)", backdropFilter: "blur(4px)" }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+      <div style={{ background: C.surface, borderRadius: "20px 20px 0 0", width: "100%", maxWidth: 600, maxHeight: "90vh", display: "flex", flexDirection: "column", overflow: "hidden", boxShadow: "0 -8px 48px rgba(15,31,61,0.18)" }}>
+
+        {/* Header */}
+        <div style={{ padding: "18px 20px 14px", borderBottom: `1px solid ${C.border}`, flexShrink: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+            <div>
+              <p style={{ fontSize: 11, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 2px" }}>Rate This System</p>
+              <p style={{ fontSize: 16, fontWeight: 800, color: C.text, margin: 0 }}>{step.emoji} {step.systemName}</p>
+            </div>
+            <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, padding: 4 }}>
+              <X size={20}/>
+            </button>
+          </div>
+          <p style={{ fontSize: 12, color: C.text3, margin: "10px 0 0", lineHeight: 1.5 }}>{step.description}</p>
+        </div>
+
+        {/* Body */}
+        <div style={{ flex: 1, overflowY: "auto", padding: "16px 20px 20px" }}>
+          {step.questions.map(q => {
+            const pd     = photoData[q.id];
+            const chosen = answers[q.id];
+            return (
+              <div key={q.id} style={{ marginBottom: 22 }}>
+                <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: "0 0 4px", lineHeight: 1.4 }}>{q.label}</p>
+                {q.hint && <p style={{ fontSize: 12, color: C.text3, margin: "0 0 10px", lineHeight: 1.4 }}>{q.hint}</p>}
+
+                {/* Photo prompt */}
+                {q.photoPrompt && (
+                  <div style={{ background: "#fffbeb", border: "1px solid #fcd34d", borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                      <Camera size={15} color="#d97706" style={{ flexShrink: 0, marginTop: 1 }}/>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 600, color: "#92400e", margin: "0 0 2px" }}>{q.photoPrompt.label}</p>
+                        <p style={{ fontSize: 11, color: "#b45309", margin: "0 0 8px", lineHeight: 1.4 }}>{q.photoPrompt.tip}</p>
+                        {pd ? (
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                            <img src={pd.previewUrl} alt="photo" style={{ width: 60, height: 60, objectFit: "cover", borderRadius: 8, flexShrink: 0, border: "1.5px solid #fcd34d" }}/>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              {pd.analyzing
+                                ? <p style={{ fontSize: 12, color: "#b45309", margin: 0, fontStyle: "italic" }}>Analyzing photo…</p>
+                                : <p style={{ fontSize: 12, color: "#92400e", margin: 0, lineHeight: 1.4 }}>{pd.suggestion}</p>
+                              }
+                            </div>
+                          </div>
+                        ) : (
+                          <label style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", borderRadius: 8, background: "#fef3c7", border: "1px solid #fcd34d", color: "#92400e", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                            <Camera size={13}/> Take Photo
+                            <input type="file" accept="image/*" capture="environment" style={{ display: "none" }} onChange={e => handlePhoto(q.id, e)}/>
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Answer options */}
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {q.options.map(opt => {
+                    const sel        = chosen === opt.value;
+                    const isAiPick   = aiSuggested[q.id] === opt.value;
+                    const borderCol  = sel ? C.accent : C.border;
+                    const bgCol      = sel ? C.accentLt : C.surface;
+                    return (
+                      <button key={opt.value}
+                        onClick={() => {
+                          onAnswer(q.id, opt.value);
+                          // If user manually picks a different option, clear the AI suggestion
+                          if (isAiPick === false) setAiSuggested(prev => { const n = { ...prev }; delete n[q.id]; return n; });
+                        }}
+                        style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 14px", borderRadius: 10, border: `1.5px solid ${borderCol}`, background: bgCol, cursor: "pointer", textAlign: "left", transition: "all 0.15s" }}>
+                        <div style={{ width: 16, height: 16, borderRadius: "50%", border: `2px solid ${sel ? C.accent : C.border}`, background: sel ? C.accent : "transparent", flexShrink: 0, marginTop: 2, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          {sel && <div style={{ width: 6, height: 6, borderRadius: "50%", background: "white" }}/>}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                            <p style={{ fontSize: 13, fontWeight: 700, color: sel ? C.accent : C.text, margin: 0 }}>{opt.label}</p>
+                            {sel && isAiPick && (
+                              <span style={{ fontSize: 10, fontWeight: 700, color: "#0369a1", background: "#e0f2fe", border: "1px solid #bae6fd", borderRadius: 4, padding: "1px 5px", letterSpacing: "0.04em" }}>
+                                AI suggested
+                              </span>
+                            )}
+                          </div>
+                          {opt.subLabel && <p style={{ fontSize: 11, color: C.text3, margin: "1px 0 0" }}>{opt.subLabel}</p>}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "14px 20px 28px", borderTop: `1px solid ${C.border}`, flexShrink: 0 }}>
+          <button onClick={onSave} disabled={!allAnswered || saving}
+            style={{ width: "100%", padding: "14px", borderRadius: 12, background: allAnswered ? C.accent : C.border, border: "none", color: "white", fontSize: 15, fontWeight: 700, cursor: allAnswered ? "pointer" : "default", opacity: saving ? 0.7 : 1, transition: "background 0.2s" }}>
+            {saving ? "Saving…" : allAnswered ? "Get My Score" : `Answer all ${step.questions.length} questions to continue`}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Self-Inspection Modal ─────────────────────────────────────────────────────
 function SelfInspectionModal({
   answers, step, onAnswer, onNext, onBack, onClose, onSave, saving,
@@ -1092,16 +1329,17 @@ function SelfInspectionModal({
 }
 
 function HealthScoreModal({
-  breakdown, roofYear, hvacYear, year, homeHealthReport, extCondition, onClose, onFindVendors,
+  breakdown, roofYear, hvacYear, year, homeHealthReport, extCondition, onClose, onFindVendors, onStartSystemAssess,
 }: {
-  breakdown:         ScoreBreakdown;
-  roofYear:          string;
-  hvacYear:          string;
-  year:              number;
-  homeHealthReport?: HomeHealthReport | null;
-  extCondition?:     ExtendedConditionResult | null;
-  onClose:           () => void;
-  onFindVendors:     (trade: string, context?: string, issue?: string) => void;
+  breakdown:           ScoreBreakdown;
+  roofYear:            string;
+  hvacYear:            string;
+  year:                number;
+  homeHealthReport?:   HomeHealthReport | null;
+  extCondition?:       ExtendedConditionResult | null;
+  onClose:             () => void;
+  onFindVendors:       (trade: string, context?: string, issue?: string) => void;
+  onStartSystemAssess: (stepKey: string) => void;
 }) {
   const { score, deductions, resolvedDeductions } = breakdown;
   // Adjusted score = Core Score + Extended Condition modifier (±8, 0 when no data)
@@ -1181,18 +1419,31 @@ function HealthScoreModal({
                       const noData = cs.not_assessed;
                       const barColor = noData ? C.text3 : cs.score >= 80 ? C.green : cs.score >= 65 ? C.amber : C.red;
                       const label = formatLabel(cs.category);
+                      const stepKey = CATEGORY_TO_STEP_KEY[cs.category];
                       return (
                         <div key={cs.category}>
                           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 3 }}>
                             <span style={{ fontSize: 12, color: noData ? C.text3 : C.text2, fontWeight: 500 }}>{label}</span>
                             {noData
-                              ? <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic" }}>No issues found</span>
+                              ? (stepKey
+                                  ? <button
+                                      onClick={() => { onClose(); onStartSystemAssess(stepKey); }}
+                                      style={{ fontSize: 11, color: C.accent, fontWeight: 600, background: "none", border: "none", cursor: "pointer", padding: "2px 0", textDecoration: "underline", textUnderlineOffset: 2 }}>
+                                      Rate this system
+                                    </button>
+                                  : <span style={{ fontSize: 11, color: C.text3, fontStyle: "italic" }}>Not assessed</span>
+                                )
                               : <span style={{ fontSize: 12, fontWeight: 700, color: barColor }}>{cs.score}</span>
                             }
                           </div>
                           <div style={{ height: 5, borderRadius: 3, background: C.border, overflow: "hidden" }}>
                             <div style={{ height: "100%", width: noData ? "100%" : `${cs.score}%`, background: noData ? C.border : barColor, borderRadius: 3, transition: "width 0.8s ease" }}/>
                           </div>
+                          {noData && stepKey && (
+                            <p style={{ fontSize: 10, color: C.text3, margin: "3px 0 0", lineHeight: 1.3 }}>
+                              No inspection data — answer a few questions to get a score
+                            </p>
+                          )}
                         </div>
                       );
                     })}
@@ -2080,6 +2331,11 @@ export default function Dashboard() {
   const [selfInspectAnswers, setSelfInspectAnswers]     = useState<SelfInspectAnswers>({});
   const [savingSelfInspect, setSavingSelfInspect]       = useState(false);
 
+  // ── Per-system assessment modal ────────────────────────────────────────────
+  const [systemAssessStepKey, setSystemAssessStepKey]   = useState<string | null>(null);
+  const [systemAssessAnswers, setSystemAssessAnswers]   = useState<SelfInspectAnswers>({});
+  const [savingSystemAssess, setSavingSystemAssess]     = useState(false);
+
   // ── Photo capture ──────────────────────────────────────────────────────────
   const [photoAnalyzing, setPhotoAnalyzing] = useState(false);
   const [photoErr, setPhotoErr]             = useState("");
@@ -2478,7 +2734,7 @@ export default function Dashboard() {
   async function deleteWarranty() {
     if (!confirm("Remove this warranty record? This will clear all parsed warranty data.")) return;
     const propId = activePropertyIdRef.current;
-    if (propId) await supabase.from("home_warranty").delete().eq("property_id", propId);
+    if (propId) await supabase.from("home_warranties").delete().eq("property_id", propId);
     setWarranty(null);
     setWarrantyDocUrl(null);
     showToast("Warranty record removed", "success");
@@ -2731,6 +2987,67 @@ export default function Dashboard() {
       console.error("[saveSelfInspection] error:", err);
     }
     setSavingSelfInspect(false);
+  }
+
+  // ── Save a single-system self-assessment ──────────────────────────────────
+  async function saveSystemAssessment(stepKey: string, answers: SelfInspectAnswers) {
+    const propId = activePropertyIdRef.current;
+    if (!propId) return;
+    setSavingSystemAssess(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) { setSavingSystemAssess(false); return; }
+
+      // Generate findings for only this step's questions
+      const allGenerated = generateSelfInspectionFindings(answers);
+      const step = SELF_INSPECT_STEPS.find(s => s.key === stepKey);
+      const generated = allGenerated.filter(f =>
+        f.normalized_finding_key.startsWith(`self__${stepKey}__`)
+      );
+
+      // Delete only the previous self-inspection findings for this specific step's categories
+      const stepCategories = [...new Set(step?.questions.map(q => q.category) ?? [])];
+      for (const cat of stepCategories) {
+        await supabase.from("findings")
+          .delete()
+          .eq("property_id", propId)
+          .eq("finding_source", "self_inspection")
+          .eq("category", cat);
+      }
+
+      // Upsert new findings
+      if (generated.length > 0) {
+        const rows = generated.map(f => ({
+          property_id:            propId,
+          user_id:                session.user.id,
+          category:               f.category,
+          description:            f.description,
+          severity:               f.severity,
+          normalized_finding_key: f.normalized_finding_key,
+          finding_source:         "self_inspection",
+          raw_finding:            f,
+          status:                 "repair_needed",
+        }));
+        await supabase.from("findings").upsert(rows, { onConflict: "normalized_finding_key,property_id" });
+      }
+
+      // If no inspection source yet, mark as self-inspected
+      if (!inspectionSource) {
+        await supabase.from("properties").update({
+          inspection_source: "self",
+          inspection_date:   new Date().toISOString().slice(0, 10),
+          inspection_type:   "Self-Inspection",
+        }).eq("id", propId);
+        setInspectionSource("self");
+      }
+
+      setSystemAssessStepKey(null);
+      setSystemAssessAnswers({});
+      loadProperty(propId);
+    } catch (err) {
+      console.error("[saveSystemAssessment] error:", err);
+    }
+    setSavingSystemAssess(false);
   }
 
   // ── Analyze photos from camera / gallery ───────────────────────────────
@@ -3286,6 +3603,11 @@ export default function Dashboard() {
           finding_statuses:      freshStatuses,
           ...(result.roof_year        ? { roof_year: result.roof_year }               : {}),
           ...(result.hvac_year        ? { hvac_year: result.hvac_year }               : {}),
+          // Auto-set home_type from inspection if not already set by user
+          // (user's manual selection wins — only fill if null/unknown)
+          ...(result.property_type && !allProperties.find(p => p.id === activePropId)?.home_type
+            ? { home_type: result.property_type }
+            : {}),
           // Persist address from inspection report so vendor search stays correct on reload
           ...(result.property_address ? { address: result.property_address }          : {}),
           updated_at:            new Date().toISOString(),
@@ -3438,6 +3760,14 @@ export default function Dashboard() {
         if (result.roof_year) setRoofYear(String(result.roof_year));
         if (result.hvac_year) setHvacYear(String(result.hvac_year));
         if (result.property_address) setAddress(result.property_address);
+        // Sync detected property type into allProperties so scoring uses it immediately
+        if (result.property_type) {
+          setAllProperties(prev => prev.map(p =>
+            p.id === activePropertyIdRef.current && !p.home_type
+              ? { ...p, home_type: result.property_type }
+              : p
+          ));
+        }
         setInspectionResult(result);
         setLastInspectionFilename(file.name);
         // Recompute merged report — API's home_health_report only knows about
@@ -4649,8 +4979,8 @@ export default function Dashboard() {
         /* ── Input / select focus ──────────────────────────── */
         input:focus, select:focus, textarea:focus {
           outline: none;
-          border-color: #2C5F8A !important;
-          box-shadow: 0 0 0 3px rgba(44,95,138,0.12) !important;
+          border-color: #E8742A !important;
+          box-shadow: 0 0 0 3px rgba(232,116,42,0.12) !important;
         }
 
         /* ── Button transitions ────────────────────────────── */
@@ -4722,6 +5052,16 @@ export default function Dashboard() {
           onSave={() => saveSelfInspection(selfInspectAnswers)}
         />
       )}
+      {systemAssessStepKey && (
+        <SystemAssessModal
+          stepKey={systemAssessStepKey}
+          answers={systemAssessAnswers}
+          saving={savingSystemAssess}
+          onAnswer={(questionId, value) => setSystemAssessAnswers(prev => ({ ...prev, [questionId]: value }))}
+          onClose={() => { setSystemAssessStepKey(null); setSystemAssessAnswers({}); }}
+          onSave={() => saveSystemAssessment(systemAssessStepKey, systemAssessAnswers)}
+        />
+      )}
       {showHealthModal && (
         <HealthScoreModal
           breakdown={breakdown}
@@ -4730,6 +5070,7 @@ export default function Dashboard() {
           extCondition={extCondition}
           onClose={() => setShowHealthModal(false)}
           onFindVendors={handleFindVendors}
+          onStartSystemAssess={(stepKey) => { setShowHealthModal(false); setSystemAssessStepKey(stepKey); setSystemAssessAnswers({}); }}
         />
       )}
       {showCompleteModal && completeModalTarget && (
@@ -5447,7 +5788,7 @@ export default function Dashboard() {
 
                 {/* ── MAINTENANCE SCORE HERO ──────────────────────────── */}
                 <div style={{
-                  background: "linear-gradient(135deg, #1B2D47 0%, #2C5F8A 100%)",
+                  background: "linear-gradient(135deg, #1C2B3A 0%, #2A3E54 100%)",
                   borderRadius: 18, padding: isMobile ? "18px 18px" : "22px 28px",
                   position: "relative", overflow: "hidden",
                 }}>
@@ -5530,7 +5871,7 @@ export default function Dashboard() {
                       height: "100%", borderRadius: 6,
                       background: completionsThisWeek >= WEEKLY_GOAL
                         ? C.green
-                        : `linear-gradient(90deg, ${C.accent}, #5C8FB8)`,
+                        : `linear-gradient(90deg, ${C.accent}, ${C.accentLt})`,
                       width: `${Math.min(100, Math.round((completionsThisWeek / WEEKLY_GOAL) * 100))}%`,
                       transition: "width 0.4s ease",
                     }}/>
