@@ -2141,28 +2141,19 @@ export default function Dashboard() {
   // ── Recurring maintenance task completions ────────────────────────────────
   // Keyed by task ID → ISO datetime of most recent completion.
   // Separate from inspection findings / repairs — maintenance = behavior, not condition.
-  const [maintCompletions, setMaintCompletions] = useState<Record<string, string>>(() => {
-    try {
-      const raw = typeof window !== "undefined" ? localStorage.getItem("btlr_maint_v1") : null;
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
-  });
+  const [maintCompletions, setMaintCompletions] = useState<Record<string, string>>({});
   function toggleMaintTask(taskId: string) {
+    const propId = activePropertyIdRef.current;
     setMaintCompletions(prev => {
       const next = { ...prev };
       if (next[taskId]) { delete next[taskId]; } else { next[taskId] = new Date().toISOString(); }
-      try { localStorage.setItem("btlr_maint_v1", JSON.stringify(next)); } catch { /* silent */ }
+      try { localStorage.setItem(`btlr_maint_v1_${propId ?? "0"}`, JSON.stringify(next)); } catch { /* silent */ }
       return next;
     });
   }
 
   // ── Maintenance scheduled state (date + vendor + status) ─────────────
-  const [maintScheduled, setMaintScheduled] = useState<Record<string, { date: string; status: "scheduled" | "booked"; vendor?: string }>>(() => {
-    try {
-      const raw = typeof window !== "undefined" ? localStorage.getItem("btlr_maint_sched_v1") : null;
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
-  });
+  const [maintScheduled, setMaintScheduled] = useState<Record<string, { date: string; status: "scheduled" | "booked"; vendor?: string }>>({});
   const [maintFilter, setMaintFilter]       = useState<"all"|"due"|"done">("all");
   const [showFullSchedule, setShowFullSchedule] = useState(false);
   const [scheduleModal, setScheduleModal] = useState<{ taskId: string; taskName: string } | null>(null);
@@ -2201,13 +2192,15 @@ export default function Dashboard() {
   function saveSchedule(taskId: string, s: "scheduled" | "booked") {
     const next = { ...maintScheduled, [taskId]: { date: schedDate, status: s, vendor: schedVendor.trim() || undefined } };
     setMaintScheduled(next);
-    try { localStorage.setItem("btlr_maint_sched_v1", JSON.stringify(next)); } catch {}
+    const propId = activePropertyIdRef.current;
+    try { localStorage.setItem(`btlr_maint_sched_v1_${propId ?? "0"}`, JSON.stringify(next)); } catch {}
     setScheduleModal(null); setSchedDate(""); setSchedVendor("");
   }
   function clearSchedule(taskId: string) {
     const next = { ...maintScheduled }; delete next[taskId];
     setMaintScheduled(next);
-    try { localStorage.setItem("btlr_maint_sched_v1", JSON.stringify(next)); } catch {}
+    const propId = activePropertyIdRef.current;
+    try { localStorage.setItem(`btlr_maint_sched_v1_${propId ?? "0"}`, JSON.stringify(next)); } catch {}
   }
 
   const [q, setQ]               = useState("");
@@ -3026,6 +3019,10 @@ export default function Dashboard() {
     setWarrantyDocUrl(null); setInsuranceDocUrls([]);
     setParseDebug(null); setMortgageForm({ lender: "loanDepot", balance: "", payment: "", due_day: "1", rate: "" });
     setInspectionSource(null);
+    // Clear maintenance state — these are property-specific and must not bleed across properties
+    setMaintScheduled({});
+    setMaintCompletions({});
+    setDoneTasks(new Set());
   }
 
   // ── Save self-inspection results ───────────────────────────────────────
@@ -3327,6 +3324,15 @@ export default function Dashboard() {
       if (error) { console.error("[loadProperty] DB read error:", error.message, error.code); return; }
       if (!data) { console.log("[loadProperty] No property row found for this user"); return; }
       console.log(`[loadProperty] Loaded property — ${(data.inspection_findings ?? []).length} findings, statuses: ${JSON.stringify(data.finding_statuses ?? {})}`)
+
+      // ── Load property-scoped maintenance state from localStorage ─────────
+      try {
+        const savedComp  = localStorage.getItem(`btlr_maint_v1_${propId}`);
+        const savedSched = localStorage.getItem(`btlr_maint_sched_v1_${propId}`);
+        setMaintCompletions(savedComp  ? JSON.parse(savedComp)  : {});
+        setMaintScheduled(savedSched ? JSON.parse(savedSched) : {});
+      } catch { setMaintCompletions({}); setMaintScheduled({}); }
+
       setAddress(data.address ?? "My Home");
       setRoofYear(data.roof_year?.toString() ?? "");
       setHvacYear(data.hvac_year?.toString() ?? "");
