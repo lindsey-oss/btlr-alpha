@@ -2260,6 +2260,9 @@ export default function Dashboard() {
   const [docLoading, setDocLoading]         = useState(false);
   const [savingSettings, setSavingSettings] = useState(false);
   const [settingsSaved, setSettingsSaved]   = useState(false);
+  const [profileName, setProfileName]       = useState("");
+  const [savingName, setSavingName]         = useState(false);
+  const [nameSaved, setNameSaved]           = useState(false);
   const [parseDebug, setParseDebug]         = useState<Record<string, string | number | boolean | null | undefined> | null>(null);
   const [showDebug, setShowDebug]           = useState(false);
 
@@ -2954,6 +2957,8 @@ export default function Dashboard() {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) { router.push("/login"); return false; }
     setUser(session.user);
+    const existingName = (session.user as any)?.user_metadata?.first_name ?? "";
+    if (existingName) setProfileName(existingName);
     // Load user tier from user_profiles (non-blocking — defaults to 'free')
     supabase.from("user_profiles").select("tier").eq("id", session.user.id).maybeSingle()
       .then(({ data: profile }) => { if (profile?.tier) setUserTier(profile.tier as "free" | "pro"); });
@@ -3606,6 +3611,17 @@ export default function Dashboard() {
     } catch (err: unknown) { console.error(err); }
     setMortgageStatLoading(false);
     if (mortgageStatRef.current) mortgageStatRef.current.value = "";
+  }
+
+  async function saveProfileName() {
+    if (!profileName.trim()) return;
+    setSavingName(true); setNameSaved(false);
+    try {
+      await supabase.auth.updateUser({ data: { first_name: profileName.trim() } });
+      setNameSaved(true);
+      setTimeout(() => setNameSaved(false), 3000);
+    } catch (err) { console.error("Name save error:", err); }
+    setSavingName(false);
   }
 
   async function saveSettings() {
@@ -5964,12 +5980,56 @@ export default function Dashboard() {
               );
             }
 
-            // Checklist filter tabs
-            const filteredTasks = maintFilter === "due"
-              ? MAINT_TASKS.filter(t => ["overdue","due","scheduled","booked"].includes(taskStates[t.id]))
-              : maintFilter === "done"
-              ? MAINT_TASKS.filter(t => taskStates[t.id] === "done")
-              : annualTasks;
+            // Frequency groups for checklist
+            const FREQ_GROUPS: { label: string; freq: MaintTask["freq"]; color: string; bg: string }[] = [
+              { label: "Monthly",       freq: "monthly",     color: C.accent,   bg: C.accentBg },
+              { label: "Quarterly",     freq: "quarterly",   color: "#f59e0b",  bg: "#fffbeb" },
+              { label: "Twice a Year",  freq: "semi_annual", color: "#8b5cf6",  bg: "#f5f3ff" },
+              { label: "Annual",        freq: "annual",      color: C.green,    bg: C.greenBg },
+            ];
+
+            // Seasonal checklist — resets each season via maintenanceDoneKey
+            const mo = new Date().getMonth();
+            const currentSeason = mo <= 1 || mo === 11 ? "Winter" : mo <= 4 ? "Spring" : mo <= 7 ? "Summer" : "Fall";
+            const SEASONAL_TASKS: Record<string, { id: string; task: string }[]> = {
+              Spring: [
+                { id: "sp_ac_service",      task: "Schedule AC tune-up before cooling season" },
+                { id: "sp_gutters",          task: "Clean gutters after winter / pollen season" },
+                { id: "sp_roof_check",       task: "Walk the roof — look for winter damage" },
+                { id: "sp_exterior",         task: "Inspect exterior caulk, siding & foundation cracks" },
+                { id: "sp_deck",             task: "Check deck/patio for rot, loose boards, or rust" },
+                { id: "sp_irrigation",       task: "Turn on irrigation system & check for leaks" },
+                { id: "sp_smoke",            task: "Test smoke & CO detectors, replace batteries" },
+                { id: "sp_dryer_vent",       task: "Clean dryer vent & lint duct" },
+              ],
+              Summer: [
+                { id: "su_ac_filter",        task: "Replace HVAC filter — peak cooling season" },
+                { id: "su_windows",          task: "Check window & door seals for AC efficiency" },
+                { id: "su_attic",            task: "Inspect attic for heat buildup & proper ventilation" },
+                { id: "su_pest",             task: "Inspect for pests & ants around foundation" },
+                { id: "su_outdoor",          task: "Check outdoor faucets & hose bibs for leaks" },
+                { id: "su_landscape",        task: "Trim vegetation 12\"+ from siding & roof edge" },
+              ],
+              Fall: [
+                { id: "fa_gutters",          task: "Clean gutters after leaves fall" },
+                { id: "fa_heating",          task: "Schedule furnace/heating tune-up before cold season" },
+                { id: "fa_weatherstrip",     task: "Check weatherstripping on all doors & windows" },
+                { id: "fa_chimney",          task: "Inspect chimney & fireplace before first use" },
+                { id: "fa_irrigation",       task: "Shut off & drain irrigation system" },
+                { id: "fa_smoke",            task: "Test smoke & CO detectors, replace batteries" },
+                { id: "fa_dryer_vent",       task: "Clean dryer vent & lint duct" },
+                { id: "fa_roof",             task: "Inspect roof before rainy / snow season" },
+              ],
+              Winter: [
+                { id: "wi_pipes",            task: "Insulate exposed pipes — protect from freezing" },
+                { id: "wi_hvac",             task: "Replace HVAC filter for heating season" },
+                { id: "wi_fire_ext",         task: "Check fire extinguisher pressure gauge" },
+                { id: "wi_reverse_fans",     task: "Reverse ceiling fans to clockwise (push warm air down)" },
+                { id: "wi_weatherstrip",     task: "Check door weatherstripping for drafts" },
+                { id: "wi_detectors",        task: "Test smoke & CO detectors" },
+              ],
+            };
+            const seasonTasks = SEASONAL_TASKS[currentSeason] ?? [];
 
             // Score ring geometry
             const ringR = 52;
@@ -5983,13 +6043,13 @@ export default function Dashboard() {
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
                 {/* ── Score Ring Card ── */}
-                <div style={{ ...card(), padding: isMobile ? "20px 18px" : "24px 28px" }}>
+                <div style={{ borderRadius: 18, padding: isMobile ? "20px 18px" : "24px 28px", background: themeNavy, border: "none" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 18 : 28, flexWrap: "wrap" }}>
 
                     {/* Ring */}
                     <div style={{ position: "relative", flexShrink: 0 }}>
                       <svg width={ringC * 2} height={ringC * 2} style={{ transform: "rotate(-90deg)" }}>
-                        <circle cx={ringC} cy={ringC} r={ringR} fill="none" stroke={C.border} strokeWidth={10}/>
+                        <circle cx={ringC} cy={ringC} r={ringR} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={10}/>
                         <circle
                           cx={ringC} cy={ringC} r={ringR} fill="none"
                           stroke={ringColor} strokeWidth={10}
@@ -6000,15 +6060,15 @@ export default function Dashboard() {
                         />
                       </svg>
                       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                        <span style={{ fontSize: 26, fontWeight: 900, color: C.text, letterSpacing: "-1px", lineHeight: 1 }}>{maintScore ?? "—"}</span>
-                        {maintScore !== null && <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>%</span>}
+                        <span style={{ fontSize: 26, fontWeight: 900, color: "white", letterSpacing: "-1px", lineHeight: 1 }}>{maintScore ?? "—"}</span>
+                        {maintScore !== null && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>%</span>}
                       </div>
                     </div>
 
                     {/* Summary text */}
                     <div style={{ flex: 1, minWidth: 140 }}>
-                      <p style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: C.text, margin: "0 0 4px", letterSpacing: "-0.3px" }}>Home Score</p>
-                      <p style={{ fontSize: 13, color: C.text3, margin: "0 0 12px" }}>
+                      <p style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: "white", margin: "0 0 4px", letterSpacing: "-0.3px" }}>Maintenance Score</p>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", margin: "0 0 12px" }}>
                         {maintScore === null
                           ? "Mark tasks complete to track your score"
                           : maintScore >= 80
@@ -6019,14 +6079,14 @@ export default function Dashboard() {
                       </p>
                       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                         {urgentCount > 0 && (
-                          <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: C.amberBg, color: C.amber, border: `1px solid ${C.amber}40` }}>
+                          <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.35)" }}>
                             {urgentCount} need attention
                           </span>
                         )}
-                        <span style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}40` }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: "rgba(34,197,94,0.18)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)" }}>
                           {MAINT_TASKS.filter(t => taskStates[t.id] === "done").length} done
                         </span>
-                        <span style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: C.surface2, color: C.text3, border: `1px solid ${C.border}` }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.15)" }}>
                           {MAINT_TASKS.length} total
                         </span>
                       </div>
@@ -6035,49 +6095,71 @@ export default function Dashboard() {
                     {/* Add Task button */}
                     <button
                       onClick={() => { setScheduleModal({ taskId: "__custom__", taskName: "New Task" }); setSchedDate(""); setSchedVendor(""); }}
-                      style={{ fontSize: 13, fontWeight: 700, padding: "9px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      style={{ fontSize: 13, fontWeight: 700, padding: "9px 16px", borderRadius: 10, background: themeAccent, border: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
                       <Plus size={14}/> Add Task
                     </button>
                   </div>
                 </div>
 
-                {/* ── Checklist Card ── */}
-                <div style={{ ...card() }}>
-                  {/* Filter tabs */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexWrap: "wrap", gap: 10 }}>
-                    <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: 0 }}>Maintenance Checklist</p>
-                    <div style={{ display: "flex", gap: 6 }}>
-                      {(["all","due","done"] as const).map(f => (
-                        <button key={f} onClick={() => setMaintFilter(f)}
-                          style={{ fontSize: 12, fontWeight: 700, padding: "5px 13px", borderRadius: 20, border: "none", cursor: "pointer",
-                            background: maintFilter === f ? C.accent : C.surface2,
-                            color: maintFilter === f ? "white" : C.text3 }}>
-                          {f === "all" ? "All" : f === "due" ? "Needs Action" : "Done"}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Task rows */}
-                  {filteredTasks.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "28px 0" }}>
-                      <CheckCircle2 size={28} color={C.green} style={{ margin: "0 auto 10px" }}/>
-                      <p style={{ fontSize: 13, fontWeight: 600, color: C.text, margin: "0 0 4px" }}>
-                        {maintFilter === "done" ? "Nothing marked done yet" : "All caught up!"}
-                      </p>
-                      <p style={{ fontSize: 12, color: C.text3 }}>
-                        {maintFilter === "done" ? "Complete tasks to see them here." : "No tasks need immediate attention."}
-                      </p>
-                    </div>
-                  ) : (
-                    <div>
-                      {filteredTasks.map((t, i) => (
-                        <div key={t.id} style={{ borderBottom: i < filteredTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                          <TaskRow t={t} showDate={true}/>
+                {/* ── Grouped Maintenance Checklists ── */}
+                {FREQ_GROUPS.map(group => {
+                  const groupTasks = MAINT_TASKS.filter(t => t.freq === group.freq);
+                  const groupDone  = groupTasks.filter(t => taskStates[t.id] === "done").length;
+                  return (
+                    <div key={group.freq} style={{ ...card() }}>
+                      {/* Section header */}
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: group.color, flexShrink: 0 }}/>
+                          <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: 0 }}>{group.label}</p>
                         </div>
-                      ))}
+                        <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: group.bg, color: group.color, border: `1px solid ${group.color}30` }}>
+                          {groupDone} / {groupTasks.length} done
+                        </span>
+                      </div>
+                      {/* Task rows */}
+                      <div>
+                        {groupTasks.map((t, i) => (
+                          <div key={t.id} style={{ borderBottom: i < groupTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                            <TaskRow t={t} showDate={false}/>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  )}
+                  );
+                })}
+
+                {/* ── Seasonal Checklist ── */}
+                <div style={{ ...card() }}>
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 18 }}>
+                        {currentSeason === "Spring" ? "🌸" : currentSeason === "Summer" ? "☀️" : currentSeason === "Fall" ? "🍂" : "❄️"}
+                      </span>
+                      <div>
+                        <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: 0 }}>{currentSeason} Checklist</p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: "1px 0 0" }}>Resets each season</p>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}30` }}>
+                      {seasonTasks.filter(t => doneTasks.has(t.id)).length} / {seasonTasks.length} done
+                    </span>
+                  </div>
+                  <div>
+                    {seasonTasks.map((t, i) => {
+                      const isDone = doneTasks.has(t.id);
+                      return (
+                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: i < seasonTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                          <button
+                            onClick={() => toggleDoneTask(t.id)}
+                            style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isDone ? C.green : C.border}`, background: isDone ? C.green : "white", flexShrink: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
+                            {isDone && <span style={{ color: "white", fontSize: 12, fontWeight: 900, lineHeight: 1 }}>✓</span>}
+                          </button>
+                          <p style={{ fontSize: 13, fontWeight: 600, color: isDone ? C.text3 : C.text, margin: 0, textDecoration: isDone ? "line-through" : "none", flex: 1 }}>{t.task}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {/* ── Schedule / Status Modal ── */}
@@ -6692,6 +6774,28 @@ export default function Dashboard() {
           {/* ── Settings ──────────────────────────────────────────────── */}
           {nav === "Settings" && (
             <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+              {/* ── Profile Name ── */}
+              <div style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, padding: "20px 22px" }}>
+                <p style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 16, marginTop: 0 }}>Your Profile</p>
+                <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: 5 }}>First Name</label>
+                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                  <input
+                    value={profileName}
+                    onChange={e => setProfileName(e.target.value)}
+                    placeholder="Your first name"
+                    style={{ flex: 1, padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${C.border}`, fontSize: 16, color: C.text, background: C.bg, outline: "none", boxSizing: "border-box" as const }}
+                  />
+                  <button
+                    onClick={saveProfileName}
+                    disabled={savingName || !profileName.trim()}
+                    style={{ padding: "9px 18px", borderRadius: 10, background: nameSaved ? C.green : C.accent, border: "none", color: "white", fontSize: 14, fontWeight: 700, cursor: profileName.trim() ? "pointer" : "not-allowed", opacity: savingName ? 0.7 : 1, whiteSpace: "nowrap" as const, display: "flex", alignItems: "center", gap: 6 }}>
+                    {savingName ? <><Loader2 size={13}/> Saving…</> : nameSaved ? <><CheckCircle2 size={13}/> Saved!</> : "Save Name"}
+                  </button>
+                </div>
+                <p style={{ fontSize: 12, color: C.text3, margin: "6px 0 0" }}>This is how we greet you on the dashboard.</p>
+              </div>
+
               <div style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, padding: "20px 22px" }}>
                 <p style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 16, marginTop: 0 }}>Your Property</p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
