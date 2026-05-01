@@ -2163,7 +2163,8 @@ export default function Dashboard() {
       return raw ? JSON.parse(raw) : {};
     } catch { return {}; }
   });
-  const [maintFilter, setMaintFilter]  = useState<"all"|"due"|"done">("all");
+  const [maintFilter, setMaintFilter]       = useState<"all"|"due"|"done">("all");
+  const [showFullSchedule, setShowFullSchedule] = useState(false);
   const [scheduleModal, setScheduleModal] = useState<{ taskId: string; taskName: string } | null>(null);
   const [schedDate, setSchedDate]     = useState("");
   const [schedVendor, setSchedVendor] = useState("");
@@ -5932,23 +5933,14 @@ export default function Dashboard() {
             const annualTasks = [...MAINT_TASKS].sort((a, b) => getNextDue(a).getTime() - getNextDue(b).getTime());
 
             // Maintenance score
-            // Time-decay maintenance score
-            // Each task freshness = 1.0 (just done) → 0.0 (full period elapsed since completion)
-            // Never-done tasks count as 0 once the user has any history
-            // Score = weighted average of freshness across all tasks (0–100)
-            // Hit 100 by completing all tasks; clock resets per-task on completion
-            const wTotal = MAINT_TASKS.reduce((s,t) => s+t.weight, 0);
-            const wFresh = MAINT_TASKS.reduce((s,t) => {
-              const lastDone = maintCompletions[t.id];
-              if (!lastDone) {
-                // No history at all → show "—" not a harsh 0
-                return hasAnyHistory ? s : s + t.weight;
-              }
-              const daysSince = (todayMs - new Date(lastDone).getTime()) / 86400000;
-              const freshness = Math.max(0, 1 - daysSince / PERIOD_DAYS[t.freq]);
-              return s + freshness * t.weight;
-            }, 0);
-            const maintScore = hasAnyHistory ? Math.round((wFresh / wTotal) * 100) : null;
+            // Score = only tasks that are currently due or done-within-period
+            // "Upcoming" tasks (period hasn't elapsed yet) don't affect score at all
+            // Complete all currently-due tasks → 100%
+            // New user with no history → null ("—")
+            const relevantTasks = MAINT_TASKS.filter(t => ["done","overdue","due"].includes(taskStates[t.id]));
+            const wRelevant = relevantTasks.reduce((s,t) => s + t.weight, 0);
+            const wDoneRelevant = relevantTasks.filter(t => taskStates[t.id] === "done").reduce((s,t) => s + t.weight, 0);
+            const maintScore = (hasAnyHistory && wRelevant > 0) ? Math.round((wDoneRelevant / wRelevant) * 100) : hasAnyHistory ? 100 : null;
             const urgentCount = MAINT_TASKS.filter(t => ["overdue","due"].includes(taskStates[t.id])).length;
 
             function openSchedule(t: MaintTask) {
@@ -5994,13 +5986,33 @@ export default function Dashboard() {
               );
             }
 
-            // Frequency groups for checklist
-            const FREQ_GROUPS: { label: string; freq: MaintTask["freq"]; color: string; bg: string }[] = [
-              { label: "Monthly",       freq: "monthly",     color: C.accent,   bg: C.accentBg },
-              { label: "Quarterly",     freq: "quarterly",   color: "#f59e0b",  bg: "#fffbeb" },
-              { label: "Twice a Year",  freq: "semi_annual", color: "#8b5cf6",  bg: "#f5f3ff" },
-              { label: "Annual",        freq: "annual",      color: C.green,    bg: C.greenBg },
-            ];
+            // Points per task weight
+            const PTS: Record<number, number> = { 1: 8, 2: 12, 3: 18 };
+
+            // Grade from score
+            function getMaintGrade(s: number | null): string {
+              if (s === null) return "—";
+              if (s >= 90) return "A";
+              if (s >= 75) return "B";
+              if (s >= 60) return "C";
+              if (s >= 40) return "D";
+              return "F";
+            }
+
+            // Motivational copy
+            function getMaintTitle(s: number | null): string {
+              if (s === null) return "Getting Started";
+              if (s >= 90) return "Home Champion";
+              if (s >= 75) return "Doing Great";
+              if (s >= 55) return "On Track";
+              if (s >= 35) return "Building Momentum";
+              return "Getting Started";
+            }
+
+            // "Up This Month" = overdue, due, scheduled, booked (need action)
+            const upThisMonth = MAINT_TASKS.filter(t => ["overdue","due","scheduled","booked"].includes(taskStates[t.id]));
+            // "Scheduled & Annual" = done + upcoming, sorted by next due date
+            const scheduledAnnual = annualTasks.filter(t => ["done","upcoming"].includes(taskStates[t.id]));
 
             // Seasonal checklist — resets each season via maintenanceDoneKey
             const mo = new Date().getMonth();
@@ -6046,134 +6058,247 @@ export default function Dashboard() {
             const seasonTasks = SEASONAL_TASKS[currentSeason] ?? [];
 
             // Score ring geometry
-            const ringR = 52;
-            const ringC = 64;
+            const ringR = 52; const ringC = 64;
             const ringCircumference = 2 * Math.PI * ringR;
             const ringProgress = maintScore ?? 0;
             const ringOffset = ringCircumference - (ringProgress / 100) * ringCircumference;
-            const ringColor = ringProgress >= 80 ? C.green : ringProgress >= 50 ? C.amber : C.red;
+            const ringColor = ringProgress >= 75 ? "#4ade80" : ringProgress >= 45 ? themeAccent : C.red;
+            const maintGrade = getMaintGrade(maintScore);
+            const maintTitle = getMaintTitle(maintScore);
+            const doneTotalCount = MAINT_TASKS.filter(t => taskStates[t.id] === "done").length;
+
+            // New task row for the redesigned layout
+            function NewTaskRow({ t }: { t: MaintTask }) {
+              const state  = taskStates[t.id];
+              const sched  = maintScheduled[t.id];
+              const isDone = state === "done";
+              const pts    = PTS[t.weight] ?? 10;
+              const dueDateStr = fmtDate(getNextDue(t));
+
+              const pillStyle = (bg: string, color: string, border: string) => ({
+                fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 8,
+                background: bg, color, border: `1px solid ${border}`, display: "inline-block",
+              });
+
+              return (
+                <div style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "14px 0" }}>
+                  {/* Checkbox */}
+                  <button onClick={() => toggleMaintTask(t.id)}
+                    style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isDone ? C.green : C.border}`, background: isDone ? C.green : "white", flexShrink: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", marginTop: 1 }}>
+                    {isDone && <span style={{ color: "white", fontSize: 11, fontWeight: 900 }}>✓</span>}
+                  </button>
+
+                  {/* Text */}
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: isDone ? C.text3 : C.text, margin: "0 0 2px", textDecoration: isDone ? "line-through" : "none", letterSpacing: "-0.1px" }}>{t.task}</p>
+                    <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>
+                      {t.freqLabel}{sched?.vendor ? ` · ${sched.vendor}` : ` · ${t.system}`}
+                    </p>
+                  </div>
+
+                  {/* Right: date + pill + pts */}
+                  <div style={{ textAlign: "right", flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4 }}>
+                    <span style={{ fontSize: 11, color: C.text3, fontWeight: 500 }}>{dueDateStr}</span>
+                    {isDone ? (
+                      <span style={pillStyle(C.greenBg, C.green, `${C.green}40`)}>Done</span>
+                    ) : state === "booked" ? (
+                      <button onClick={() => openSchedule(t)} style={{ ...pillStyle("#f0fdf4","#16a34a","#86efac"), cursor: "pointer" }}>Booked</button>
+                    ) : state === "scheduled" ? (
+                      <button onClick={() => openSchedule(t)} style={{ ...pillStyle("#eff6ff","#2563eb","#bfdbfe"), cursor: "pointer" }}>Scheduled</button>
+                    ) : state === "overdue" ? (
+                      <button onClick={() => openSchedule(t)} style={{ ...pillStyle(C.redBg, C.red, `${C.red}40`), cursor: "pointer" }}>Overdue</button>
+                    ) : state === "due" ? (
+                      <button onClick={() => openSchedule(t)} style={{ ...pillStyle(C.amberBg, C.amber, `${C.amber}40`), cursor: "pointer" }}>Due Soon</button>
+                    ) : (
+                      <button onClick={() => openSchedule(t)} style={{ ...pillStyle(C.surface2, C.text3, C.border), cursor: "pointer" }}>Planned</button>
+                    )}
+                    <span style={{ fontSize: 11, fontWeight: 700, color: themeAccent }}>+{pts} pts</span>
+                  </div>
+                </div>
+              );
+            }
 
             return (
               <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
 
-                {/* ── Score Ring Card ── */}
-                <div style={{ borderRadius: 18, padding: isMobile ? "20px 18px" : "24px 28px", background: themeNavy, border: "none" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 18 : 28, flexWrap: "wrap" }}>
+                {/* ── Score Hero ── */}
+                <div style={{ borderRadius: 18, padding: isMobile ? "22px 20px" : "28px 32px", background: themeNavy }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: isMobile ? 16 : 28, flexWrap: "wrap" }}>
 
                     {/* Ring */}
                     <div style={{ position: "relative", flexShrink: 0 }}>
                       <svg width={ringC * 2} height={ringC * 2} style={{ transform: "rotate(-90deg)" }}>
-                        <circle cx={ringC} cy={ringC} r={ringR} fill="none" stroke="rgba(255,255,255,0.15)" strokeWidth={10}/>
-                        <circle
-                          cx={ringC} cy={ringC} r={ringR} fill="none"
-                          stroke={ringColor} strokeWidth={10}
-                          strokeDasharray={ringCircumference}
-                          strokeDashoffset={ringOffset}
-                          strokeLinecap="round"
-                          style={{ transition: "stroke-dashoffset 0.6s ease" }}
-                        />
+                        <circle cx={ringC} cy={ringC} r={ringR} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth={9}/>
+                        <circle cx={ringC} cy={ringC} r={ringR} fill="none" stroke={ringColor} strokeWidth={9}
+                          strokeDasharray={ringCircumference} strokeDashoffset={ringOffset}
+                          strokeLinecap="round" style={{ transition: "stroke-dashoffset 0.7s ease" }}/>
                       </svg>
                       <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center" }}>
-                        <span style={{ fontSize: 26, fontWeight: 900, color: "white", letterSpacing: "-1px", lineHeight: 1 }}>{maintScore ?? "—"}</span>
-                        {maintScore !== null && <span style={{ fontSize: 11, color: "rgba(255,255,255,0.6)", fontWeight: 600 }}>%</span>}
+                        <span style={{ fontSize: 28, fontWeight: 900, color: "white", letterSpacing: "-2px", lineHeight: 1, fontFamily: "Inter, sans-serif" }}>{maintScore ?? "—"}</span>
+                        <span style={{ fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: 600, letterSpacing: "0.05em" }}>out of 100</span>
                       </div>
                     </div>
 
-                    {/* Summary text */}
-                    <div style={{ flex: 1, minWidth: 140 }}>
-                      <p style={{ fontSize: isMobile ? 18 : 22, fontWeight: 800, color: "white", margin: "0 0 4px", letterSpacing: "-0.3px" }}>Maintenance Score</p>
-                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.6)", margin: "0 0 12px" }}>
-                        {maintScore === null
-                          ? "Mark tasks complete to track your score"
-                          : maintScore >= 80
-                          ? "Great job keeping up with maintenance"
-                          : maintScore >= 50
-                          ? "Some tasks need your attention"
-                          : "Several tasks are overdue — let's catch up"}
+                    {/* Title + progress bar */}
+                    <div style={{ flex: 1, minWidth: 160 }}>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.12em", margin: "0 0 4px" }}>Maintenance Score</p>
+                      <p style={{ fontSize: isMobile ? 22 : 28, fontWeight: 900, color: "white", margin: "0 0 6px", letterSpacing: "-0.5px", lineHeight: 1.1, fontFamily: "Inter, sans-serif" }}>{maintTitle}</p>
+                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.55)", margin: "0 0 16px" }}>
+                        Check off completed tasks to raise your score and keep your home in top shape.
                       </p>
-                      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                        {urgentCount > 0 && (
-                          <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.35)" }}>
-                            {urgentCount} need attention
-                          </span>
-                        )}
-                        <span style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: "rgba(34,197,94,0.18)", color: "#4ade80", border: "1px solid rgba(34,197,94,0.3)" }}>
-                          {MAINT_TASKS.filter(t => taskStates[t.id] === "done").length} done
-                        </span>
-                        <span style={{ fontSize: 12, fontWeight: 600, padding: "3px 10px", borderRadius: 20, background: "rgba(255,255,255,0.1)", color: "rgba(255,255,255,0.6)", border: "1px solid rgba(255,255,255,0.15)" }}>
-                          {MAINT_TASKS.length} total
-                        </span>
+                      {/* Progress bar */}
+                      <div>
+                        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Tasks Completed</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.7)" }}>{doneTotalCount} / {MAINT_TASKS.length}</span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 10, background: "rgba(255,255,255,0.12)", overflow: "hidden" }}>
+                          <div style={{ height: "100%", borderRadius: 10, background: themeAccent, width: `${(doneTotalCount / MAINT_TASKS.length) * 100}%`, transition: "width 0.6s ease" }}/>
+                        </div>
                       </div>
                     </div>
 
-                    {/* Add Task button */}
-                    <button
-                      onClick={() => { setScheduleModal({ taskId: "__custom__", taskName: "New Task" }); setSchedDate(""); setSchedVendor(""); }}
-                      style={{ fontSize: 13, fontWeight: 700, padding: "9px 16px", borderRadius: 10, background: themeAccent, border: "none", color: "white", cursor: "pointer", display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
-                      <Plus size={14}/> Add Task
-                    </button>
+                    {/* Grade badge */}
+                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
+                      <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                        <span style={{ fontSize: 24, fontWeight: 900, color: "white", fontFamily: "Inter, sans-serif" }}>{maintGrade}</span>
+                      </div>
+                      <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Grade</span>
+                    </div>
                   </div>
                 </div>
 
-                {/* ── Grouped Maintenance Checklists ── */}
-                {FREQ_GROUPS.map(group => {
-                  const groupTasks = MAINT_TASKS.filter(t => t.freq === group.freq);
-                  const groupDone  = groupTasks.filter(t => taskStates[t.id] === "done").length;
-                  return (
-                    <div key={group.freq} style={{ ...card() }}>
-                      {/* Section header */}
-                      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: group.color, flexShrink: 0 }}/>
-                          <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: 0 }}>{group.label}</p>
-                        </div>
-                        <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: group.bg, color: group.color, border: `1px solid ${group.color}30` }}>
-                          {groupDone} / {groupTasks.length} done
-                        </span>
+                {/* ── Two-column: Up This Month | Scheduled & Annual ── */}
+                <div style={{ display: isMobile ? "flex" : "grid", flexDirection: "column", gridTemplateColumns: "1fr 1fr", gap: 14, alignItems: "start" }}>
+
+                  {/* LEFT: Up This Month */}
+                  <div style={{ ...card() }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                      <p style={{ fontSize: 16, fontWeight: 800, color: C.text, margin: 0, letterSpacing: "-0.2px" }}>Up This Month</p>
+                      {urgentCount > 0 && (
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 8, background: C.redBg, color: C.red, border: `1px solid ${C.red}30` }}>{urgentCount} Overdue</span>
+                      )}
+                    </div>
+                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 4px" }}>Tap any status pill to schedule</p>
+                    {upThisMonth.length === 0 ? (
+                      <div style={{ textAlign: "center", padding: "28px 0" }}>
+                        <CheckCircle2 size={28} color={C.green} style={{ margin: "0 auto 10px" }}/>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: "0 0 4px" }}>All caught up!</p>
+                        <p style={{ fontSize: 12, color: C.text3 }}>No tasks need immediate attention.</p>
                       </div>
-                      {/* Task rows */}
+                    ) : (
                       <div>
-                        {groupTasks.map((t, i) => (
-                          <div key={t.id} style={{ borderBottom: i < groupTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                            <TaskRow t={t} showDate={false}/>
+                        {upThisMonth.map((t, i) => (
+                          <div key={t.id} style={{ borderBottom: i < upThisMonth.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                            <NewTaskRow t={t}/>
                           </div>
                         ))}
                       </div>
-                    </div>
-                  );
-                })}
+                    )}
+                  </div>
 
-                {/* ── Seasonal Checklist ── */}
-                <div style={{ ...card() }}>
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                  {/* RIGHT: Scheduled & Annual */}
+                  <div style={{ ...card() }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
+                      <p style={{ fontSize: 16, fontWeight: 800, color: C.text, margin: 0, letterSpacing: "-0.2px" }}>Scheduled & Annual</p>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 8, background: C.surface2, color: C.text3, border: `1px solid ${C.border}` }}>{scheduledAnnual.length} Tasks</span>
+                    </div>
+                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 4px" }}>Upcoming & completed tasks</p>
+                    <div>
+                      {scheduledAnnual.map((t, i) => (
+                        <div key={t.id} style={{ borderBottom: i < scheduledAnnual.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                          <NewTaskRow t={t}/>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Full Schedule (collapsible) ── */}
+                <div style={{ borderRadius: 14, border: `1px solid ${C.border}`, overflow: "hidden", background: C.surface }}>
+                  {/* Toggle header */}
+                  <button
+                    onClick={() => setShowFullSchedule(v => !v)}
+                    style={{ width: "100%", padding: "16px 20px", display: "flex", alignItems: "center", justifyContent: "space-between", background: "none", border: "none", cursor: "pointer", textAlign: "left" }}>
                     <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                       <span style={{ fontSize: 18 }}>
                         {currentSeason === "Spring" ? "🌸" : currentSeason === "Summer" ? "☀️" : currentSeason === "Fall" ? "🍂" : "❄️"}
                       </span>
                       <div>
-                        <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: 0 }}>{currentSeason} Checklist</p>
-                        <p style={{ fontSize: 11, color: C.text3, margin: "1px 0 0" }}>Resets each season</p>
+                        <p style={{ fontSize: 15, fontWeight: 800, color: C.text, margin: 0, letterSpacing: "-0.2px" }}>
+                          Full Schedule & {currentSeason} Checklist
+                        </p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: "1px 0 0" }}>Monthly · Quarterly · Semi-Annual · Annual + seasonal tasks</p>
                       </div>
                     </div>
-                    <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20, background: C.greenBg, color: C.green, border: `1px solid ${C.green}30` }}>
-                      {seasonTasks.filter(t => doneTasks.has(t.id)).length} / {seasonTasks.length} done
-                    </span>
-                  </div>
-                  <div>
-                    {seasonTasks.map((t, i) => {
-                      const isDone = doneTasks.has(t.id);
-                      return (
-                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: i < seasonTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                          <button
-                            onClick={() => toggleDoneTask(t.id)}
-                            style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isDone ? C.green : C.border}`, background: isDone ? C.green : "white", flexShrink: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", transition: "all 0.15s" }}>
-                            {isDone && <span style={{ color: "white", fontSize: 12, fontWeight: 900, lineHeight: 1 }}>✓</span>}
-                          </button>
-                          <p style={{ fontSize: 13, fontWeight: 600, color: isDone ? C.text3 : C.text, margin: 0, textDecoration: isDone ? "line-through" : "none", flex: 1 }}>{t.task}</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 8, background: C.surface2, color: C.text3, border: `1px solid ${C.border}` }}>
+                        {MAINT_TASKS.length + seasonTasks.length} tasks
+                      </span>
+                      <ChevronDown size={16} color={C.text3} style={{ transform: showFullSchedule ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}/>
+                    </div>
+                  </button>
+
+                  {/* Expanded content */}
+                  {showFullSchedule && (
+                    <div style={{ borderTop: `1px solid ${C.border}`, padding: "0 20px 20px" }}>
+
+                      {/* Frequency groups */}
+                      {(["monthly","quarterly","semi_annual","annual"] as MaintTask["freq"][]).map(freq => {
+                        const labels: Record<string, string> = { monthly: "Monthly", quarterly: "Quarterly", semi_annual: "Twice a Year", annual: "Annual" };
+                        const colors: Record<string, string> = { monthly: themeAccent, quarterly: "#f59e0b", semi_annual: "#8b5cf6", annual: C.green };
+                        const bgs:    Record<string, string> = { monthly: C.accentBg,  quarterly: "#fffbeb",  semi_annual: "#f5f3ff",  annual: C.greenBg };
+                        const groupTasks = MAINT_TASKS.filter(t => t.freq === freq);
+                        const groupDone  = groupTasks.filter(t => taskStates[t.id] === "done").length;
+                        return (
+                          <div key={freq} style={{ marginTop: 20 }}>
+                            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ width: 8, height: 8, borderRadius: "50%", background: colors[freq] }}/>
+                                <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0, textTransform: "uppercase", letterSpacing: "0.06em" }}>{labels[freq]}</p>
+                              </div>
+                              <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: bgs[freq], color: colors[freq], border: `1px solid ${colors[freq]}30` }}>
+                                {groupDone}/{groupTasks.length}
+                              </span>
+                            </div>
+                            {groupTasks.map((t, i) => (
+                              <div key={t.id} style={{ borderBottom: i < groupTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                                <NewTaskRow t={t}/>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+
+                      {/* Seasonal checklist */}
+                      <div style={{ marginTop: 24, paddingTop: 20, borderTop: `1px solid ${C.border}` }}>
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <span style={{ fontSize: 16 }}>
+                              {currentSeason === "Spring" ? "🌸" : currentSeason === "Summer" ? "☀️" : currentSeason === "Fall" ? "🍂" : "❄️"}
+                            </span>
+                            <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0, textTransform: "uppercase", letterSpacing: "0.06em" }}>{currentSeason} Checklist</p>
+                          </div>
+                          <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 8px", borderRadius: 6, background: C.greenBg, color: C.green, border: `1px solid ${C.green}30` }}>
+                            {seasonTasks.filter(t => doneTasks.has(t.id)).length}/{seasonTasks.length}
+                          </span>
                         </div>
-                      );
-                    })}
-                  </div>
+                        {seasonTasks.map((t, i) => {
+                          const isDone = doneTasks.has(t.id);
+                          return (
+                            <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: i < seasonTasks.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                              <button onClick={() => toggleDoneTask(t.id)}
+                                style={{ width: 22, height: 22, borderRadius: 6, border: `2px solid ${isDone ? C.green : C.border}`, background: isDone ? C.green : "white", flexShrink: 0, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                                {isDone && <span style={{ color: "white", fontSize: 11, fontWeight: 900 }}>✓</span>}
+                              </button>
+                              <p style={{ fontSize: 13, fontWeight: 600, color: isDone ? C.text3 : C.text, margin: 0, textDecoration: isDone ? "line-through" : "none", flex: 1 }}>{t.task}</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                    </div>
+                  )}
                 </div>
 
                 {/* ── Schedule / Status Modal ── */}
