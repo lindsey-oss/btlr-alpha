@@ -1676,17 +1676,24 @@ function HealthScoreModal({
 }
 
 // ── Score Ring SVG ────────────────────────────────────────────────────────
-function ScoreRing({ score, color, size = 130 }: { score: number; color: string; size?: number }) {
+function ScoreRing({ score, color, size = 130, textColor, trackColor, disableGlow }: {
+  score: number; color: string; size?: number;
+  textColor?: string; trackColor?: string; disableGlow?: boolean;
+}) {
   const r      = size * 0.38;
   const cx     = size / 2;
   const cy     = size / 2;
   const strokeW= size * 0.085;
   const circum = 2 * Math.PI * r;
   const filled = Math.max(0, Math.min(score / 100, 1)) * circum;
-  const uid    = `glow-${size}`;  // stable per-size id
+  const uid    = `glow-${size}`;
+  const numColor  = textColor ?? "white";
+  const subColor  = textColor ? (textColor === "white" ? "rgba(255,255,255,0.35)" : "rgba(0,0,0,0.35)") : "rgba(255,255,255,0.35)";
+  const trackFill = trackColor ?? "rgba(255,255,255,0.10)";
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} style={{ flexShrink: 0, filter: `drop-shadow(0 0 ${size * 0.07}px ${color}80)` }}>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}
+      style={{ flexShrink: 0, filter: disableGlow ? "none" : `drop-shadow(0 0 ${size * 0.07}px ${color}80)` }}>
       <defs>
         <filter id={uid} x="-30%" y="-30%" width="160%" height="160%">
           <feGaussianBlur stdDeviation={size * 0.025} result="blur"/>
@@ -1694,24 +1701,24 @@ function ScoreRing({ score, color, size = 130 }: { score: number; color: string;
         </filter>
       </defs>
       {/* Track */}
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth={strokeW}/>
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke={trackFill} strokeWidth={strokeW}/>
       {/* Filled arc */}
       <circle cx={cx} cy={cy} r={r} fill="none" stroke={color} strokeWidth={strokeW}
         strokeDasharray={`${filled} ${circum - filled}`}
         strokeLinecap="round"
         transform={`rotate(-90 ${cx} ${cy})`}
-        filter={`url(#${uid})`}
+        filter={disableGlow ? undefined : `url(#${uid})`}
         style={{ transition: "stroke-dasharray 1.2s cubic-bezier(0.34,1.56,0.64,1)" }}
       />
       {/* Score number */}
       <text x={cx} y={cy - size * 0.04} textAnchor="middle" dominantBaseline="middle"
-        fill="white" fontSize={size * 0.28} fontWeight="800" fontFamily="'DM Sans', -apple-system, sans-serif"
+        fill={numColor} fontSize={size * 0.28} fontWeight="800" fontFamily="'DM Sans', -apple-system, sans-serif"
         style={{ letterSpacing: "-2px" }}>
         {score}
       </text>
       {/* /100 label */}
       <text x={cx} y={cy + size * 0.18} textAnchor="middle" dominantBaseline="middle"
-        fill="rgba(255,255,255,0.35)" fontSize={size * 0.09} fontFamily="'DM Sans', -apple-system, sans-serif">
+        fill={subColor} fontSize={size * 0.09} fontFamily="'DM Sans', -apple-system, sans-serif">
         / 100
       </text>
     </svg>
@@ -5938,14 +5945,31 @@ export default function Dashboard() {
                               <p style={{ fontSize: 13, fontWeight: 600, color: isDone ? C.text3 : C.text, margin: 0, textDecoration: isDone ? "line-through" : "none" }}>{item.task}</p>
                               <p style={{ fontSize: 11, color: C.text3, margin: "2px 0 0", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{item.system} · {item.tip}</p>
                             </div>
-                            {/* State + weight badge */}
-                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3, flexShrink: 0 }}>
+                            {/* State + find vendor */}
+                            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 4, flexShrink: 0 }}>
                               {isDone ? (
                                 <span style={{ fontSize: 11, fontWeight: 700, color: C.green }}>✓ Done</span>
                               ) : state === "due" ? (
                                 <>
                                   <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 10, background: group.bg, color: group.color, border: `1px solid ${group.border}` }}>Due</span>
-                                  <span style={{ fontSize: 10, color: C.text3 }}>{item.weight === 3 ? "High" : item.weight === 2 ? "Med" : "Low"} priority</span>
+                                  {(() => {
+                                    const MAINT_TRADE: Record<string,string> = {
+                                      HVAC: "HVAC", Roof: "Roofing", Safety: "General Contractor",
+                                      Plumbing: "Plumbing", Electrical: "Electrical",
+                                      Appliances: "General Contractor", Exterior: "General Contractor",
+                                      Fireplace: "Chimney Service",
+                                    };
+                                    const trade = MAINT_TRADE[item.system] ?? "General Contractor";
+                                    return (
+                                      <button
+                                        onClick={e => { e.stopPropagation(); handleFindVendors(trade, item.system, item.task); }}
+                                        style={{ fontSize: 10, fontWeight: 700, padding: "3px 9px", borderRadius: 8,
+                                          background: C.accent, border: "none", color: "white", cursor: "pointer",
+                                          display: "flex", alignItems: "center", gap: 3, whiteSpace: "nowrap" }}>
+                                        <Users size={9}/> Schedule
+                                      </button>
+                                    );
+                                  })()}
                                 </>
                               ) : (
                                 <span style={{ fontSize: 10, color: C.text3 }}>Upcoming</span>
@@ -6579,93 +6603,237 @@ export default function Dashboard() {
           {nav === "Dashboard" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
 
-            {/* ── PRIMARY HERO: Health Score ────────────────────────── */}
+            {/* ── GREETING HEADER ──────────────────────────────────── */}
+            {(() => {
+              const hour = new Date().getHours();
+              const tod  = hour < 12 ? "morning" : hour < 17 ? "afternoon" : "evening";
+              const firstName = user?.email
+                ? user.email.split("@")[0].replace(/[._+-].*/, "").replace(/^(.)/, c => c.toUpperCase())
+                : "";
+              const shortAddr = address && address !== "My Home"
+                ? toTitleCase(address).split(",")[0]
+                : null;
+              const lastUpd = inspectionResult?.inspection_date
+                ? `Last updated ${new Date(inspectionResult.inspection_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                : inspectDone ? "Last updated today" : "Add your home data to get started";
+              return (
+                <div style={{ background: C.navy, borderRadius: 16, padding: isMobile ? "18px 20px" : "22px 28px" }}>
+                  <p style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, color: "white", margin: "0 0 4px", letterSpacing: "-0.3px" }}>
+                    Good {tod}{firstName ? <>, <strong>{firstName}.</strong></> : "."}
+                  </p>
+                  <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0 }}>
+                    {shortAddr ?? "Your Home"}{" · "}{lastUpd}
+                  </p>
+                </div>
+              );
+            })()}
+
+            {/* ── PRIORITY ACTION STRIP ─────────────────────────────── */}
+            {(() => {
+              const criticals = activeFindings.filter(f => f.severity === "critical");
+              const warnings  = activeFindings.filter(f => f.severity === "warning");
+
+              let strip: {
+                icon: React.ReactNode;
+                label: string;
+                detail: string;
+                ctaLabel: string;
+                color: string;
+                bg: string;
+                border: string;
+                action: () => void;
+                secondary?: { label: string; action: () => void };
+              } | null = null;
+
+              if (criticals.length > 0) {
+                const top = criticals[0];
+                const trade = tradeForCategory(top.system ?? top.category ?? "");
+                strip = {
+                  icon: <AlertTriangle size={15} color={C.red}/>,
+                  label: `${criticals.length} critical issue${criticals.length > 1 ? "s" : ""} need${criticals.length === 1 ? "s" : ""} attention`,
+                  detail: top.title || top.description?.slice(0, 80) || categoryLabel(top.category),
+                  ctaLabel: `Find a ${trade}`,
+                  color: C.red, bg: C.redBg, border: `${C.red}30`,
+                  action: () => handleFindVendors(top.category, top.category, top.description),
+                  secondary: { label: "View Repairs", action: () => setNav("Repairs") },
+                };
+              } else if (warnings.length > 0) {
+                const top = warnings[0];
+                const trade = tradeForCategory(top.system ?? top.category ?? "");
+                strip = {
+                  icon: <AlertTriangle size={15} color={C.amber}/>,
+                  label: `${warnings.length} item${warnings.length > 1 ? "s" : ""} to monitor`,
+                  detail: top.title || top.description?.slice(0, 80) || categoryLabel(top.category),
+                  ctaLabel: `Find a ${trade}`,
+                  color: C.amber, bg: C.amberBg, border: `${C.amber}30`,
+                  action: () => handleFindVendors(top.category, top.category, top.description),
+                  secondary: { label: "View Repairs", action: () => setNav("Repairs") },
+                };
+              } else if (!inspectDone) {
+                strip = {
+                  icon: <CloudUpload size={15} color={C.accent}/>,
+                  label: "Upload your inspection report to get started",
+                  detail: "Get your Home Health Score and a personalized repair plan",
+                  ctaLabel: "Upload Report",
+                  color: C.accent, bg: C.accentBg, border: `${C.accent}30`,
+                  action: () => inspRef.current?.click(),
+                };
+              }
+
+              if (!strip) return null;
+              return (
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 14, padding: "14px 18px",
+                  borderRadius: 14, background: strip.bg, border: `1px solid ${strip.border}`,
+                  flexWrap: isMobile ? "wrap" : "nowrap",
+                }}>
+                  <div style={{ width: 36, height: 36, borderRadius: 10, background: `${strip.color}15`,
+                    border: `1px solid ${strip.color}25`, display: "flex", alignItems: "center",
+                    justifyContent: "center", flexShrink: 0 }}>
+                    {strip.icon}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: strip.color, margin: "0 0 2px" }}>{strip.label}</p>
+                    <p style={{ fontSize: 12, color: C.text3, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{strip.detail}</p>
+                  </div>
+                  <div style={{ display: "flex", gap: 7, flexShrink: 0, flexWrap: "wrap" }}>
+                    {strip.secondary && (
+                      <button onClick={strip.secondary.action}
+                        style={{ fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 9,
+                          background: "white", border: `1px solid ${C.border}`, color: C.text2, cursor: "pointer" }}>
+                        {strip.secondary.label}
+                      </button>
+                    )}
+                    <button onClick={strip.action}
+                      style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 9,
+                        background: strip.color, border: "none", color: "white", cursor: "pointer",
+                        display: "flex", alignItems: "center", gap: 5 }}>
+                      {strip.ctaLabel} <ChevronRight size={12}/>
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* ── TOP TWO-COLUMN LAYOUT ─────────────────────────────── */}
+            <div style={{ display: isMobile ? "flex" : "grid", flexDirection: "column",
+              gridTemplateColumns: "1fr 300px", gap: 16, alignItems: "start" }}>
+
+            {/* LEFT: Health Score Card */}
             {(inspectDone || roofYear || hvacYear) ? (
               <div
                 onClick={() => setShowHealthModal(true)}
-                style={{
-                  background: `linear-gradient(145deg, ${C.navy} 0%, #1e3a5c 45%, ${C.accentDk} 80%, ${C.accent} 100%)`,
-                  borderRadius: 20, padding: isMobile ? "22px 18px" : "30px 32px", cursor: "pointer",
-                  transition: "all 0.18s", position: "relative", overflow: "hidden",
-                  boxShadow: `0 6px 28px ${C.navy}40, 0 1px 0 rgba(255,255,255,0.06) inset`,
-                }}
-                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = `0 14px 44px ${C.navy}55, 0 1px 0 rgba(255,255,255,0.06) inset`; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = ""; e.currentTarget.style.boxShadow = `0 6px 28px ${C.navy}40, 0 1px 0 rgba(255,255,255,0.06) inset`; }}
+                style={{ ...card(), cursor: "pointer", transition: "box-shadow 0.18s" }}
+                onMouseEnter={e => { e.currentTarget.style.boxShadow = "0 6px 24px rgba(28,43,58,0.13)"; }}
+                onMouseLeave={e => { e.currentTarget.style.boxShadow = ""; }}
               >
-                {/* Ambient glow orb — health color radiates from behind the ring */}
-                <div style={{ position: "absolute", top: "50%", left: isMobile ? "50%" : "calc(32px + 80px)", transform: "translate(-50%, -50%)", width: isMobile ? 220 : 280, height: isMobile ? 220 : 280, borderRadius: "50%", background: `radial-gradient(circle, ${healthColor}30 0%, ${healthColor}10 40%, transparent 70%)`, pointerEvents: "none", filter: "blur(2px)" }}/>
-                {/* Decorative halo rings */}
-                <div style={{ position: "absolute", top: "50%", left: isMobile ? "50%" : "calc(32px + 80px)", transform: "translate(-50%, -50%)", width: isMobile ? 170 : 210, height: isMobile ? 170 : 210, borderRadius: "50%", border: `1px solid ${healthColor}18`, pointerEvents: "none" }}/>
-                <div style={{ position: "absolute", top: "50%", left: isMobile ? "50%" : "calc(32px + 80px)", transform: "translate(-50%, -50%)", width: isMobile ? 200 : 250, height: isMobile ? 200 : 250, borderRadius: "50%", border: `1px solid ${healthColor}0d`, pointerEvents: "none" }}/>
-                {/* Top-right subtle corner shimmer */}
-                <div style={{ position: "absolute", top: -40, right: -40, width: 180, height: 180, borderRadius: "50%", background: "radial-gradient(circle, rgba(255,255,255,0.04) 0%, transparent 70%)", pointerEvents: "none" }}/>
-                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 18 : 28, position: "relative" }}>
-                  {/* Score Ring — larger and more prominent */}
-                  <ScoreRing score={health} color={healthColor} size={isMobile ? 130 : 160} />
+                {/* Top section: ring + info + breakdown button */}
+                <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 18 : 24 }}>
+                  {/* Score Ring */}
+                  <ScoreRing score={health} color={healthColor} size={isMobile ? 110 : 130} textColor={C.text} trackColor={C.border} disableGlow />
                   {/* Main content */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>Home Health Score</p>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 8, flexWrap: "wrap" }}>
-                      <span style={{ fontSize: 30, fontWeight: 800, color: "white", letterSpacing: "-0.5px" }}>{healthSt.label}</span>
-                      <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 12px", borderRadius: 20,
-                        background: healthSt.tagBg, color: healthSt.tagColor, border: `1px solid ${healthSt.tagColor}50`, whiteSpace: "nowrap" }}>
-                        {criticalCount > 0 ? `${criticalCount} critical issue${criticalCount > 1 ? "s" : ""}` : breakdown.deductions.length > 0 ? `${breakdown.deductions.length} item${breakdown.deductions.length > 1 ? "s" : ""} to monitor` : "All systems OK"}
-                      </span>
-                    </div>
-                    <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: "0 0 14px", lineHeight: 1.5 }}>{healthSt.desc}</p>
+                    <p style={{ fontSize: 11, fontWeight: 700, color: C.accent, textTransform: "uppercase", letterSpacing: "0.12em", margin: "0 0 4px" }}>Home Health Score</p>
+                    <p style={{ fontSize: 28, fontWeight: 800, color: C.text, letterSpacing: "-0.5px", margin: "0 0 6px", lineHeight: 1.1 }}>{healthSt.label}</p>
+                    <p style={{ fontSize: 13, color: C.text3, margin: "0 0 14px", lineHeight: 1.5 }}>{healthSt.desc}</p>
+                    {/* Condition badges */}
                     <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                      {roofYear && roofAge !== null && (
+                      {criticalCount > 0 ? (
                         <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20,
-                          background: `${roofSt.dot}20`, color: roofSt.color, border: `1px solid ${roofSt.dot}40` }}>
-                          Roof · {roofAge} yrs · {roofSt.label}
+                          background: "rgba(232,116,42,0.10)", color: C.accent, border: `1px solid rgba(232,116,42,0.25)` }}>
+                          {criticalCount} Item{criticalCount !== 1 ? "s" : ""} Need{criticalCount === 1 ? "s" : ""} Attention
                         </span>
-                      )}
-                      {hvacYear && hvacAge !== null && (
+                      ) : breakdown.deductions.length > 0 ? (
                         <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20,
-                          background: `${hvacSt.dot}20`, color: hvacSt.color, border: `1px solid ${hvacSt.dot}40` }}>
-                          HVAC · {hvacAge} yrs · {hvacSt.label}
+                          background: `${C.amber}14`, color: C.amber, border: `1px solid ${C.amber}40` }}>
+                          {breakdown.deductions.length} item{breakdown.deductions.length > 1 ? "s" : ""} to monitor
                         </span>
-                      )}
-                      {criticalCount > 0 && (
-                        <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20,
-                          background: "rgba(239,68,68,0.15)", color: "#ef4444", border: "1px solid rgba(239,68,68,0.3)" }}>
-                          {criticalCount} Priority Item{criticalCount !== 1 ? "s" : ""}
-                        </span>
-                      )}
-                      {/* Extended Condition (Tier 2) label — shown when supplemental data exists */}
+                      ) : null}
                       {extCondition.label && (() => {
                         const mod = extCondition.modifier;
-                        const clr = mod >= 4 ? "#22c55e" : mod > 0 ? "#84cc16" : mod < 0 ? "#ef4444" : "#94a3b8";
-                        const bg  = mod >= 4 ? "rgba(34,197,94,0.15)" : mod > 0 ? "rgba(132,204,22,0.15)" : mod < 0 ? "rgba(239,68,68,0.15)" : "rgba(148,163,184,0.15)";
+                        const clr = mod >= 4 ? C.green : mod > 0 ? "#4d7c0f" : mod < 0 ? C.red : C.text3;
+                        const bg  = mod >= 4 ? C.greenBg : mod > 0 ? "#f7fee7" : mod < 0 ? C.redBg : C.surface2;
+                        const br  = mod >= 4 ? `${C.green}40` : mod > 0 ? "#4d7c0f40" : mod < 0 ? `${C.red}40` : C.border;
                         return (
-                          <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: bg, color: clr, border: `1px solid ${clr}50`, whiteSpace: "nowrap" }}>
-                            Condition · {extCondition.label}
+                          <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20, background: bg, color: clr, border: `1px solid ${br}`, whiteSpace: "nowrap" }}>
+                            Condition: {extCondition.label}
                           </span>
                         );
                       })()}
-                      {/* Professionally Verified badge — PRO + professional inspection + Fresh or Current decay */}
                       {userTier === "pro" && inspectionSource === "professional" &&
                        (homeHealthReport?.decay?.label === "Fresh" || homeHealthReport?.decay?.label === "Current") && (
                         <span style={{ fontSize: 12, fontWeight: 700, padding: "4px 12px", borderRadius: 20, display: "inline-flex", alignItems: "center", gap: 5,
-                          background: "rgba(34,197,94,0.18)", color: "#22c55e", border: "1px solid rgba(34,197,94,0.35)", whiteSpace: "nowrap" }}>
+                          background: C.greenBg, color: C.green, border: `1px solid ${C.green}40`, whiteSpace: "nowrap" }}>
                           <Shield size={11}/> Professionally Verified
                         </span>
                       )}
                     </div>
                   </div>
-                  {/* CTA button */}
+                  {/* Full Breakdown button — right side, desktop only */}
                   {!isMobile && (
-                  <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
-                    <div style={{ padding: "10px 18px", borderRadius: 12, background: "rgba(255,255,255,0.1)",
-                      border: "1px solid rgba(255,255,255,0.18)", display: "flex", alignItems: "center", gap: 6 }}>
-                      <BarChart3 size={14} color="rgba(255,255,255,0.7)"/>
-                      <span style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>Full Breakdown</span>
-                      <ChevronRight size={13} color="rgba(255,255,255,0.4)"/>
+                    <div style={{ flexShrink: 0, display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 7, padding: "10px 18px", borderRadius: 12,
+                        background: C.surface, border: `1px solid ${C.border}`,
+                        color: C.text, fontSize: 13, fontWeight: 600, whiteSpace: "nowrap",
+                        boxShadow: "0 1px 4px rgba(28,25,20,0.06)" }}>
+                        <ChevronRight size={14} color={C.text2}/>
+                        Full Breakdown
+                      </div>
+                      <span style={{ fontSize: 11, color: C.text3 }}>
+                        {inspectionResult?.inspection_date
+                          ? `Last updated ${new Date(inspectionResult.inspection_date + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+                          : "Last updated today"}
+                      </span>
                     </div>
-                    <p style={{ fontSize: 11, color: "rgba(255,255,255,0.3)", margin: 0 }}>Tap to see full breakdown</p>
-                  </div>
                   )}
                 </div>
+                {/* Mobile: Full Breakdown inline */}
+                {isMobile && (
+                  <div style={{ marginTop: 14, display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 16px", borderRadius: 10,
+                    background: C.surface2, border: `1px solid ${C.border}`, color: C.text, fontSize: 13, fontWeight: 600 }}>
+                    <ChevronRight size={13} color={C.text2}/>
+                    Full Breakdown
+                  </div>
+                )}
+
+                {/* SYSTEM OVERVIEW */}
+                {homeHealthReport?.category_scores && homeHealthReport.category_scores.some(cs => !cs.not_assessed) && (() => {
+                  const CAT_LABELS: Record<string,string> = {
+                    structure_foundation: "Foundation", roof_drainage_exterior: "Roof",
+                    electrical: "Electrical", plumbing: "Plumbing", hvac: "HVAC",
+                    appliances_water_heater: "Appliances", safety_environmental: "Safety",
+                  };
+                  // Per-category bar colors matching the screenshot
+                  const CAT_COLORS: Record<string,string> = {
+                    structure_foundation: "#3b82f6",
+                    roof_drainage_exterior: C.accent,
+                    electrical: C.green,
+                    plumbing: "#b45309",
+                    hvac: "#0d9488",
+                    appliances_water_heater: "#7c3aed",
+                    safety_environmental: C.red,
+                  };
+                  const scored = homeHealthReport.category_scores.filter(cs => !cs.not_assessed);
+                  return (
+                    <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 22, paddingTop: 18 }}>
+                      <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 16px" }}>System Overview</p>
+                      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                        {scored.map(cs => {
+                          const barColor = CAT_COLORS[cs.category] ?? C.accent;
+                          return (
+                            <div key={cs.category} style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                              <span style={{ fontSize: 13, color: C.text2, width: 88, flexShrink: 0 }}>{CAT_LABELS[cs.category] ?? cs.category}</span>
+                              <div style={{ flex: 1, height: 8, borderRadius: 4, background: C.surface2, overflow: "hidden" }}>
+                                <div style={{ height: "100%", borderRadius: 4, background: barColor, width: `${cs.score}%`, transition: "width 0.8s ease" }}/>
+                              </div>
+                              <span style={{ fontSize: 13, fontWeight: 800, color: C.text, width: 28, textAlign: "right", flexShrink: 0 }}>{cs.score}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             ) : (
               /* Empty state hero */
@@ -6761,6 +6929,107 @@ export default function Dashboard() {
                 </div>
               </div>
             )}
+
+            {/* RIGHT: Upcoming Maintenance ─────────────────────────── */}
+            {(() => {
+              const todayMs2 = Date.now();
+              const DASH_TASKS = [
+                { id: "hvac_filter",    label: "HVAC Filter",      sub: "Replace filter",        freqDays: 30,  dot: "#ef4444" },
+                { id: "smoke_detector", label: "Smoke Detectors",  sub: "Test all units",        freqDays: 91,  dot: "#f59e0b" },
+                { id: "gutter_clean",   label: "Clean Gutters",    sub: "Downspouts & debris",   freqDays: 182, dot: "#3b82f6" },
+                { id: "hvac_tune",      label: "HVAC Tune-Up",     sub: "Schedule service",      freqDays: 182, dot: "#8b5cf6" },
+                { id: "roof_inspect",   label: "Roof Inspection",  sub: "Check for damage",      freqDays: 365, dot: C.green   },
+              ];
+              const hasHistory = Object.keys(maintCompletions).length > 0;
+              const items = DASH_TASKS.map(t => {
+                const lastDone = maintCompletions[t.id];
+                let daysUntilNext = 0;
+                let nextDueDate: Date | null = null;
+                if (lastDone) {
+                  const lastMs = new Date(lastDone).getTime();
+                  const daysSince = (todayMs2 - lastMs) / 86400000;
+                  daysUntilNext = t.freqDays - daysSince;
+                  nextDueDate = new Date(lastMs + t.freqDays * 86400000);
+                }
+                let status: "overdue" | "due-soon" | "scheduled" | "done" = "scheduled";
+                if (lastDone) {
+                  if (daysUntilNext < 0) status = "overdue";
+                  else if (daysUntilNext <= 14) status = "due-soon";
+                  else status = "done";
+                } else if (hasHistory) {
+                  status = "overdue";
+                }
+                return { ...t, status, nextDueDate, daysUntilNext };
+              }).sort((a, b) => {
+                const o: Record<string,number> = { overdue: 0, "due-soon": 1, scheduled: 2, done: 3 };
+                return o[a.status] - o[b.status];
+              }).slice(0, 4);
+              const urgentCount = items.filter(i => i.status === "overdue" || i.status === "due-soon").length;
+              return (
+                <div style={{ ...card() }}>
+                  {/* Header */}
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 18 }}>
+                    <p style={{ fontSize: 16, fontWeight: 800, color: C.text, margin: 0 }}>Upcoming Maintenance</p>
+                    {urgentCount > 0 && (
+                      <span style={{ fontSize: 12, fontWeight: 700, padding: "3px 10px", borderRadius: 20,
+                        background: `${C.accent}15`, color: C.accent, border: `1px solid ${C.accent}35` }}>
+                        {urgentCount} Due Soon
+                      </span>
+                    )}
+                  </div>
+                  {/* Task list */}
+                  <div style={{ display: "flex", flexDirection: "column", gap: 0 }}>
+                    {items.map((t, idx) => {
+                      const stBadge =
+                        t.status === "overdue"   ? { label: "Overdue",   bg: C.redBg,   color: C.red,     border: `${C.red}40` } :
+                        t.status === "due-soon"  ? { label: "Due Soon",  bg: C.amberBg, color: C.amber,   border: `${C.amber}40` } :
+                        t.status === "done"      ? { label: "Booked",    bg: C.greenBg, color: C.green,   border: `${C.green}40` } :
+                                                   { label: "Scheduled", bg: "#eff6ff",  color: "#2563eb", border: "#bfdbfe" };
+                      return (
+                        <div key={t.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "13px 0",
+                          borderBottom: idx < items.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                          <div style={{ width: 10, height: 10, borderRadius: "50%", background: t.dot, flexShrink: 0 }}/>
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>{t.label}</p>
+                            <p style={{ fontSize: 11, color: C.text3, margin: 0 }}>{t.sub}</p>
+                          </div>
+                          <div style={{ textAlign: "right", flexShrink: 0 }}>
+                            {t.nextDueDate && (
+                              <p style={{ fontSize: 11, color: C.text3, margin: "0 0 4px" }}>
+                                {t.nextDueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                              </p>
+                            )}
+                            {(t.status === "overdue" || t.status === "due-soon") ? (
+                              <button
+                                onClick={e => { e.stopPropagation(); const WTRADE: Record<string,string> = { hvac_filter:"HVAC", hvac_tune:"HVAC", smoke_detector:"General Contractor", gutter_clean:"Roofing", roof_inspect:"Roofing" }; handleFindVendors(WTRADE[t.id] ?? "General Contractor", t.label, t.sub); }}
+                                style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 9,
+                                  background: C.accent, border: "none", color: "white", cursor: "pointer",
+                                  display: "flex", alignItems: "center", gap: 3 }}>
+                                <Users size={10}/> Schedule
+                              </button>
+                            ) : (
+                              <span style={{ fontSize: 11, fontWeight: 700, padding: "2px 9px", borderRadius: 10,
+                                background: stBadge.bg, color: stBadge.color, border: `1px solid ${stBadge.border}` }}>
+                                {stBadge.label}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Footer CTA */}
+                  <button onClick={() => setNav("Maintenance")}
+                    style={{ width: "100%", marginTop: 16, padding: "10px", borderRadius: 10,
+                      background: "white", border: `1px solid ${C.border}`, color: C.text2,
+                      fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    View All Maintenance
+                  </button>
+                </div>
+              );
+            })()}
+
+            </div>{/* /two-column grid */}
 
             {/* Hidden inspection upload input (Dashboard) */}
             <input ref={inspRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
@@ -7088,58 +7357,70 @@ export default function Dashboard() {
                 const daysUntilDue = Math.ceil((dueDate.getTime() - today.getTime()) / 86400000);
                 const isUrgent = daysUntilDue <= 7 && !!mortgage?.payment;
                 return (
-                  <div style={{ ...card({ padding: 0, overflow: "hidden" }), background: isUrgent ? C.amberBg : C.surface, border: `1px solid ${isUrgent ? C.amber + "50" : C.border}` }}>
-                    {/* Accent bar */}
-                    <div style={{ height: 4, background: isUrgent ? C.amber : C.accent, borderRadius: "16px 16px 0 0" }}/>
-                    <div style={{ padding: "20px 22px 22px" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+                  <div style={{ borderRadius: 16, overflow: "hidden", background: "linear-gradient(145deg, #1C2B3A 0%, #2A3E54 100%)", boxShadow: "0 1px 4px rgba(15,31,61,0.10)" }}>
+                    {/* Dark header */}
+                    <div style={{ padding: "20px 22px 18px" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: 9, background: isUrgent ? `${C.amber}22` : `${C.accent}18`, display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <DollarSign size={15} color={isUrgent ? C.amber : C.accent}/>
+                        <div style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                          <DollarSign size={15} color="rgba(255,255,255,0.8)"/>
                         </div>
                         <div>
-                          <p style={{ fontSize: 11, fontWeight: 700, color: isUrgent ? C.amber : C.accent, letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>Mortgage</p>
-                          {mortgage?.lender && <p style={{ fontSize: 11, color: C.text3, margin: 0 }}>{mortgage.lender}</p>}
+                          <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.55)", letterSpacing: "0.08em", textTransform: "uppercase", margin: 0 }}>Mortgage</p>
+                          {mortgage?.lender && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: 0 }}>{mortgage.lender}</p>}
                         </div>
                       </div>
-                      <button onClick={() => setShowMortgageForm(f => !f)} style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: "transparent", border: `1px solid ${C.accent}30`, borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
+                      <button onClick={() => setShowMortgageForm(f => !f)} style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.6)", background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
                         {showMortgageForm ? "Cancel" : mortgage ? "Edit" : "Add"}
                       </button>
                     </div>
                     {mortgage && !showMortgageForm ? (
                       <>
-                        <p style={{ fontSize: 30, fontWeight: 800, color: C.text, letterSpacing: "-0.8px", margin: "0 0 10px", lineHeight: 1 }}>${mortgage.balance?.toLocaleString() ?? "—"}</p>
-                        <div style={{ display: "flex", gap: 18, marginBottom: 14 }}>
-                          {mortgage.payment && (
-                            <div>
-                              <div style={{ fontSize: 10, color: C.text3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Monthly</div>
-                              <div style={{ fontSize: 15, fontWeight: 700, color: C.text2 }}>${mortgage.payment.toLocaleString()}</div>
-                            </div>
-                          )}
+                        <p style={{ fontSize: 32, fontWeight: 800, color: "white", letterSpacing: "-0.8px", margin: "0 0 4px", lineHeight: 1 }}>
+                          ${mortgage.payment?.toLocaleString() ?? mortgage.balance?.toLocaleString() ?? "—"}
+                          {mortgage.payment && <span style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.5)" }}>/mo</span>}
+                        </p>
+                        {isUrgent ? (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "rgba(251,191,36,0.2)", border: "1px solid rgba(251,191,36,0.4)" }}>
+                            <AlertTriangle size={11} color="#fbbf24"/>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: "#fbbf24" }}>Due in {daysUntilDue} day{daysUntilDue !== 1 ? "s" : ""}</span>
+                          </div>
+                        ) : mortgage.due_day ? (
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.15)" }}>
+                            <Clock size={11} color="rgba(255,255,255,0.5)"/>
+                            <span style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>Due day {dueDay} · {daysUntilDue}d</span>
+                          </div>
+                        ) : null}
+                      </>
+                    ) : null}
+                    </div>{/* /dark header */}
+                    {/* White detail section */}
+                    <div style={{ background: "white", padding: "16px 22px 20px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                    {mortgage && !showMortgageForm ? (
+                      <>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
                           {mortgage.rate && (
-                            <div>
-                              <div style={{ fontSize: 10, color: C.text3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Rate</div>
-                              <div style={{ fontSize: 15, fontWeight: 700, color: C.text2 }}>{(mortgage.rate * 100).toFixed(3)}%</div>
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ fontSize: 12, color: C.text3 }}>Rate</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{(mortgage.rate * 100).toFixed(3)}% fixed</span>
                             </div>
                           )}
-                          {mortgage.due_day && (
-                            <div>
-                              <div style={{ fontSize: 10, color: C.text3, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.05em" }}>Due</div>
-                              <div style={{ fontSize: 15, fontWeight: 700, color: C.text2 }}>Day {dueDay}</div>
+                          {mortgage.balance && (
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ fontSize: 12, color: C.text3 }}>Remaining</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>${mortgage.balance.toLocaleString()}</span>
+                            </div>
+                          )}
+                          {mortgage.payment && mortgage.due_day && (
+                            <div style={{ display: "flex", justifyContent: "space-between" }}>
+                              <span style={{ fontSize: 12, color: C.text3 }}>Next payment</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: C.accent }}>${mortgage.payment.toLocaleString()} · Day {dueDay}</span>
                             </div>
                           )}
                         </div>
-                        {isUrgent ? (
-                          <div style={{ padding: "8px 12px", borderRadius: 10, background: `${C.amber}22`, border: `1px solid ${C.amber}50`, display: "flex", alignItems: "center", gap: 7 }}>
-                            <AlertTriangle size={13} color={C.amber}/>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: C.amber }}>Due in {daysUntilDue} day{daysUntilDue !== 1 ? "s" : ""} — ${mortgage.payment?.toLocaleString()}</span>
-                          </div>
-                        ) : mortgage.due_day ? (
-                          <div style={{ padding: "7px 12px", borderRadius: 10, background: C.bg, border: `1px solid ${C.border}`, display: "flex", alignItems: "center", gap: 7 }}>
-                            <Clock size={12} color={C.text3}/>
-                            <span style={{ fontSize: 12, color: C.text3 }}>Next due in {daysUntilDue} days</span>
-                          </div>
-                        ) : null}
+                        <button style={{ width: "100%", padding: "10px", borderRadius: 10, background: C.navy, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                          Make Payment
+                        </button>
                       </>
                     ) : showMortgageForm ? (
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -7183,36 +7464,38 @@ export default function Dashboard() {
                         </div>
                       </div>
                     )}
-                    </div>{/* /padding div */}
+                    </div>{/* /white detail */}
                   </div>
                 );
               })()}
 
               {/* Insurance */}
-              <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                <div style={{ height: 4, background: "#0891b2", borderRadius: "16px 16px 0 0" }}/>
-                <div style={{ padding: "20px 22px 22px" }}>
-                {/* Header row */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ borderRadius: 16, overflow: "hidden", background: "linear-gradient(145deg, #0c5460 0%, #0f766e 60%, #0d9488 100%)", boxShadow: "0 1px 4px rgba(15,31,61,0.10)" }}>
+                {/* Dark header */}
+                <div style={{ padding: "20px 22px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 9, background: "#0891b218", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Shield size={15} color="#0891b2"/>
+                    <div style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Shield size={15} color="rgba(255,255,255,0.9)"/>
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "#0891b2", letterSpacing: "0.08em", textTransform: "uppercase" }}>Home Insurance</span>
+                    <div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Home Insurance</span>
+                      {insurance?.provider && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: 0 }}>{insurance.provider}{insurance.policyType ? ` · ${insurance.policyType}` : ""}</p>}
+                    </div>
                   </div>
                   {insurance && (
                     <div style={{ display: "flex", gap: 5 }}>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #0891b230", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                         {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}
-                        {parsingInsurance ? "…" : "Add Policy"}
+                        {parsingInsurance ? "…" : "Add"}
                         <input key={`add-${insuranceFileKey}`} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={addSecondaryPolicy} disabled={parsingInsurance}/>
                       </label>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #0891b230", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                         {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
                         {parsingInsurance ? "…" : "Replace"}
                         <input key={`rep-${insuranceFileKey}`} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                       </label>
-                      <button onClick={deleteInsurance} title="Remove insurance record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #fca5a530", color: C.red, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
+                      <button onClick={deleteInsurance} title="Remove insurance record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,100,100,0.8)", fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
                         <Trash2 size={10}/>
                       </button>
                     </div>
@@ -7220,31 +7503,44 @@ export default function Dashboard() {
                 </div>
                 {insurance ? (
                   <>
-                    <p style={{ fontSize: 17, fontWeight: 700, color: C.text, margin: "0 0 2px", lineHeight: 1.3 }}>
-                      {insurance.provider ?? "Active Policy"}
-                      {insurance.policyType ? ` · ${insurance.policyType}` : ""}
+                    <p style={{ fontSize: 32, fontWeight: 800, color: "white", letterSpacing: "-0.8px", margin: "0 0 4px", lineHeight: 1 }}>
+                      ${((insurance.annualPremium ?? insurance.premium) ?? 0).toLocaleString()}
+                      <span style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.5)" }}>/yr</span>
                     </p>
-                    {insurance.policyNumber && (
-                      <p style={{ fontSize: 12, color: C.text3, margin: "0 0 14px", fontFamily: "monospace", letterSpacing: "0.02em" }}>
-                        #{insurance.policyNumber}
-                      </p>
-                    )}
-                    {((insurance.annualPremium ?? insurance.premium) || insurance.expirationDate) && (
-                      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-                        {(insurance.annualPremium ?? insurance.premium) && (
-                          <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "8px 14px" }}>
-                            <div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Premium</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>${(insurance.annualPremium ?? insurance.premium)!.toLocaleString()}<span style={{ fontSize: 11, fontWeight: 500, color: C.text3 }}>/yr</span></div>
-                          </div>
-                        )}
-                        {insurance.expirationDate && (
-                          <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 10, padding: "8px 14px" }}>
-                            <div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Renews</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>{insurance.expirationDate}</div>
-                          </div>
-                        )}
+                    {insurance.expirationDate && (
+                      <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)" }}>
+                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.75)" }}>✓ Active · Renews {insurance.expirationDate}</span>
                       </div>
                     )}
+                  </>
+                ) : (
+                  <p style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.4)", margin: 0 }}>No policy on file</p>
+                )}
+                </div>{/* /dark header */}
+                {/* White detail section */}
+                <div style={{ background: "white", padding: "16px 22px 20px" }}>
+                {insurance ? (
+                  <>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                      {insurance.policyNumber && (
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 12, color: C.text3 }}>Policy #</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text, fontFamily: "monospace" }}>{insurance.policyNumber}</span>
+                        </div>
+                      )}
+                      {insurance.dwellingCoverage && (
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 12, color: C.text3 }}>Coverage</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{insurance.policyType ?? "Fire, Wind, Hail"}</span>
+                        </div>
+                      )}
+                      {insurance.deductibleStandard && (
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 12, color: C.text3 }}>Deductible</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>${insurance.deductibleStandard.toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => {
                         const rawIns = insurance.claimUrl;
@@ -7254,20 +7550,18 @@ export default function Dashboard() {
                         if (url) { window.open(url, "_blank"); return; }
                         if (phone) { window.location.href = `tel:${phone.replace(/\D/g, "")}`; return; }
                         if (email) { window.location.href = `mailto:${email}`; return; }
-                        // No contact info — prompt user to upload policy
                         showToast("Upload your declarations page to extract the claims contact", "info");
-                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: C.navy, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "#0f766e", border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         File Claim
                       </button>
-                      <button onClick={() => setShowInsuranceDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: `1.5px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                        {showInsuranceDetail ? "Hide Details" : "View Details"}
+                      <button onClick={() => setShowInsuranceDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid #0f766e", color: "#0f766e", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                        {showInsuranceDetail ? "Hide Details" : "Details"}
                       </button>
                     </div>
                   </>
                 ) : (
                   <>
-                    <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "0 0 14px" }}>—</p>
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0891b2", background: "transparent", color: "#0891b2", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0f766e", background: "transparent", color: "#0f766e", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                       {parsingInsurance ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
                       {parsingInsurance ? "Parsing…" : "Upload Policy"}
                       <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
@@ -7275,7 +7569,7 @@ export default function Dashboard() {
                     {insuranceError && <p style={{ fontSize: 11, color: C.red, margin: "8px 0 0", lineHeight: 1.4 }}>⚠ {insuranceError}</p>}
                   </>
                 )}
-                </div>{/* /padding div */}
+                </div>{/* /white detail */}
 
                 {/* Additional / stacked policies (e.g. CA FAIR Plan + DIC) */}
                 {(insurance?.additionalPolicies ?? []).map((ap, i) => (
@@ -7471,58 +7765,86 @@ export default function Dashboard() {
               </div>
 
               {/* Home Warranty */}
-              <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                <div style={{ height: 4, background: "#7c3aed", borderRadius: "16px 16px 0 0" }}/>
-                <div style={{ padding: "20px 22px 22px" }}>
-                {/* Header row */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+              <div style={{ borderRadius: 16, overflow: "hidden", background: "linear-gradient(145deg, #4c1d95 0%, #6d28d9 50%, #7c3aed 100%)", boxShadow: "0 1px 4px rgba(15,31,61,0.10)" }}>
+                {/* Dark header */}
+                <div style={{ padding: "20px 22px 18px" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 9, background: "#7c3aed18", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Shield size={15} color="#7c3aed"/>
+                    <div style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                      <Shield size={15} color="rgba(255,255,255,0.9)"/>
                     </div>
-                    <span style={{ fontSize: 11, fontWeight: 700, color: "#7c3aed", letterSpacing: "0.08em", textTransform: "uppercase" }}>Home Warranty</span>
+                    <div>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Home Warranty</span>
+                      {warranty?.provider && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: 0 }}>{warranty.provider}{warranty.planName ? ` · ${warranty.planName}` : ""}</p>}
+                    </div>
                   </div>
                   {warranty && (
-                    <button onClick={deleteWarranty} title="Remove warranty record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid #fca5a530", color: C.red, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
+                    <button onClick={deleteWarranty} title="Remove warranty record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,100,100,0.8)", fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
                       <Trash2 size={10}/>
                     </button>
                   )}
                 </div>
                 {warranty ? (
                   <>
-                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, marginBottom: 2 }}>
-                      <p style={{ fontSize: 17, fontWeight: 700, color: C.text, margin: 0, lineHeight: 1.3 }}>
-                        {warranty.provider ?? "Active Warranty"}
-                      </p>
-                      {/* Expiry urgency badge */}
-                      {warranty.expirationDate && (() => {
-                        const days = Math.round((new Date(warranty.expirationDate).getTime() - Date.now()) / 86400000);
-                        if (days <= 0) return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontWeight: 700, flexShrink: 0 }}>Expired</span>;
-                        const color  = days < 30 ? "#dc2626" : days < 90 ? "#d97706" : "#7c3aed";
-                        const bg     = days < 30 ? "#fef2f2" : days < 90 ? "#fffbeb" : "#faf5ff";
-                        const border = days < 30 ? "#fca5a5" : days < 90 ? "#fcd34d" : "#e9d5ff";
-                        return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, background: bg, border: `1px solid ${border}`, color, fontWeight: 700, flexShrink: 0 }}>{days < 30 ? `${days}d left!` : days < 90 ? `${days} days left` : `${Math.round(days / 30)}mo left`}</span>;
-                      })()}
-                    </div>
-                    {warranty.planName && (
-                      <p style={{ fontSize: 13, color: C.text3, margin: "0 0 10px" }}>{warranty.planName}</p>
-                    )}
-                    <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                    {warranty.expirationDate && (() => {
+                      const days = Math.round((new Date(warranty.expirationDate).getTime() - Date.now()) / 86400000);
+                      return (
+                        <p style={{ fontSize: 28, fontWeight: 800, color: "white", letterSpacing: "-0.5px", margin: "0 0 6px", lineHeight: 1 }}>
+                          Expires {warranty.expirationDate}
+                        </p>
+                      );
+                    })()}
+                    {warranty.expirationDate && (() => {
+                      const days = Math.round((new Date(warranty.expirationDate).getTime() - Date.now()) / 86400000);
+                      const isExpiringSoon = days <= 60;
+                      return (
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20,
+                          background: isExpiringSoon ? "rgba(251,191,36,0.2)" : "rgba(255,255,255,0.1)",
+                          border: isExpiringSoon ? "1px solid rgba(251,191,36,0.4)" : "1px solid rgba(255,255,255,0.15)" }}>
+                          <span style={{ fontSize: 12, color: isExpiringSoon ? "#fbbf24" : "rgba(255,255,255,0.6)" }}>
+                            {isExpiringSoon ? `⚠ Renewal needed soon` : `${Math.round(days / 30)}mo remaining`}
+                          </span>
+                        </div>
+                      );
+                    })()}
+                  </>
+                ) : (
+                  <p style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.4)", margin: 0 }}>No warranty on file</p>
+                )}
+                </div>{/* /dark header */}
+                {/* White detail section */}
+                <div style={{ background: "white", padding: "16px 22px 20px" }}>
+                {warranty ? (
+                  <>
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between" }}>
+                        <span style={{ fontSize: 12, color: C.text3 }}>Plan</span>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{warranty.planName ?? "—"}</span>
+                      </div>
                       {warranty.serviceFee && (
-                        <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
-                          <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Service Fee</div>
-                          <div style={{ fontSize: 16, fontWeight: 800, color: C.text }}>${warranty.serviceFee}<span style={{ fontSize: 11, fontWeight: 500, color: C.text3 }}>/claim</span></div>
+                        <div style={{ display: "flex", justifyContent: "space-between" }}>
+                          <span style={{ fontSize: 12, color: C.text3 }}>Service Fee</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>${warranty.serviceFee}/claim</span>
                         </div>
                       )}
-                      <div style={{ background: "#faf5ff", border: "1px solid #e9d5ff", borderRadius: 10, padding: "8px 14px" }}>
-                        <div style={{ fontSize: 10, color: "#7c3aed", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Expires</div>
-                        <div style={{ fontSize: 16, fontWeight: 800, color: warranty.expirationDate ? C.text : C.text3 }}>
-                          {warranty.expirationDate ?? "—"}
-                        </div>
-                        {warranty.autoRenews && <div style={{ fontSize: 10, color: "#7c3aed", marginTop: 2 }}>Auto-renews</div>}
-                      </div>
+                      {warranty.expirationDate && (() => {
+                        const days = Math.round((new Date(warranty.expirationDate).getTime() - Date.now()) / 86400000);
+                        const color = days <= 0 ? C.red : days < 60 ? C.amber : C.text;
+                        return (
+                          <div style={{ display: "flex", justifyContent: "space-between" }}>
+                            <span style={{ fontSize: 12, color: C.text3 }}>Status</span>
+                            <span style={{ fontSize: 12, fontWeight: 600, color }}>{days <= 0 ? "Expired" : days < 60 ? `Expires in ${days}d` : "Active"}</span>
+                          </div>
+                        );
+                      })()}
                     </div>
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                      {warranty.claimUrl && (
+                        <a href={warranty.claimUrl.startsWith("http") ? warranty.claimUrl : `https://${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer"
+                          style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "#7c3aed", border: "none", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none", cursor: "pointer" }}>
+                          <RefreshCw size={12}/> Renew
+                        </a>
+                      )}
                       <button onClick={() => {
                         const raw = warranty.claimUrl;
                         const url = raw ? (raw.startsWith("http") ? raw : `https://${raw}`) : null;
@@ -7530,24 +7852,17 @@ export default function Dashboard() {
                         if (url) { window.open(url, "_blank"); return; }
                         if (phone) { window.location.href = `tel:${phone.replace(/\D/g, "")}`; return; }
                         showToast("Upload your warranty document to extract the claims contact", "info");
-                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: C.navy, border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         File Claim
                       </button>
-                      {warranty.claimUrl && (
-                        <a href={warranty.claimUrl.startsWith("http") ? warranty.claimUrl : `https://${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer"
-                          style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "#7c3aed", border: "none", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none", cursor: "pointer" }}>
-                          <RefreshCw size={12}/> Renew
-                        </a>
-                      )}
-                      <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid #e9d5ff", color: "#7c3aed", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                        {showWarrantyDetail ? "Less" : "Details"}
-                      </button>
                     </div>
+                    <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ width: "100%", marginTop: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "7px 12px", borderRadius: 9, background: "transparent", border: `1px solid ${C.border}`, color: C.text3, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      {showWarrantyDetail ? "Less" : "More Details"}
+                    </button>
                   </>
                 ) : (
                   <>
-                    <p style={{ fontSize: 16, fontWeight: 700, color: C.text3, margin: "0 0 14px" }}>—</p>
-                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid ${C.accent}", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                       {parsingWarranty ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
                       {parsingWarranty ? "Parsing…" : "Upload Warranty"}
                       <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
@@ -7555,7 +7870,7 @@ export default function Dashboard() {
                     {warrantyError && <p style={{ fontSize: 11, color: C.red, margin: "8px 0 0", lineHeight: 1.4 }}>⚠ {warrantyError}</p>}
                   </>
                 )}
-                </div>{/* /padding div */}
+                </div>{/* /white detail */}
               </div>
 
               {/* Warranty detail panel */}
