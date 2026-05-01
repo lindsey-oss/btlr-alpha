@@ -6158,13 +6158,6 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* Grade badge */}
-                    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 4, flexShrink: 0 }}>
-                      <div style={{ width: 56, height: 56, borderRadius: "50%", background: "rgba(255,255,255,0.1)", border: "2px solid rgba(255,255,255,0.2)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                        <span style={{ fontSize: 24, fontWeight: 900, color: "white", fontFamily: "Inter, sans-serif" }}>{maintGrade}</span>
-                      </div>
-                      <span style={{ fontSize: 10, fontWeight: 700, color: "rgba(255,255,255,0.45)", textTransform: "uppercase", letterSpacing: "0.1em" }}>Grade</span>
-                    </div>
                   </div>
                 </div>
 
