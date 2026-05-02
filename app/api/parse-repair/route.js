@@ -85,7 +85,7 @@ export async function POST(req) {
 
   try {
     const body = await req.json();
-    const { signedUrl, filename, storagePath, existingFindings } = body;
+    const { signedUrl, filename, storagePath, existingFindings, propertyId } = body;
 
     if (!signedUrl) {
       return Response.json({ success: false, error: "No document URL provided" }, { status: 400 });
@@ -157,17 +157,23 @@ export async function POST(req) {
     // Save repair document to DB
     let repairDocId = null;
     try {
-      const { data: existingProp } = await supabase
-        .from("properties")
-        .select("id")
-        .limit(1)
-        .maybeSingle();
+      // Use the propertyId passed from the client (active property).
+      // Fall back to querying the first property only if none was provided.
+      let resolvedPropertyId = propertyId ? Number(propertyId) : null;
+      if (!resolvedPropertyId) {
+        const { data: existingProp } = await supabase
+          .from("properties")
+          .select("id")
+          .limit(1)
+          .maybeSingle();
+        resolvedPropertyId = existingProp?.id ?? null;
+      }
 
-      if (existingProp?.id && userId) {
+      if (resolvedPropertyId && userId) {
         const { data: repairDoc } = await supabase
           .from("repair_documents")
           .insert({
-            property_id:           existingProp.id,
+            property_id:           resolvedPropertyId,
             user_id:               userId,
             filename:              filename || "repair-document.pdf",
             vendor_name:           parsed.vendor_name || null,
@@ -194,7 +200,7 @@ export async function POST(req) {
           const { data: propData } = await supabase
             .from("properties")
             .select("finding_statuses")
-            .eq("id", existingProp.id)
+            .eq("id", resolvedPropertyId)
             .maybeSingle();
 
           const current = (propData?.finding_statuses && typeof propData.finding_statuses === "object")
@@ -208,7 +214,7 @@ export async function POST(req) {
           await supabase
             .from("properties")
             .update({ finding_statuses: merged, updated_at: new Date().toISOString() })
-            .eq("id", existingProp.id);
+            .eq("id", resolvedPropertyId);
         }
       }
     } catch (dbErr) {

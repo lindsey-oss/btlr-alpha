@@ -3049,6 +3049,11 @@ export default function Dashboard() {
     setMaintScheduled({});
     setMaintCompletions({});
     setDoneTasks(new Set());
+    // Clear documents — loadDocs() will reload for the new property
+    setDocs([]);
+    setInspectionDoc(null);
+    // Clear repair completions — reloaded per-property by loadRepairCompletions()
+    setRepairCompletions({});
   }
 
   // ── Save self-inspection results ───────────────────────────────────────
@@ -3416,6 +3421,7 @@ export default function Dashboard() {
   async function switchProperty(id: number) {
     clearPropertyState();
     setActivePropertyId(id);
+    setNav("Dashboard"); // always land on Dashboard so each property starts fresh
     loadTimelineFromStorage(id);
     activePropertyIdRef.current = id;
     localStorage.setItem("btlr_active_property_id", String(id));
@@ -4339,15 +4345,18 @@ export default function Dashboard() {
       const session = refreshed?.session ?? (await supabase.auth.getSession()).data.session;
       if (!session?.user?.id) return;
       const uid = session.user.id;
+      const propId = activePropertyIdRef.current;
 
       // ── 1. General docs ("other") ──────────────────────────────────────────
-      const { data: otherData, error: otherErr } = await supabase
+      let otherQuery = supabase
         .from("documents")
         .select("id, file_name, file_path, document_type, created_at")
         .eq("user_id", uid)
         .eq("document_type", "other")
         .order("created_at", { ascending: false })
         .limit(200);
+      if (propId) otherQuery = otherQuery.eq("property_id", propId);
+      const { data: otherData, error: otherErr } = await otherQuery;
 
       if (otherErr) {
         // Always silent — this runs on every mount including first-ever login
@@ -4372,24 +4381,28 @@ export default function Dashboard() {
       }
 
       // ── 2. Insurance doc count badge ───────────────────────────────────────
-      const { count: insCount } = await supabase
+      let insCountQuery = supabase
         .from("documents")
         .select("id", { count: "exact", head: true })
         .eq("user_id", uid)
         .eq("document_type", "insurance");
+      if (propId) insCountQuery = insCountQuery.eq("property_id", propId);
+      const { count: insCount } = await insCountQuery;
       if (insCount && insCount > 0) setInsuranceDocCount(insCount);
 
       // ── 3. Inspection file reference ──────────────────────────────────────
       // Restores the "View original PDF" link after logout/login without relying
       // on any React state. The inspection FINDINGS are loaded separately via
       // loadProperty() → findings table + properties.inspection_findings JSONB.
-      const { data: inspData, error: inspErr } = await supabase
+      let inspQuery = supabase
         .from("documents")
         .select("id, file_name, file_path, document_type, created_at")
         .eq("user_id", uid)
         .eq("document_type", "inspection")
         .order("created_at", { ascending: false })
         .limit(1);
+      if (propId) inspQuery = inspQuery.eq("property_id", propId);
+      const { data: inspData, error: inspErr } = await inspQuery;
 
       if (inspErr) {
         console.warn("[loadDocs] inspection doc query error:", inspErr.code, inspErr.message);
@@ -4412,13 +4425,15 @@ export default function Dashboard() {
       // Primary path: documents table row (created by all uploads going forward).
       // Fallback: scan storage bucket for files uploaded before the documents row
       // was required — so users never have to re-upload an existing file.
-      const { data: warrData } = await supabase
+      let warrQuery = supabase
         .from("documents")
         .select("file_path")
         .eq("user_id", uid)
         .eq("document_type", "warranty")
         .order("created_at", { ascending: false })
         .limit(1);
+      if (propId) warrQuery = warrQuery.eq("property_id", propId);
+      const { data: warrData } = await warrQuery;
 
       if (warrData?.length) {
         const { data: signedWarr } = await supabase.storage.from("documents").createSignedUrl(warrData[0].file_path, 3600);
@@ -4437,13 +4452,15 @@ export default function Dashboard() {
       }
 
       // ── 5. Insurance PDF URLs ──────────────────────────────────────────────
-      const { data: insData } = await supabase
+      let insDocQuery = supabase
         .from("documents")
         .select("file_path, file_name")
         .eq("user_id", uid)
         .eq("document_type", "insurance")
         .order("created_at", { ascending: false })
         .limit(5);
+      if (propId) insDocQuery = insDocQuery.eq("property_id", propId);
+      const { data: insData } = await insDocQuery;
 
       if (insData?.length) {
         const urls: string[] = [];
@@ -4580,11 +4597,14 @@ export default function Dashboard() {
   // ── Load repair history from DB on mount ────────────────────────────────
   async function loadRepairDocs() {
     try {
-      const { data, error } = await supabase
+      const propId = activePropertyIdRef.current;
+      let repairQuery = supabase
         .from("repair_documents")
         .select("id, vendor_name, service_date, repair_summary, system_category, cost, resolved_finding_keys, storage_path, filename")
         .order("created_at", { ascending: false })
         .limit(50);
+      if (propId) repairQuery = repairQuery.eq("property_id", propId);
+      const { data, error } = await repairQuery;
       if (error || !data) return;
       const mapped = await Promise.all(data.map(async r => {
         let fileUrl: string | undefined;
@@ -4644,6 +4664,7 @@ export default function Dashboard() {
           signedUrl: signed.signedUrl,
           filename: file.name,
           storagePath,
+          propertyId: activePropertyIdRef.current,
           // Include photo findings so the repair matcher can resolve photo-detected issues too
           existingFindings: [...(inspectionResult?.findings ?? []), ...photoFindings],
         }),
