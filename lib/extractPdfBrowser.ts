@@ -4,28 +4,42 @@
  * Runs entirely in the browser — no server round-trip, no upload of the file
  * for text extraction. Loaded lazily via dynamic import on first call.
  *
+ * Worker strategy: we point workerSrc at the matching CDN build but wrap it
+ * in a blob: URL that calls importScripts(). Browsers block cross-origin
+ * Worker scripts directly, but importScripts() inside a same-origin blob
+ * worker is allowed to fetch cross-origin — this is the standard workaround.
+ *
  * Usage:
  *   const text = await extractPdfTextInBrowser(file);
  */
 
-// Cached module reference so we only dynamic-import once per session.
+// Cached after first load.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let pdfjsModule: any = null;
+let workerBlobUrl: string | null = null;
 
 async function loadPdfjs() {
   if (pdfjsModule) return pdfjsModule;
 
   // Dynamic import keeps this browser-only (never runs during SSR).
+  // We do NOT use `new URL("pdfjs-dist/build/pdf.worker.min.mjs", import.meta.url)`
+  // because webpack tries to bundle that at build time, which crashes the build
+  // for large packages like pdfjs. Use CDN + blob: URL instead.
   pdfjsModule = await import("pdfjs-dist");
 
-  // Point the worker at the bundled worker file.
-  // Next.js / webpack 5 handles `new URL(pkg, import.meta.url)` natively —
-  // it emits the worker as a separate chunk with the correct public URL.
-  pdfjsModule.GlobalWorkerOptions.workerSrc = new URL(
-    "pdfjs-dist/build/pdf.worker.min.mjs",
-    import.meta.url
-  ).toString();
+  // Build a blob: URL for the worker. This satisfies the browser's same-origin
+  // check for Worker scripts, while importScripts() fetches the actual code
+  // from the CDN (cross-origin fetches are allowed inside workers).
+  if (!workerBlobUrl) {
+    const workerCdnUrl = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsModule.version}/pdf.worker.min.js`;
+    const blob = new Blob(
+      [`importScripts("${workerCdnUrl}");`],
+      { type: "application/javascript" }
+    );
+    workerBlobUrl = URL.createObjectURL(blob);
+  }
 
+  pdfjsModule.GlobalWorkerOptions.workerSrc = workerBlobUrl;
   return pdfjsModule;
 }
 
