@@ -8249,8 +8249,8 @@ export default function Dashboard() {
                   </span>
                 )}
               </div>
-              <div style={{ padding: "10px 0 0" }}>
-                <HousePhoto address={toTitleCase(address)} height={isMobile ? 130 : 170} />
+              <div style={{ padding: "10px 14px 14px" }}>
+                <HousePhoto address={toTitleCase(address)} height={isMobile ? 110 : 140} />
               </div>
             </div>
 
