@@ -1,8 +1,6 @@
 import OpenAI from "openai";
 import { createHash } from "crypto";
 import { createClient } from "@supabase/supabase-js";
-
-export const maxDuration = 300; // Vercel max — two GPT-4o passes on large PDFs need the full window
 import { extractPdfTextAsync } from "../../../lib/extractPdfText";
 import { normalizeLegacyFindings, computeHomeHealthReport } from "../../../lib/scoring-engine";
 import { normalizeFindings } from "../../../lib/findings/normalizeFinding";
@@ -80,7 +78,7 @@ async function cacheSet(hash, result) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
-const CHAR_LIMIT     = 24000;   // ~6k tokens — gpt-4o-mini handles this in ~15s per pass
+const CHAR_LIMIT     = 48000;   // ~12k tokens — plenty for gpt-4o context
 const MIN_TEXT_LENGTH = 80;     // below this = likely image/scanned PDF
 
 const AI_TEMPERATURE = 0;
@@ -90,7 +88,7 @@ const AI_SEED = 91472;          // fixed — never change
 // Increment whenever prompt rules or normalization logic change.
 // This invaluates all L1 + L2 cached results so the next upload re-parses
 // with the corrected logic.  DO NOT change the seed above.
-const PARSE_VERSION = "v11";
+const PARSE_VERSION = "v5";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -382,7 +380,6 @@ function buildPrompt(addressCandidates) {
   "company_name": "string | null",
   "inspector_name": "string | null",
   "summary": "string | null",
-  "property_type": "single_family" | "condo" | "townhouse" | "multi_family" | null,
   "roof_year": number | null,
   "hvac_year": number | null,
   "findings": [
@@ -437,14 +434,6 @@ roof_year:
 hvac_year:
   - Year the HVAC was last REPLACED or INSTALLED
   - Only populate if explicitly mentioned as a replacement/installation
-
-property_type:
-  - The type of dwelling being inspected
-  - Return "condo" if the report mentions: "condominium", "condo unit", "HOA", "common area", "unit #", "homeowners association", "association-maintained", or if the report explicitly excludes roof/exterior/structure as "HOA responsibility" or "association maintained"
-  - Return "townhouse" if the report mentions: "townhouse", "townhome", "row house", or similar attached dwelling with its own roof
-  - Return "multi_family" if the report mentions: "duplex", "triplex", "fourplex", "multi-family", "investment property" with multiple units
-  - Return "single_family" if the report clearly describes a detached single-family home
-  - Return null if uncertain — do NOT guess
 
 findings:
   - Extract ALL deficiencies, repair items, maintenance items, and observations
@@ -524,7 +513,7 @@ findings:
   - lifespan_years defaults (use when relevant):
       Roof 25, HVAC 15, Water Heater 12, Electrical Panel 40, Plumbing 50,
       Foundation 100, Windows 20, Deck 15, Siding 20, Pool Equipment 10; null if not applicable
-  - Extract ALL findings — do not stop early. A typical 30–40 page inspection report has 15–50+ individual findings. Aim for completeness, not brevity. Most critical first.
+  - Return up to 30 findings, most critical first
   - Omit findings with empty or whitespace-only descriptions`;
 }
 
@@ -556,7 +545,6 @@ Respond ONLY with valid JSON in exactly this shape:
   "company_name": "string | null",
   "inspector_name": "string | null",
   "summary": "string | null",
-  "property_type": "single_family" | "condo" | "townhouse" | "multi_family" | null,
   "roof_year": number | null,
   "hvac_year": number | null,
   "findings": [
@@ -581,7 +569,7 @@ Same CRITICAL CATEGORY RULES as pass 1:
   • Stucco / EIFS / exterior plaster / exterior cladding / exterior wall finish → ALWAYS "Exterior" (NEVER "Roof")
   • If a licensed stucco contractor does the repair → category is "Exterior"
   • Do NOT re-extract findings already captured in pass 1 (the merger handles deduplication).
-Return findings you find that are NOT already in the pass 1 list above. Extract ALL missed findings — aim for completeness. Return up to 50 new findings.`;
+Return findings you find that are NOT already in the pass 1 list above. Return up to 30 new findings.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -653,7 +641,7 @@ function mergeFindings(pass1, pass2) {
   const order = f => `${3 - (SEVERITY_RANK[f.severity] ?? 0)}_${(f.category || "").toLowerCase()}`;
   merged.sort((a, b) => order(a).localeCompare(order(b)));
 
-  return merged.slice(0, 60);
+  return merged.slice(0, 30);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -664,7 +652,7 @@ function mergeFindings(pass1, pass2) {
 // natively using its document understanding capability.
 // ─────────────────────────────────────────────────────────────────────────────
 async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
-  console.log("[parse-inspection] Attempting vision fallback via OpenAI Files API (two-pass)");
+  console.log("[parse-inspection] Attempting vision fallback via OpenAI Files API");
   let fileId = null;
   try {
     const file = await openai.files.create({
@@ -674,15 +662,7 @@ async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
     fileId = file.id;
     console.log(`[parse-inspection] Uploaded to OpenAI Files: ${fileId}`);
 
-    // Preamble injected before each prompt — tells gpt-4o to read exhaustively
-    const EXHAUSTIVE_PREAMBLE =
-      "IMPORTANT: This is a multi-page home inspection report. You MUST read and analyze " +
-      "EVERY page from start to finish before responding. Do NOT stop after finding a few items. " +
-      "A thorough 30–40 page inspection typically has 15–50+ individual findings. Extract every " +
-      "deficiency, repair item, and observation — including minor, maintenance, and informational items.\n\n";
-
-    // ── Pass 1 ───────────────────────────────────────────────────────────────
-    const completion1 = await openai.chat.completions.create({
+    const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       response_format: { type: "json_object" },
       temperature: AI_TEMPERATURE,
@@ -690,73 +670,19 @@ async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
       messages: [
         {
           role: "system",
-          content:
-            "You extract structured data from home inspection reports in any format. " +
-            "Read EVERY page of the document carefully and exhaustively before responding. " +
-            "A thorough inspection of a typical home has 15–50+ findings. " +
-            "Do not summarize — extract each individual deficiency. Respond only with valid JSON.",
+          content: "You extract structured data from home inspection reports in any format. Respond only with valid JSON.",
         },
         {
           role: "user",
           content: [
-            { type: "text", text: EXHAUSTIVE_PREAMBLE + prompt },
+            { type: "text", text: prompt },
             { type: "file", file: { file_id: fileId } },
           ],
         },
       ],
     });
 
-    const firstMessage = completion1.choices[0].message.content;
-    let pass1Findings = [];
-    try { pass1Findings = JSON.parse(firstMessage).findings ?? []; } catch { /* ignore */ }
-    console.log(`[parse-inspection] Files API pass 1: ${pass1Findings.length} findings`);
-
-    // ── Pass 2 — find anything missed ────────────────────────────────────────
-    // Reuses the same uploaded file (no second upload needed).
-    let finalMessage = firstMessage;
-    try {
-      const pass1Parsed  = JSON.parse(firstMessage);
-      const pass2Prompt  = buildSecondPassPrompt(pass1Findings, []);
-
-      const completion2 = await openai.chat.completions.create({
-        model: "gpt-4o",
-        response_format: { type: "json_object" },
-        temperature: AI_TEMPERATURE,
-        seed: AI_SEED,
-        messages: [
-          {
-            role: "system",
-            content:
-              "You are reviewing a home inspection report for a SECOND TIME to find missed findings. " +
-              "Read EVERY page carefully, focusing on sections and systems not yet covered. " +
-              "A thorough inspection should yield 15–50+ total findings. Respond only with valid JSON.",
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: EXHAUSTIVE_PREAMBLE + pass2Prompt },
-              { type: "file", file: { file_id: fileId } },
-            ],
-          },
-        ],
-      });
-
-      const pass2Raw      = JSON.parse(completion2.choices[0].message.content);
-      const pass2Findings = Array.isArray(pass2Raw.findings) ? pass2Raw.findings : [];
-      console.log(`[parse-inspection] Files API Pass 1: ${pass1Findings.length} | Pass 2: ${pass2Findings.length}`);
-
-      const mergedFindings = mergeFindings(pass1Findings, pass2Findings);
-      console.log(`[parse-inspection] Files API after merge: ${mergedFindings.length} findings`);
-
-      finalMessage = JSON.stringify({
-        ...pass1Parsed,
-        findings: mergedFindings,
-      });
-    } catch (pass2Err) {
-      console.error("[parse-inspection] Files API second pass failed (using pass 1):", pass2Err?.message);
-    }
-
-    return finalMessage;
+    return completion.choices[0].message.content;
   } finally {
     if (fileId) {
       try { await openai.files.delete(fileId); } catch { /* ignore */ }
@@ -806,56 +732,18 @@ export async function POST(req) {
   let pdfBuffer      = null;
   let filename       = "";
 
-  let propertyId = null;
   try {
     const body = await req.json();
-    filename   = body.filename   || "";
-    propertyId = body.propertyId ?? null;
-    const { signedUrl, rawText, forceReparse } = body;
-    const storagePath = body.storagePath || "";
+    filename = body.filename || "";
+    const { signedUrl } = body;
 
-    // ── Fast path: client extracted text — skip server-side PDF download ──────
-    if (rawText && rawText.trim().length > MIN_TEXT_LENGTH) {
-      inspectionText = rawText;
-      console.log(`[parse-inspection] Using client-extracted text (${inspectionText.length} chars) — skipping server PDF download`);
-
-    } else if (storagePath) {
-      // ── Service-role SDK download — avoids signed URL fetch hang ─────────────
-      // The signed URL fetch() hangs indefinitely for large files (Supabase
-      // throttles egress). Using the service-role SDK download() is more reliable.
-      console.log(`[parse-inspection] Downloading via SDK: ${storagePath}`);
-
-      // Race the download against a 90-second timeout so we surface the error
-      // rather than silently hanging for the full 300s Vercel limit.
-      const { data: blob, error: dlErr } = await Promise.race([
-        supabaseAdmin.storage.from("documents").download(storagePath),
-        new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("STORAGE_TIMEOUT")), 90_000)
-        ),
-      ]);
-
-      if (dlErr) throw new Error(`Storage download failed: ${dlErr.message}`);
-
-      const arrayBuffer = await blob.arrayBuffer();
-      pdfBuffer = Buffer.from(arrayBuffer);
-
-      // For large PDFs, pdf-parse consumes the entire 300s budget just parsing.
-      // Route directly to the Files API (gpt-4o reads the PDF natively) instead.
-      const LARGE_PDF_BYTES = 4 * 1024 * 1024; // 4 MB
-      if (pdfBuffer.length > LARGE_PDF_BYTES) {
-        console.log(`[parse-inspection] Large PDF (${(pdfBuffer.length / 1024 / 1024).toFixed(1)}MB) — skipping pdf-parse, routing to Files API + gpt-4o`);
-        // Leave inspectionText empty → charCount=0 → isLikelyImagePdf=true → Files API path below
-      } else {
-        console.log(`[parse-inspection] Downloaded ${pdfBuffer.length} bytes — running pdf-parse`);
-        inspectionText = await extractPdfTextAsync(pdfBuffer);
-      }
-
-    } else if (signedUrl) {
-      // Legacy fallback: signed URL fetch (kept for backwards compat)
-      console.log(`[parse-inspection] Fetching via signedUrl (legacy path)`);
+    if (signedUrl) {
       const fileRes = await fetch(signedUrl);
       if (!fileRes.ok) throw new Error(`Could not fetch file: ${fileRes.status}`);
-      const isPdf = filename.toLowerCase().endsWith(".pdf") || (fileRes.headers.get("content-type") || "").includes("pdf");
+
+      const isPdf = filename.toLowerCase().endsWith(".pdf")
+        || (fileRes.headers.get("content-type") || "").includes("pdf");
+
       if (isPdf) {
         const arrayBuffer = await fileRes.arrayBuffer();
         pdfBuffer = Buffer.from(arrayBuffer);
@@ -864,95 +752,13 @@ export async function POST(req) {
         inspectionText = await fileRes.text();
       }
     }
-  } catch (downloadErr) {
-    const msg = downloadErr?.message || String(downloadErr);
-    if (msg === "STORAGE_TIMEOUT") {
-      console.error("[parse-inspection] Storage download timed out after 90s");
-      return Response.json({
-        _error: "Your inspection file took too long to load from storage. Please try uploading again.",
-        property_address: null, findings: [], home_health_report: null,
-      }, { status: 408 });
-    }
-    console.error("[parse-inspection] Download error:", msg);
+  } catch {
     try { inspectionText = await req.text(); } catch { /* ignore */ }
   }
 
   const charCount = inspectionText.trim().length;
   console.log(`[parse-inspection] Extracted ${charCount} chars from document`);
   let _parseHash = null;
-
-  // ── DB-findings fast path ─────────────────────────────────────────────────
-  // If this property already has professional inspection findings stored in the
-  // findings table, return those EXACT findings instead of re-running the AI.
-  // This guarantees the same report always produces the same findings — even
-  // after serverless cold starts wipe the in-process L1 cache, and even if
-  // Supabase L2 cache writes failed.
-  //
-  // Skip when forceReparse=true — a fresh upload always re-parses so the user
-  // gets updated findings rather than whatever was stored from the last upload.
-  //
-  // We only do this when propertyId is provided by the dashboard, which always
-  // sends it for authenticated uploads (after property creation).
-  if (propertyId && !forceReparse) {
-    try {
-      const { data: existingRows, error: existErr } = await supabaseAdmin
-        .from("findings")
-        .select("raw_finding, category, description, severity, normalized_finding_key, scorable, score_impact, recommended_action, estimated_cost_min, estimated_cost_max, confidence_score, classification_reason, needs_review, title, system, component, issue_type, location")
-        .eq("property_id", propertyId)
-        .eq("finding_source", "professional")
-        .order("created_at", { ascending: true })
-        .limit(100);
-
-      if (!existErr && existingRows && existingRows.length > 0) {
-        console.log(`[parse-inspection] DB fast-path: returning ${existingRows.length} stored findings for property ${propertyId}`);
-
-        // Reconstruct findings in the shape the dashboard expects
-        const restoredFindings = existingRows.map(row => ({
-          ...(row.raw_finding ?? {}),
-          category:               row.category,
-          description:            row.description ?? "",
-          severity:               row.severity    ?? "info",
-          normalized_finding_key: row.normalized_finding_key,
-          title:                  row.title,
-          system:                 row.system,
-          component:              row.component,
-          issue_type:             row.issue_type,
-          location:               row.location,
-          recommended_action:     row.recommended_action,
-          estimated_cost_min:     row.estimated_cost_min,
-          estimated_cost_max:     row.estimated_cost_max,
-          is_scorable:            row.scorable,
-          scorable:               row.scorable,
-          score_impact:           row.score_impact,
-          confidence_score:       row.confidence_score       ?? "medium",
-          classification_reason:  row.classification_reason  ?? null,
-          needs_review:           row.needs_review            ?? false,
-        }));
-
-        // Compute a fresh score from the restored findings
-        let home_health_report = null;
-        try {
-          const normalizedItems = normalizeLegacyFindings(restoredFindings, null, null);
-          home_health_report    = computeHomeHealthReport(normalizedItems);
-        } catch { /* non-fatal */ }
-
-        return Response.json({
-          property_address:  null,   // already stored on the property row
-          inspection_date:   null,
-          company_name:      null,
-          inspector_name:    null,
-          summary:           null,
-          roof_year:         null,
-          hvac_year:         null,
-          findings:          restoredFindings,
-          home_health_report,
-          _source:           "db_findings_cache",
-        });
-      }
-    } catch (dbFastPathErr) {
-      console.warn("[parse-inspection] DB fast-path check failed (will re-parse):", dbFastPathErr?.message);
-    }
-  }
 
   // ── Image / scanned PDF detection ────────────────────────────────────────
   const isLikelyImagePdf = charCount < MIN_TEXT_LENGTH;
@@ -962,8 +768,7 @@ export async function POST(req) {
     if (pdfBuffer) {
       const bufHash = createHash("sha256").update(pdfBuffer).digest("hex");
       _parseHash = bufHash;
-      // Skip cache on forceReparse — user is uploading a new/updated report
-      const cachedVision = forceReparse ? null : await cacheGet(bufHash);
+      const cachedVision = await cacheGet(bufHash);
       if (cachedVision) return Response.json(cachedVision);
 
       console.log("[parse-inspection] Sparse text — trying Files API vision fallback");
@@ -993,18 +798,17 @@ export async function POST(req) {
     addressCandidates = extractAddressCandidates(inspectionText);
 
     const textForAI = smartExtractSection(inspectionText);
-    console.log(`[parse-inspection] Sending ${textForAI.length} chars to gpt-4o-mini`);
+    console.log(`[parse-inspection] Sending ${textForAI.length} chars to gpt-4o`);
 
     const hash = cacheKey(textForAI);
     _parseHash = hash;
-    // Skip cache on forceReparse — user is uploading a new/updated report
-    const cached = forceReparse ? null : await cacheGet(hash);
+    const cached = await cacheGet(hash);
     if (cached) return Response.json(cached);
 
     const prompt = buildPrompt(addressCandidates);
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o",
       response_format: { type: "json_object" },
       temperature: AI_TEMPERATURE,
       seed: AI_SEED,
@@ -1028,7 +832,7 @@ export async function POST(req) {
       const pass2Prompt   = buildSecondPassPrompt(pass1Findings, addressCandidates);
 
       const completion2 = await openai.chat.completions.create({
-        model: "gpt-4o-mini",  // faster + cheaper for dedup pass; quality adequate for finding missed items
+        model: "gpt-4o",
         response_format: { type: "json_object" },
         temperature: AI_TEMPERATURE,
         seed: AI_SEED,

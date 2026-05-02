@@ -2801,7 +2801,20 @@ export default function Dashboard() {
   async function deleteInsurance() {
     if (!confirm("Remove this insurance record? This will clear all parsed policy data.")) return;
     const propId = activePropertyIdRef.current;
-    if (propId) await supabase.from("home_insurance").delete().eq("property_id", propId);
+    if (propId) {
+      const { error: delErr } = await supabase.from("home_insurance").delete().eq("property_id", propId);
+      if (delErr) {
+        console.error("[deleteInsurance] DB delete failed:", delErr.message);
+        showToast("Delete failed — please try again.", "error");
+        return;
+      }
+      // Also clear legacy insurance columns on the properties row so the
+      // properties-table fallback doesn't repopulate on refresh.
+      await supabase.from("properties").update({
+        insurance_premium: null,
+        insurance_renewal: null,
+      }).eq("id", propId);
+    }
     setInsurance(null);
     setInsuranceDocUrls([]);
     showToast("Insurance record removed", "success");
@@ -2810,7 +2823,14 @@ export default function Dashboard() {
   async function deleteWarranty() {
     if (!confirm("Remove this warranty record? This will clear all parsed warranty data.")) return;
     const propId = activePropertyIdRef.current;
-    if (propId) await supabase.from("home_warranties").delete().eq("property_id", propId);
+    if (propId) {
+      const { error: delErr } = await supabase.from("home_warranties").delete().eq("property_id", propId);
+      if (delErr) {
+        console.error("[deleteWarranty] DB delete failed:", delErr.message);
+        showToast("Delete failed — please try again.", "error");
+        return;
+      }
+    }
     setWarranty(null);
     setWarrantyDocUrl(null);
     showToast("Warranty record removed", "success");
@@ -3972,7 +3992,9 @@ export default function Dashboard() {
       setInspectStage("analyzing");
 
       // Build request body — send rawText if available, signed URL as fallback
-      let fetchBody: Record<string, unknown> = { filename: file.name, storagePath, propertyId: activePropertyIdRef.current };
+      // forceReparse=true bypasses the DB fast-path and parse cache so a fresh
+      // upload always re-runs the AI rather than returning previously saved findings.
+      let fetchBody: Record<string, unknown> = { filename: file.name, storagePath, propertyId: activePropertyIdRef.current, forceReparse: true };
       if (rawText && rawText.trim().length > 80) {
         console.log(`[uploadInspection] Sending rawText (${rawText.length} chars) to API — skipping server PDF download`);
         fetchBody.rawText = rawText;
