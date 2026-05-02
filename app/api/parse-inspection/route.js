@@ -806,12 +806,14 @@ export async function POST(req) {
   let pdfBuffer      = null;
   let filename       = "";
 
-  let propertyId = null;
+  let propertyId   = null;
+  let forceReparse = false;
   try {
     const body = await req.json();
-    filename   = body.filename   || "";
-    propertyId = body.propertyId ?? null;
-    const { signedUrl, rawText, forceReparse } = body;
+    filename     = body.filename     || "";
+    propertyId   = body.propertyId   ?? null;
+    forceReparse = body.forceReparse ?? false;
+    const { signedUrl, rawText } = body;
     const storagePath = body.storagePath || "";
 
     // ── Fast path: client extracted text — skip server-side PDF download ──────
