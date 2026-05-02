@@ -1,0 +1,41 @@
+{
+  "_comment": "Expected output for the Thomas 37-page inspection PDF (16MB). Update this file whenever you manually verify what the parser should find. The test uses this as a contract — if the parser regresses, the test will tell you.",
+  "description": "37-page residential inspection report, large scanned/image PDF (16MB), routes via OpenAI Files API two-pass path",
+  "source": "Unknown — large image-based PDF, not text-extractable by pdfjs",
+  "fileSizeApproxMB": 16,
+  "pageCount": 37,
+
+  "minimumFindings": 15,
+
+  "requiredCategories": [
+    "Roof",
+    "Electrical",
+    "Plumbing"
+  ],
+
+  "mustInclude": [
+    {
+      "_comment": "Shingle aging / end-of-life roof finding seen in original 4-finding parse",
+      "category": "Roof",
+      "descriptionContains": "shingle",
+      "severity": "warning"
+    },
+    {
+      "_comment": "Exposed wiring in attic — seen in original 4-finding parse",
+      "category": "Electrical",
+      "descriptionContains": "wiring"
+    },
+    {
+      "_comment": "Rust / corrosion at plumbing shutoff — seen in original 4-finding parse",
+      "category": "Plumbing",
+      "descriptionContains": "rust"
+    }
+  ],
+
+  "mustNotInclude": [
+  ],
+
+  "allowedTimeoutMs": 240000,
+
+  "_updateInstructions": "After a successful parse that returns ≥15 findings, review the output and fill in mustInclude entries for 3-5 of the most important findings. Set minimumFindings to the actual count minus a 20% buffer."
+}
