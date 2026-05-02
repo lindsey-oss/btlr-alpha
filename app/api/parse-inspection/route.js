@@ -843,7 +843,7 @@ export async function POST(req) {
 
       // For large PDFs, pdf-parse consumes the entire 300s budget just parsing.
       // Route directly to the Files API (gpt-4o reads the PDF natively) instead.
-      const LARGE_PDF_BYTES = 4 * 1024 * 1024; // 4 MB
+      const LARGE_PDF_BYTES = 10 * 1024 * 1024; // 10 MB — below this, pdf-parse handles it fine
       if (pdfBuffer.length > LARGE_PDF_BYTES) {
         console.log(`[parse-inspection] Large PDF (${(pdfBuffer.length / 1024 / 1024).toFixed(1)}MB) — skipping pdf-parse, routing to Files API + gpt-4o`);
         // Leave inspectionText empty → charCount=0 → isLikelyImagePdf=true → Files API path below

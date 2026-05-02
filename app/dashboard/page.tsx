@@ -3960,7 +3960,7 @@ export default function Dashboard() {
   async function uploadInspection(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setInspecting(true); setInspectStage("uploading"); setInspectDone(false); setInspectErr(""); setInspectionResult(null);
-    setInspectIsLargeFile(file.size > 4 * 1024 * 1024); // files >4MB route to Files API — takes ~2 min
+    setInspectIsLargeFile(file.size > 10 * 1024 * 1024); // files >10MB route to Files API — takes ~2 min
     try {
       // Refresh session first
       const { data: refreshed } = await supabase.auth.refreshSession();
@@ -3980,7 +3980,7 @@ export default function Dashboard() {
       // Skip browser pdfjs extraction for large files — they route to the Files
       // API anyway (server-side), and pdfjs can hang for minutes on large
       // image-heavy PDFs before returning near-zero text.
-      const LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB
+      const LARGE_FILE_BYTES = 10 * 1024 * 1024; // 10MB — matches server threshold
       if (isPdf && file.size <= LARGE_FILE_BYTES) {
         try {
           setInspectStage("uploading");
