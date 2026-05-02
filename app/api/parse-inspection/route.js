@@ -749,9 +749,15 @@ export async function POST(req) {
     const body = await req.json();
     filename   = body.filename   || "";
     propertyId = body.propertyId ?? null;
-    const { signedUrl } = body;
+    const { signedUrl, rawText } = body;
 
-    if (signedUrl) {
+    // ── Fast path: client extracted text — skip server-side PDF download ──────
+    // When the browser sends pre-extracted text we skip the storage download
+    // and pdf-parse step entirely (~60-90s saved on large files).
+    if (rawText && rawText.trim().length > MIN_TEXT_LENGTH) {
+      inspectionText = rawText;
+      console.log(`[parse-inspection] Using client-extracted text (${inspectionText.length} chars) — skipping server PDF download`);
+    } else if (signedUrl) {
       const fileRes = await fetch(signedUrl);
       if (!fileRes.ok) throw new Error(`Could not fetch file: ${fileRes.status}`);
 

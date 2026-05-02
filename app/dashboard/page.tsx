@@ -22,6 +22,7 @@ import { runScoringPipeline } from "../../lib/scoring-pipeline";
 import { configureSupabaseStore } from "../../lib/score-snapshot-store";
 import { registerCostOverrides } from "../../lib/scoring-cost-ranges";
 import { isScorable } from "../../lib/findings/scorableRules";
+import { extractPdfTextInBrowser } from "../../lib/extractPdfBrowser";
 import { computeExtendedCondition, type ExtendedConditionResult } from "../../lib/scoring-extended";
 import { isEnabled } from "../../lib/feature-flags";
 import { SELF_INSPECT_STEPS, generateSelfInspectionFindings, type SelfInspectAnswers, type SelfInspectQuestion, type SelfInspectOption, isStepComplete } from "../../lib/self-inspection-questionnaire";
@@ -3933,26 +3934,59 @@ export default function Dashboard() {
     const file = e.target.files?.[0]; if (!file) return;
     setInspecting(true); setInspectStage("uploading"); setInspectDone(false); setInspectErr(""); setInspectionResult(null);
     try {
-      // Refresh session first — also gives us the userId for the storage path
+      // Refresh session first
       const { data: refreshed } = await supabase.auth.refreshSession();
       const session = refreshed?.session ?? (await supabase.auth.getSession()).data.session;
       const uploadUserId = session?.user?.id;
       if (!uploadUserId) throw new Error("Session expired — please log out and back in.");
-      // Storage path must start with userId/ to satisfy RLS policy
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+
+      const safeName    = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
       const storagePath = `${uploadUserId}/inspections-${Date.now()}-${safeName}`;
-      const { error: storageErr } = await supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
+      const isPdf       = file.name.toLowerCase().endsWith(".pdf");
+
+      // ── Extract text in browser for PDFs (eliminates server-side download) ──
+      // Run storage upload in parallel so we save time on both.
+      let rawText: string | null = null;
+      const storageUploadPromise = supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
+
+      if (isPdf) {
+        try {
+          setInspectStage("uploading");
+          rawText = await extractPdfTextInBrowser(file);
+          console.log(`[uploadInspection] Browser extracted ${rawText.length} chars from PDF`);
+        } catch (extractErr) {
+          const msg = extractErr instanceof Error ? extractErr.message : String(extractErr);
+          console.error("[uploadInspection] Browser PDF extraction failed:", msg, extractErr);
+          showToast(`PDF read failed (${msg}) — trying server fallback`, "error");
+          rawText = null;
+        }
+      }
+
+      // Wait for storage upload to finish
+      const { error: storageErr } = await storageUploadPromise;
       if (storageErr) throw new Error("Storage upload failed: " + storageErr.message);
-      const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
-      if (!signed?.signedUrl) throw new Error("Could not get download URL");
+
       const authHeader = await getAuthHeader();
       setInspectStage("analyzing");
+
+      // Build request body — send rawText if available, signed URL as fallback
+      let fetchBody: Record<string, unknown> = { filename: file.name, storagePath, propertyId: activePropertyIdRef.current };
+      if (rawText && rawText.trim().length > 80) {
+        console.log(`[uploadInspection] Sending rawText (${rawText.length} chars) to API — skipping server PDF download`);
+        fetchBody.rawText = rawText;
+      } else {
+        console.log("[uploadInspection] rawText unavailable — falling back to signedUrl path");
+        const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
+        if (!signed?.signedUrl) throw new Error("Could not get download URL");
+        fetchBody.signedUrl = signed.signedUrl;
+      }
+
       // AbortController gives us a 270s client-side timeout (Vercel max is 300s)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 270_000);
       let res: Response;
       try {
-        res = await fetch("/api/parse-inspection", { method: "POST", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ signedUrl: signed.signedUrl, filename: file.name, storagePath, propertyId: activePropertyIdRef.current }), signal: controller.signal });
+        res = await fetch("/api/parse-inspection", { method: "POST", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify(fetchBody), signal: controller.signal });
       } catch (fetchErr: unknown) {
         if ((fetchErr as Error)?.name === "AbortError") throw new Error("Analysis timed out — your PDF may be too large. Try a shorter section of the report.");
         throw fetchErr;
