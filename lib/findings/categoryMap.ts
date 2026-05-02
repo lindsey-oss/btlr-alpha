@@ -61,6 +61,8 @@ export function toCategoryKey(raw: string): BtlrCategory {
     c.includes("siding") || c.includes("flashing") ||
     c.includes("downspout") || c.includes("eave") ||
     c.includes("stucco") || c.includes("eifs") || c.includes("cladding") ||
+    c.includes("chimney") || c.includes("fireplace") ||
+    c.includes("firebox") || c.includes("flue") || c.includes("damper") ||
     (c.includes("exterior") && !c.includes("deck") && !c.includes("patio"))
   ) return "roof_drainage_exterior";
 
@@ -93,6 +95,7 @@ export function toCategoryKey(raw: string): BtlrCategory {
 
   if (
     c.includes("window") || c.includes("door") ||
+    c.includes("garage") || c.includes("attic") ||
     c.includes("interior") || c.includes("floor") ||
     c.includes("ceiling") || c.includes("wall") ||
     c.includes("stair") || c.includes("handrail") ||
@@ -184,11 +187,11 @@ export interface ClassificationResult {
  */
 const DESC_KEYWORDS: Record<BtlrCategory, string[]> = {
   structure_foundation:    ["crack", "settl", "heav", "foundation", "crawl", "basement", "pier", "slab", "struct", "beam", "joist", "framing"],
-  roof_drainage_exterior:  ["shingle", "roof", "gutter", "fascia", "soffit", "flashing", "downspout", "siding", "eave", "chimney", "exterior", "stucco", "eifs", "cladding", "plaster"],
+  roof_drainage_exterior:  ["shingle", "roof", "gutter", "fascia", "soffit", "flashing", "downspout", "siding", "eave", "chimney", "fireplace", "firebox", "flue", "damper", "spark arrester", "rain cap", "hearth", "exterior", "stucco", "eifs", "cladding", "plaster"],
   plumbing:                ["pipe", "drain", "toilet", "sink", "faucet", "water heater", "sewer", "leak", "water supply", "hose", "shutoff", "valve"],
   electrical:              ["electr", "panel", "wiring", "outlet", "breaker", "gfci", "afci", "romex", "circuit", "junction", "switch", "voltage"],
   hvac:                    ["furnace", "hvac", "duct", "thermostat", "condenser", "heat pump", "air handler", "refrigerant", "compressor", "evaporator"],
-  interior_windows_doors:  ["window", "door", "floor", "stair", "ceiling", "wall", "handrail", "guardrail", "drywall", "insulation", "trim"],
+  interior_windows_doors:  ["window", "door", "garage door", "opener", "attic", "floor", "stair", "ceiling", "wall", "handrail", "guardrail", "drywall", "insulation", "trim"],
   appliances_water_heater: ["dishwasher", "oven", "range", "refriger", "dryer", "washer", "stove", "microwave", "disposal", "appliance"],
   safety_environmental:    ["smoke detector", "carbon monoxide", "co detector", "mold", "mildew", "pest", "termite", "radon", "asbestos", "lead", "detector", "hazard"],
   site_grading_drainage:   ["grading", "drainage", "retaining", "erosion", "slope", "lot", "landscap", "runoff"],

@@ -1,6 +1,8 @@
 import OpenAI from "openai";
 import { createHash } from "crypto";
 import { createClient } from "@supabase/supabase-js";
+
+export const maxDuration = 300; // Vercel max — two GPT-4o passes on large PDFs need the full window
 import { extractPdfTextAsync } from "../../../lib/extractPdfText";
 import { normalizeLegacyFindings, computeHomeHealthReport } from "../../../lib/scoring-engine";
 import { normalizeFindings } from "../../../lib/findings/normalizeFinding";

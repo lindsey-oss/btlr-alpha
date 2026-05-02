@@ -1844,7 +1844,7 @@ function RepairCompleteModal({
               <label style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 12px", borderRadius: 8, border: `1px dashed ${C.border}`, cursor: "pointer", background: C.bg }}>
                 <CloudUpload size={14} color={C.text3}/>
                 <span style={{ fontSize: 13, color: C.text3 }}>Upload receipt or invoice</span>
-                <input ref={fileRef} type="file" style={{ display: "none" }} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" capture="environment" onChange={e => { const f = e.target.files?.[0]; if (f) setReceiptFile(f); }}/>
+                <input ref={fileRef} type="file" style={{ display: "none" }} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" onChange={e => { const f = e.target.files?.[0]; if (f) setReceiptFile(f); }}/>
               </label>
             )}
           </div>
@@ -7229,7 +7229,7 @@ export default function Dashboard() {
                                 ? <><Loader2 size={20} color={C.green} className="animate-spin"/><span style={{ fontSize: 14, color: C.green }}>Parsing repair document…</span></>
                                 : <><CheckCircle2 size={20} color={C.green}/><span style={{ fontSize: 14, color: C.text }}>Upload invoice, receipt, or contractor report</span><span style={{ fontSize: 12, color: C.text3 }}>PDF, image, or document</span></>
                               }
-                              <input ref={repairRef} type="file" style={{ display: "none" }} onChange={uploadRepairDoc} disabled={uploadingRepair} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" capture="environment"/>
+                              <input ref={repairRef} type="file" style={{ display: "none" }} onChange={uploadRepairDoc} disabled={uploadingRepair} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"/>
                             </label>
                             {repairDocs.length > 0 && (
                               <div style={{ marginTop: 16 }}>
@@ -7272,7 +7272,7 @@ export default function Dashboard() {
                             <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>Warranties, permits, HOA docs, and other property files.</p>
                             <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${docLoading ? C.accent : C.border}`, background: docLoading ? C.accentBg : C.bg }}>
                               {docLoading ? <><Loader2 size={20} color={C.accent} className="animate-spin"/><span style={{ fontSize: 14, color: C.accent }}>Uploading…</span></> : <><CloudUpload size={20} color={C.text3}/><span style={{ fontSize: 14, color: C.text }}>Click to upload file</span></>}
-                              <input ref={docRef} type="file" style={{ display: "none" }} onChange={uploadDoc} disabled={docLoading} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx" capture="environment"/>
+                              <input ref={docRef} type="file" style={{ display: "none" }} onChange={uploadDoc} disabled={docLoading} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"/>
                             </label>
                             {docs.length > 0 && (
                               <div style={{ marginTop: 14 }}>
