@@ -3977,17 +3977,28 @@ export default function Dashboard() {
       let rawText: string | null = null;
       const storageUploadPromise = supabase.storage.from("documents").upload(storagePath, file, { upsert: true });
 
-      if (isPdf) {
+      // Skip browser pdfjs extraction for large files — they route to the Files
+      // API anyway (server-side), and pdfjs can hang for minutes on large
+      // image-heavy PDFs before returning near-zero text.
+      const LARGE_FILE_BYTES = 4 * 1024 * 1024; // 4MB
+      if (isPdf && file.size <= LARGE_FILE_BYTES) {
         try {
           setInspectStage("uploading");
-          rawText = await extractPdfTextInBrowser(file);
+          // 15-second timeout — pdfjs can hang on certain PDFs
+          rawText = await Promise.race([
+            extractPdfTextInBrowser(file),
+            new Promise<string>((_, reject) =>
+              setTimeout(() => reject(new Error("pdfjs timeout")), 15_000)
+            ),
+          ]);
           console.log(`[uploadInspection] Browser extracted ${rawText.length} chars from PDF`);
         } catch (extractErr) {
           const msg = extractErr instanceof Error ? extractErr.message : String(extractErr);
-          console.error("[uploadInspection] Browser PDF extraction failed:", msg, extractErr);
-          showToast(`PDF read failed (${msg}) — trying server fallback`, "error");
+          console.warn(`[uploadInspection] Browser PDF extraction skipped (${msg}) — using server fallback`);
           rawText = null;
         }
+      } else if (isPdf) {
+        console.log(`[uploadInspection] Large PDF (${(file.size / 1024 / 1024).toFixed(1)}MB) — skipping browser extraction, routing to Files API`);
       }
 
       // Wait for storage upload to finish
