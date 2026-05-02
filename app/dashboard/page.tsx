@@ -3434,9 +3434,15 @@ export default function Dashboard() {
     try {
       const { data: { user: u } } = await supabase.auth.getUser();
       if (!u) throw new Error("Not signed in");
+      // Generate a unique address so the unique(user_id, address) constraint
+      // doesn't fire when the user already has a "New Property".
+      const existingAddresses = new Set(allProperties.map(p => p.address));
+      let newAddress = "New Property";
+      let n = 2;
+      while (existingAddresses.has(newAddress)) { newAddress = `New Property ${n++}`; }
       const { data, error } = await supabase.from("properties").insert({
         user_id:  u.id,
-        address:  "New Property",
+        address:  newAddress,
       }).select("id, address").single();
       if (error) throw new Error(error.message);
       setAllProperties(prev => [...prev, data]);
