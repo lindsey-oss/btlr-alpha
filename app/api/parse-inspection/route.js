@@ -80,7 +80,7 @@ async function cacheSet(hash, result) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
-const CHAR_LIMIT     = 48000;   // ~12k tokens — plenty for gpt-4o context
+const CHAR_LIMIT     = 36000;   // ~9k tokens — keeps both AI passes well under 60s each
 const MIN_TEXT_LENGTH = 80;     // below this = likely image/scanned PDF
 
 const AI_TEMPERATURE = 0;
@@ -90,7 +90,7 @@ const AI_SEED = 91472;          // fixed — never change
 // Increment whenever prompt rules or normalization logic change.
 // This invaluates all L1 + L2 cached results so the next upload re-parses
 // with the corrected logic.  DO NOT change the seed above.
-const PARSE_VERSION = "v6";
+const PARSE_VERSION = "v7";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -916,7 +916,7 @@ export async function POST(req) {
       const pass2Prompt   = buildSecondPassPrompt(pass1Findings, addressCandidates);
 
       const completion2 = await openai.chat.completions.create({
-        model: "gpt-4o",
+        model: "gpt-4o-mini",  // faster + cheaper for dedup pass; quality adequate for finding missed items
         response_format: { type: "json_object" },
         temperature: AI_TEMPERATURE,
         seed: AI_SEED,

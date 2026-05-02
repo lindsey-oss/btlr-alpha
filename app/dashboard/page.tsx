@@ -2234,6 +2234,7 @@ export default function Dashboard() {
   const [answer, setAnswer]     = useState("");
   const [aiLoading, setAiLoading]   = useState(false);
   const [inspecting, setInspecting] = useState(false);
+  const [inspectStage, setInspectStage] = useState<"uploading" | "analyzing" | "saving" | "">("");
   const [inspectDone, setInspectDone]   = useState(false);
   const [inspectErr, setInspectErr]     = useState("");
   const [lastInspectionFilename, setLastInspectionFilename] = useState<string | null>(null);
@@ -3930,7 +3931,7 @@ export default function Dashboard() {
 
   async function uploadInspection(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
-    setInspecting(true); setInspectDone(false); setInspectErr(""); setInspectionResult(null);
+    setInspecting(true); setInspectStage("uploading"); setInspectDone(false); setInspectErr(""); setInspectionResult(null);
     try {
       // Refresh session first — also gives us the userId for the storage path
       const { data: refreshed } = await supabase.auth.refreshSession();
@@ -3945,7 +3946,19 @@ export default function Dashboard() {
       const { data: signed } = await supabase.storage.from("documents").createSignedUrl(storagePath, 600);
       if (!signed?.signedUrl) throw new Error("Could not get download URL");
       const authHeader = await getAuthHeader();
-      const res = await fetch("/api/parse-inspection", { method: "POST", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ signedUrl: signed.signedUrl, filename: file.name, storagePath, propertyId: activePropertyIdRef.current }) });
+      setInspectStage("analyzing");
+      // AbortController gives us a 270s client-side timeout (Vercel max is 300s)
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 270_000);
+      let res: Response;
+      try {
+        res = await fetch("/api/parse-inspection", { method: "POST", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify({ signedUrl: signed.signedUrl, filename: file.name, storagePath, propertyId: activePropertyIdRef.current }), signal: controller.signal });
+      } catch (fetchErr: unknown) {
+        if ((fetchErr as Error)?.name === "AbortError") throw new Error("Analysis timed out — your PDF may be too large. Try a shorter section of the report.");
+        throw fetchErr;
+      } finally {
+        clearTimeout(timeoutId);
+      }
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let result: any = {};
       try { result = await res.json(); } catch { setInspectErr("Server error — please try again."); setInspecting(false); if (inspRef.current) inspRef.current.value = ""; return; }
@@ -3973,6 +3986,7 @@ export default function Dashboard() {
         const freshStatuses: Record<string, FindingStatus> = {};
         setFindingStatuses(freshStatuses);
 
+        setInspectStage("saving");
         // ── Persist to DB — select then update or insert ──────────────────
         // This is the source of truth. loadProperty() reads from here on refresh.
         // uploadUserId is already available from the storage upload above.
@@ -4229,6 +4243,7 @@ export default function Dashboard() {
       }
     } catch (err: unknown) { setInspectErr(err instanceof Error ? err.message : "Upload failed"); }
     setInspecting(false);
+    setInspectStage("");
     if (inspRef.current) inspRef.current.value = "";
     // Re-sync Documents tab from DB so the new inspection row is visible immediately
     loadDocs();
@@ -6960,7 +6975,9 @@ export default function Dashboard() {
                                 {inspecting ? (
                                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, border: `2px dashed ${C.accent}`, background: "#eff6ff" }}>
                                     <Loader2 size={20} color={C.accent} className="animate-spin"/>
-                                    <span style={{ fontSize: 14, color: C.accent }}>Analyzing report…</span>
+                                    <span style={{ fontSize: 14, color: C.accent }}>
+                                      {inspectStage === "uploading" ? "Uploading PDF…" : inspectStage === "saving" ? "Saving findings…" : "Analyzing report…"}
+                                    </span>
                                   </div>
                                 ) : photoAnalyzing ? (
                                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, border: `2px dashed ${C.accent}`, background: "#eff6ff" }}>
@@ -7685,8 +7702,12 @@ export default function Dashboard() {
                   <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.4)", textTransform: "uppercase", letterSpacing: "0.1em", margin: "0 0 6px" }}>Home Health Score</p>
                   {inspecting ? (
                     <>
-                      <p style={{ fontSize: 28, fontWeight: 800, color: "rgba(255,255,255,0.75)", margin: "0 0 6px" }}>Analyzing report…</p>
-                      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: "0 0 18px" }}>Reading your inspection findings, systems, and estimated costs. This takes about 30 seconds.</p>
+                      <p style={{ fontSize: 28, fontWeight: 800, color: "rgba(255,255,255,0.75)", margin: "0 0 6px" }}>
+                        {inspectStage === "uploading" ? "Uploading PDF…" : inspectStage === "saving" ? "Saving findings…" : "Analyzing report…"}
+                      </p>
+                      <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: "0 0 18px" }}>
+                        {inspectStage === "uploading" ? "Sending your PDF — this may take a moment on mobile." : inspectStage === "saving" ? "Writing findings to your home record." : "Reading your inspection findings, systems, and estimated costs. This takes about 30 seconds."}
+                      </p>
                       {/* Progress dots */}
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
                         {[0, 1, 2].map(i => (
