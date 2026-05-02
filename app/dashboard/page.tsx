@@ -2236,6 +2236,7 @@ export default function Dashboard() {
   const [aiLoading, setAiLoading]   = useState(false);
   const [inspecting, setInspecting] = useState(false);
   const [inspectStage, setInspectStage] = useState<"uploading" | "analyzing" | "saving" | "">("");
+  const [inspectIsLargeFile, setInspectIsLargeFile] = useState(false);
   const [inspectDone, setInspectDone]   = useState(false);
   const [inspectErr, setInspectErr]     = useState("");
   const [lastInspectionFilename, setLastInspectionFilename] = useState<string | null>(null);
@@ -3933,6 +3934,7 @@ export default function Dashboard() {
   async function uploadInspection(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]; if (!file) return;
     setInspecting(true); setInspectStage("uploading"); setInspectDone(false); setInspectErr(""); setInspectionResult(null);
+    setInspectIsLargeFile(file.size > 4 * 1024 * 1024); // files >4MB route to Files API — takes ~2 min
     try {
       // Refresh session first
       const { data: refreshed } = await supabase.auth.refreshSession();
@@ -7741,7 +7743,7 @@ export default function Dashboard() {
                         {inspectStage === "uploading" ? "Uploading PDF…" : inspectStage === "saving" ? "Saving findings…" : "Analyzing report…"}
                       </p>
                       <p style={{ fontSize: 14, color: "rgba(255,255,255,0.45)", margin: "0 0 18px" }}>
-                        {inspectStage === "uploading" ? "Sending your PDF — this may take a moment on mobile." : inspectStage === "saving" ? "Writing findings to your home record." : "Reading your inspection findings, systems, and estimated costs. This takes about 30 seconds."}
+                        {inspectStage === "uploading" ? "Sending your PDF — this may take a moment for large files." : inspectStage === "saving" ? "Writing findings to your home record." : inspectIsLargeFile ? "Large report detected — reading every page thoroughly. This can take up to 2 minutes." : "Reading your inspection findings, systems, and estimated costs. This takes about 30 seconds."}
                       </p>
                       {/* Progress dots */}
                       <div style={{ display: "flex", gap: 6, alignItems: "center" }}>

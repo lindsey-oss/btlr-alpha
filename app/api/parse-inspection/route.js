@@ -90,7 +90,7 @@ const AI_SEED = 91472;          // fixed — never change
 // Increment whenever prompt rules or normalization logic change.
 // This invaluates all L1 + L2 cached results so the next upload re-parses
 // with the corrected logic.  DO NOT change the seed above.
-const PARSE_VERSION = "v10";
+const PARSE_VERSION = "v11";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -524,7 +524,7 @@ findings:
   - lifespan_years defaults (use when relevant):
       Roof 25, HVAC 15, Water Heater 12, Electrical Panel 40, Plumbing 50,
       Foundation 100, Windows 20, Deck 15, Siding 20, Pool Equipment 10; null if not applicable
-  - Return up to 30 findings, most critical first
+  - Extract ALL findings — do not stop early. A typical 30–40 page inspection report has 15–50+ individual findings. Aim for completeness, not brevity. Most critical first.
   - Omit findings with empty or whitespace-only descriptions`;
 }
 
@@ -581,7 +581,7 @@ Same CRITICAL CATEGORY RULES as pass 1:
   • Stucco / EIFS / exterior plaster / exterior cladding / exterior wall finish → ALWAYS "Exterior" (NEVER "Roof")
   • If a licensed stucco contractor does the repair → category is "Exterior"
   • Do NOT re-extract findings already captured in pass 1 (the merger handles deduplication).
-Return findings you find that are NOT already in the pass 1 list above. Return up to 30 new findings.`;
+Return findings you find that are NOT already in the pass 1 list above. Extract ALL missed findings — aim for completeness. Return up to 50 new findings.`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -653,7 +653,7 @@ function mergeFindings(pass1, pass2) {
   const order = f => `${3 - (SEVERITY_RANK[f.severity] ?? 0)}_${(f.category || "").toLowerCase()}`;
   merged.sort((a, b) => order(a).localeCompare(order(b)));
 
-  return merged.slice(0, 30);
+  return merged.slice(0, 60);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -664,7 +664,7 @@ function mergeFindings(pass1, pass2) {
 // natively using its document understanding capability.
 // ─────────────────────────────────────────────────────────────────────────────
 async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
-  console.log("[parse-inspection] Attempting vision fallback via OpenAI Files API");
+  console.log("[parse-inspection] Attempting vision fallback via OpenAI Files API (two-pass)");
   let fileId = null;
   try {
     const file = await openai.files.create({
@@ -674,7 +674,15 @@ async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
     fileId = file.id;
     console.log(`[parse-inspection] Uploaded to OpenAI Files: ${fileId}`);
 
-    const completion = await openai.chat.completions.create({
+    // Preamble injected before each prompt — tells gpt-4o to read exhaustively
+    const EXHAUSTIVE_PREAMBLE =
+      "IMPORTANT: This is a multi-page home inspection report. You MUST read and analyze " +
+      "EVERY page from start to finish before responding. Do NOT stop after finding a few items. " +
+      "A thorough 30–40 page inspection typically has 15–50+ individual findings. Extract every " +
+      "deficiency, repair item, and observation — including minor, maintenance, and informational items.\n\n";
+
+    // ── Pass 1 ───────────────────────────────────────────────────────────────
+    const completion1 = await openai.chat.completions.create({
       model: "gpt-4o",
       response_format: { type: "json_object" },
       temperature: AI_TEMPERATURE,
@@ -682,19 +690,73 @@ async function parseViaFileUpload(openai, pdfBuffer, filename, prompt) {
       messages: [
         {
           role: "system",
-          content: "You extract structured data from home inspection reports in any format. Respond only with valid JSON.",
+          content:
+            "You extract structured data from home inspection reports in any format. " +
+            "Read EVERY page of the document carefully and exhaustively before responding. " +
+            "A thorough inspection of a typical home has 15–50+ findings. " +
+            "Do not summarize — extract each individual deficiency. Respond only with valid JSON.",
         },
         {
           role: "user",
           content: [
-            { type: "text", text: prompt },
+            { type: "text", text: EXHAUSTIVE_PREAMBLE + prompt },
             { type: "file", file: { file_id: fileId } },
           ],
         },
       ],
     });
 
-    return completion.choices[0].message.content;
+    const firstMessage = completion1.choices[0].message.content;
+    let pass1Findings = [];
+    try { pass1Findings = JSON.parse(firstMessage).findings ?? []; } catch { /* ignore */ }
+    console.log(`[parse-inspection] Files API pass 1: ${pass1Findings.length} findings`);
+
+    // ── Pass 2 — find anything missed ────────────────────────────────────────
+    // Reuses the same uploaded file (no second upload needed).
+    let finalMessage = firstMessage;
+    try {
+      const pass1Parsed  = JSON.parse(firstMessage);
+      const pass2Prompt  = buildSecondPassPrompt(pass1Findings, []);
+
+      const completion2 = await openai.chat.completions.create({
+        model: "gpt-4o",
+        response_format: { type: "json_object" },
+        temperature: AI_TEMPERATURE,
+        seed: AI_SEED,
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are reviewing a home inspection report for a SECOND TIME to find missed findings. " +
+              "Read EVERY page carefully, focusing on sections and systems not yet covered. " +
+              "A thorough inspection should yield 15–50+ total findings. Respond only with valid JSON.",
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: EXHAUSTIVE_PREAMBLE + pass2Prompt },
+              { type: "file", file: { file_id: fileId } },
+            ],
+          },
+        ],
+      });
+
+      const pass2Raw      = JSON.parse(completion2.choices[0].message.content);
+      const pass2Findings = Array.isArray(pass2Raw.findings) ? pass2Raw.findings : [];
+      console.log(`[parse-inspection] Files API Pass 1: ${pass1Findings.length} | Pass 2: ${pass2Findings.length}`);
+
+      const mergedFindings = mergeFindings(pass1Findings, pass2Findings);
+      console.log(`[parse-inspection] Files API after merge: ${mergedFindings.length} findings`);
+
+      finalMessage = JSON.stringify({
+        ...pass1Parsed,
+        findings: mergedFindings,
+      });
+    } catch (pass2Err) {
+      console.error("[parse-inspection] Files API second pass failed (using pass 1):", pass2Err?.message);
+    }
+
+    return finalMessage;
   } finally {
     if (fileId) {
       try { await openai.files.delete(fileId); } catch { /* ignore */ }
