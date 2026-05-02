@@ -3981,9 +3981,10 @@ export default function Dashboard() {
         fetchBody.signedUrl = signed.signedUrl;
       }
 
-      // AbortController gives us a 270s client-side timeout (Vercel max is 300s)
+      // AbortController: 320s so the browser never cancels a response that's
+      // still coming in (Vercel hard limit is 300s, server has 90s download timeout)
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 270_000);
+      const timeoutId = setTimeout(() => controller.abort(), 320_000);
       let res: Response;
       try {
         res = await fetch("/api/parse-inspection", { method: "POST", headers: { "Content-Type": "application/json", ...authHeader }, body: JSON.stringify(fetchBody), signal: controller.signal });
