@@ -90,7 +90,7 @@ const AI_SEED = 91472;          // fixed — never change
 // Increment whenever prompt rules or normalization logic change.
 // This invaluates all L1 + L2 cached results so the next upload re-parses
 // with the corrected logic.  DO NOT change the seed above.
-const PARSE_VERSION = "v8";
+const PARSE_VERSION = "v9";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -750,20 +750,41 @@ export async function POST(req) {
     filename   = body.filename   || "";
     propertyId = body.propertyId ?? null;
     const { signedUrl, rawText } = body;
+    const storagePath = body.storagePath || "";
 
     // ── Fast path: client extracted text — skip server-side PDF download ──────
-    // When the browser sends pre-extracted text we skip the storage download
-    // and pdf-parse step entirely (~60-90s saved on large files).
     if (rawText && rawText.trim().length > MIN_TEXT_LENGTH) {
       inspectionText = rawText;
       console.log(`[parse-inspection] Using client-extracted text (${inspectionText.length} chars) — skipping server PDF download`);
+
+    } else if (storagePath) {
+      // ── Service-role SDK download — avoids signed URL fetch hang ─────────────
+      // The signed URL fetch() hangs indefinitely for large files (Supabase
+      // throttles egress). Using the service-role SDK download() is more reliable.
+      console.log(`[parse-inspection] Downloading via SDK: ${storagePath}`);
+
+      // Race the download against a 90-second timeout so we surface the error
+      // rather than silently hanging for the full 300s Vercel limit.
+      const { data: blob, error: dlErr } = await Promise.race([
+        supabaseAdmin.storage.from("documents").download(storagePath),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error("STORAGE_TIMEOUT")), 90_000)
+        ),
+      ]);
+
+      if (dlErr) throw new Error(`Storage download failed: ${dlErr.message}`);
+
+      const arrayBuffer = await blob.arrayBuffer();
+      pdfBuffer = Buffer.from(arrayBuffer);
+      console.log(`[parse-inspection] Downloaded ${pdfBuffer.length} bytes — running pdf-parse`);
+      inspectionText = await extractPdfTextAsync(pdfBuffer);
+
     } else if (signedUrl) {
+      // Legacy fallback: signed URL fetch (kept for backwards compat)
+      console.log(`[parse-inspection] Fetching via signedUrl (legacy path)`);
       const fileRes = await fetch(signedUrl);
       if (!fileRes.ok) throw new Error(`Could not fetch file: ${fileRes.status}`);
-
-      const isPdf = filename.toLowerCase().endsWith(".pdf")
-        || (fileRes.headers.get("content-type") || "").includes("pdf");
-
+      const isPdf = filename.toLowerCase().endsWith(".pdf") || (fileRes.headers.get("content-type") || "").includes("pdf");
       if (isPdf) {
         const arrayBuffer = await fileRes.arrayBuffer();
         pdfBuffer = Buffer.from(arrayBuffer);
@@ -772,7 +793,16 @@ export async function POST(req) {
         inspectionText = await fileRes.text();
       }
     }
-  } catch {
+  } catch (downloadErr) {
+    const msg = downloadErr?.message || String(downloadErr);
+    if (msg === "STORAGE_TIMEOUT") {
+      console.error("[parse-inspection] Storage download timed out after 90s");
+      return Response.json({
+        _error: "Your inspection file took too long to load from storage. Please try uploading again.",
+        property_address: null, findings: [], home_health_report: null,
+      }, { status: 408 });
+    }
+    console.error("[parse-inspection] Download error:", msg);
     try { inspectionText = await req.text(); } catch { /* ignore */ }
   }
 
