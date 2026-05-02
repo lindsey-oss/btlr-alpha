@@ -90,7 +90,7 @@ const AI_SEED = 91472;          // fixed — never change
 // Increment whenever prompt rules or normalization logic change.
 // This invaluates all L1 + L2 cached results so the next upload re-parses
 // with the corrected logic.  DO NOT change the seed above.
-const PARSE_VERSION = "v9";
+const PARSE_VERSION = "v10";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -776,8 +776,17 @@ export async function POST(req) {
 
       const arrayBuffer = await blob.arrayBuffer();
       pdfBuffer = Buffer.from(arrayBuffer);
-      console.log(`[parse-inspection] Downloaded ${pdfBuffer.length} bytes — running pdf-parse`);
-      inspectionText = await extractPdfTextAsync(pdfBuffer);
+
+      // For large PDFs, pdf-parse consumes the entire 300s budget just parsing.
+      // Route directly to the Files API (gpt-4o reads the PDF natively) instead.
+      const LARGE_PDF_BYTES = 4 * 1024 * 1024; // 4 MB
+      if (pdfBuffer.length > LARGE_PDF_BYTES) {
+        console.log(`[parse-inspection] Large PDF (${(pdfBuffer.length / 1024 / 1024).toFixed(1)}MB) — skipping pdf-parse, routing to Files API + gpt-4o`);
+        // Leave inspectionText empty → charCount=0 → isLikelyImagePdf=true → Files API path below
+      } else {
+        console.log(`[parse-inspection] Downloaded ${pdfBuffer.length} bytes — running pdf-parse`);
+        inspectionText = await extractPdfTextAsync(pdfBuffer);
+      }
 
     } else if (signedUrl) {
       // Legacy fallback: signed URL fetch (kept for backwards compat)
