@@ -78,7 +78,15 @@ export async function extractPdfTextInBrowser(file: File): Promise<string> {
   pdfjsLib.GlobalWorkerOptions.workerSrc = getWorkerBlobUrl();
 
   const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+
+  // cMapUrl tells pdfjs where to load Character Map files from.
+  // Without this, CIDFont PDFs (the majority of inspection reports) return
+  // near-zero text because pdfjs can't translate glyph IDs to Unicode.
+  const pdf = await pdfjsLib.getDocument({
+    data: arrayBuffer,
+    cMapUrl: `${PDFJS_CDN}/cmaps/`,
+    cMapPacked: true,
+  }).promise;
 
   const pageTexts: string[] = [];
   for (let i = 1; i <= pdf.numPages; i++) {
