@@ -80,7 +80,7 @@ async function cacheSet(hash, result) {
 // ─────────────────────────────────────────────────────────────────────────────
 // CONFIG
 // ─────────────────────────────────────────────────────────────────────────────
-const CHAR_LIMIT     = 36000;   // ~9k tokens — keeps both AI passes well under 60s each
+const CHAR_LIMIT     = 24000;   // ~6k tokens — gpt-4o-mini handles this in ~15s per pass
 const MIN_TEXT_LENGTH = 80;     // below this = likely image/scanned PDF
 
 const AI_TEMPERATURE = 0;
@@ -90,7 +90,7 @@ const AI_SEED = 91472;          // fixed — never change
 // Increment whenever prompt rules or normalization logic change.
 // This invaluates all L1 + L2 cached results so the next upload re-parses
 // with the corrected logic.  DO NOT change the seed above.
-const PARSE_VERSION = "v7";
+const PARSE_VERSION = "v8";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -888,7 +888,7 @@ export async function POST(req) {
     addressCandidates = extractAddressCandidates(inspectionText);
 
     const textForAI = smartExtractSection(inspectionText);
-    console.log(`[parse-inspection] Sending ${textForAI.length} chars to gpt-4o`);
+    console.log(`[parse-inspection] Sending ${textForAI.length} chars to gpt-4o-mini`);
 
     const hash = cacheKey(textForAI);
     _parseHash = hash;
@@ -898,7 +898,7 @@ export async function POST(req) {
     const prompt = buildPrompt(addressCandidates);
 
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o",
+      model: "gpt-4o-mini",
       response_format: { type: "json_object" },
       temperature: AI_TEMPERATURE,
       seed: AI_SEED,
