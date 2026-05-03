@@ -454,11 +454,14 @@ function computeHealthScore(
     }
   }
 
-  // Hard cap: total deductions cannot exceed -60 regardless of finding count.
+  // Hard cap: total deductions cannot exceed -45 regardless of finding count.
   // This prevents a richer inspection report from producing a lower score than
   // a sparse one — the cap ensures the score reflects home condition, not data volume.
+  // Cap is -45 (not -60) so that resolving individual systems shows visible improvement
+  // sooner — a typical bad-but-not-catastrophic home with 5-6 criticals still gets
+  // meaningful score movement as repairs are completed.
   const rawDeductions = deductions.reduce((sum, d) => sum + d.points, 0);
-  const totalDeducted = Math.max(-60, rawDeductions);
+  const totalDeducted = Math.max(-45, rawDeductions);
   const score         = Math.max(0, Math.min(100, 100 + totalDeducted));
   return { score, deductions, resolvedDeductions, totalDeducted };
 }
@@ -5017,8 +5020,16 @@ export default function Dashboard() {
       }));
 
       // 6. Timeline event + toast
+      // Only claim "score updated" when the deductions weren't already capped.
+      // The cap means very troubled homes need several repairs before the number
+      // moves — honest feedback prevents user confusion.
+      const rawDed  = breakdown.deductions.reduce((s, d) => s + d.points, 0);
+      const atCap   = rawDed <= -45;
+      const scoreMsg = wasScoreable
+        ? (atCap ? " — logged. Keep going to see score rise!" : " — score updated")
+        : "";
       addEvent(`Repair completed: ${categoryLabel(finding.category)}${data.receiptFile ? " (receipt uploaded)" : ""}`);
-      showToast(`✓ ${categoryLabel(finding.category)} marked complete${wasScoreable ? " — score updated" : ""}`, "success");
+      showToast(`✓ ${categoryLabel(finding.category)} marked complete${scoreMsg}`, "success");
 
       setShowCompleteModal(false);
       setCompleteModalTarget(null);
@@ -5323,8 +5334,11 @@ export default function Dashboard() {
 
   // Extended Condition (Tier 2) — ±8 modifier from supplemental items.
   // No Tier 2 data → modifier = 0, no label shown. Absence is never penalized.
+  // Uses ACTIVE findings only so that resolving deck/garage/fireplace issues
+  // actually improves the modifier — previously used allFindingsForScore which
+  // included completed items and froze the modifier regardless of repairs.
   const extCondition: ExtendedConditionResult = isEnabled("enableExtendedCondition")
-    ? computeExtendedCondition(allFindingsForScore)
+    ? computeExtendedCondition(activeFindings)
     : { label: null, modifier: 0, itemCount: 0, items: [] };
 
   const health       = Math.max(0, Math.min(100, breakdown.score + extCondition.modifier));
