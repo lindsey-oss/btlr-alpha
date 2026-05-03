@@ -576,7 +576,7 @@ function tradeForCategory(category: string): string {
 
 // ── Title Case Helper ────────────────────────────────────────────────────────
 function toTitleCase(str: string): string {
-  if (!str || str === "My Home") return str;
+  if (!str || str === "My Home") return str ?? "";  // never return null — callers may call .split() on result
   return str.replace(/\w\S*/g, w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .replace(/\b(Ca|Fl|Tx|Ny|Az|Co|Wa|Or|Nv|Ut|Id|Mt|Wy|Nd|Sd|Ne|Ks|Ok|Mn|Ia|Mo|Wi|Il|In|Mi|Oh|Ky|Tn|Ms|Al|Ga|Sc|Nc|Va|Wv|Md|De|Nj|Pa|Ny|Ct|Ri|Ma|Vt|Nh|Me|Ak|Hi)\b/g, m => m.toUpperCase());
 }
@@ -5791,7 +5791,7 @@ export default function Dashboard() {
             style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", textAlign: "left" }}>
             <MapPin size={13} color="rgba(255,255,255,0.5)"/>
             <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || toTitleCase(p.address).split(",")[0]) : "My Property"; })()}
+              {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || toTitleCase(p.address || "").split(",")[0] || "My Property") : "My Property"; })()}
             </span>
             <ChevronDown size={13} color="rgba(255,255,255,0.4)" style={{ flexShrink: 0, transform: showPropDropdown ? "rotate(180deg)" : "none", transition: "transform 0.18s" }}/>
           </button>
@@ -5886,7 +5886,7 @@ export default function Dashboard() {
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 20, background: C.surface, border: `1px solid ${C.border}`, cursor: "pointer", maxWidth: "100%" }}>
                 <MapPin size={12} color={C.accent}/>
                 <span style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
-                  {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || toTitleCase(p.address).split(",")[0]) : "My Property"; })()}
+                  {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || toTitleCase(p.address || "").split(",")[0] || "My Property") : "My Property"; })()}
                 </span>
                 <ChevronDown size={12} color={C.text3} style={{ transform: showPropDropdown ? "rotate(180deg)" : "none", transition: "transform 0.18s" }}/>
               </button>
@@ -5898,7 +5898,7 @@ export default function Dashboard() {
                         style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: p.id === activePropertyId ? C.accentLt + "15" : "transparent", border: "none", cursor: "pointer", textAlign: "left", minWidth: 0 }}>
                         <HomeIcon size={12} color={p.id === activePropertyId ? C.accent : C.text3}/>
                         <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {p.nickname || toTitleCase(p.address).split(",")[0]}
+                          {p.nickname || toTitleCase(p.address || "").split(",")[0] || "My Property"}
                         </span>
                         {p.id === activePropertyId && <Check size={12} color={C.accent}/>}
                       </button>
