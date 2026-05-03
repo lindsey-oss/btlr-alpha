@@ -154,7 +154,7 @@ function buildSnapshot(
       ? catItems.reduce((s, i) => {
           const base = i.condition_score;
           const pen  = deductions
-            .filter(d => d.category === i.category && d.item_description.startsWith((i.notes || i.system).slice(0, 40)))
+            .filter(d => d.category === i.category && d.item_description.startsWith((i.notes || i.system || "").slice(0, 40)))
             .reduce((s2, d) => s2 + d.points, 0);
           return s + Math.max(0, Math.min(100, base + pen));
         }, 0) / catItems.length

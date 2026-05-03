@@ -139,7 +139,7 @@ export function scoreBand(score: number): string {
 // CATEGORY NORMALIZER
 // Maps any string to a master category key
 // ─────────────────────────────────────────────────────────────────
-export function toCategoryKey(category: string): string {
+export function toCategoryKey(category: string | null | undefined): string {
   const c = (category || "").toLowerCase();
   if (c.includes("struct") || c.includes("found") || c.includes("crawl") || c.includes("basement"))
     return "structure_foundation";
@@ -166,9 +166,9 @@ export function toCategoryKey(category: string): string {
 // NORMALIZED ITEM MODEL
 // ─────────────────────────────────────────────────────────────────
 export interface NormalizedItem {
-  system: string;
-  component: string;
-  category: string;                    // master category key
+  system: string | null;
+  component: string | null;
+  category: string;                    // master category key — always a non-null toCategoryKey result
   condition_label: string;
   condition_score: number;
   deficiency_severity: string;
@@ -520,7 +520,7 @@ export function computeHomeHealthReport(
   const watchlist = items
     .filter(i => i.deficiency_severity === "minor" && computeItemScore(i) >= 60)
     .slice(0, 4)
-    .map(i => i.notes || i.system);
+    .map(i => i.notes || i.system || "Unknown system");
 
   // ── Data gaps ─────────────────────────────────────────────────
   const data_gaps = categoryScores
@@ -575,7 +575,7 @@ export function computeHomeHealthReport(
 // Exported so dashboard can type-check calls; severity is widened to string
 // so raw OpenAI/DB findings don't need an explicit cast.
 export interface LegacyFinding {
-  category: string;
+  category: string | null;              // DB allows null — normalized to "general" before scoring
   description: string;
   severity: string;                     // "critical" | "warning" | "info" (widened for callers)
   estimated_cost?: number | null;

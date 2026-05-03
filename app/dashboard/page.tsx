@@ -47,7 +47,7 @@ interface TrustedContact {
 }
 
 interface Finding {
-  category: string;
+  category: string | null;  // DB allows null — always guard before calling string methods
   description: string;
   is_scorable?: boolean;   // set by parser — mirrors isScorable()
   scorable?: boolean;      // alias from normalizeFinding output
@@ -76,7 +76,7 @@ interface Finding {
 }
 
 // Normalize a finding category to a stable key for status lookup
-function toCategoryKey(category: string): string {
+function toCategoryKey(category: string | null | undefined): string {
   return (category || "general").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
@@ -129,7 +129,7 @@ function deduplicateFindings(findings: Finding[]): Finding[] {
   const kept: Finding[] = [];
 
   // Normalize a string for comparison: lowercase, collapse whitespace, strip punctuation
-  const norm = (s: string) =>
+  const norm = (s: string | null | undefined) =>
     (s ?? "").toLowerCase().replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
 
   // Token-overlap ratio between two strings (Jaccard over word sets)
@@ -174,7 +174,7 @@ type ScoreImpact =
   | { affects: true;  level: "high" | "medium" | "low"; color: string; bg: string; label: string; reason: string }
   | { affects: false; color: string; bg: string; label: string };
 
-function getScoreImpact(category: string, severity?: string, description?: string): ScoreImpact {
+function getScoreImpact(category: string | null | undefined, severity?: string, description?: string): ScoreImpact {
   const scored = isScoredFinding(category, description);
   if (!scored) {
     return { affects: false, color: "#94a3b8", bg: "rgba(148,163,184,0.12)", label: "Informational" };
@@ -207,7 +207,7 @@ function getScoreImpact(category: string, severity?: string, description?: strin
 }
 
 // Maps a raw finding category to a broader display group key
-function toGroupKey(category: string): string {
+function toGroupKey(category: string | null | undefined): string {
   if (!category) return "general";           // null/undefined guard — DB rows can have null category
   const t = category.toLowerCase().trim();
 
@@ -271,7 +271,7 @@ const GROUP_META: Record<string, { label: string; iconFn: (color: string) => Rea
 };
 
 /** Human-readable display label for any raw category key or free-form string. */
-function categoryLabel(category: string): string {
+function categoryLabel(category: string | null | undefined): string {
   return GROUP_META[toGroupKey(category)]?.label ?? formatLabel(category);
 }
 
@@ -469,8 +469,8 @@ function computeHealthScore(
 
 // ── Vendor key normalizer ─────────────────────────────────────────────────
 // Maps any trade label / finding category to a VendorsView category key
-function toVendorKey(trade: string): string {
-  const t = trade.toLowerCase();
+function toVendorKey(trade: string | null | undefined): string {
+  const t = (trade ?? "").toLowerCase();
   if (t.includes("roof"))                                                    return "roofing";
   if (t.includes("plumb") || t.includes("sink") || t.includes("drain") ||
       t.includes("toilet") || t.includes("pipe"))                            return "plumbing";
@@ -498,7 +498,7 @@ interface CostItem {
   severity: string;
   finding?: Finding;
   systemAge?: number;
-  tradeCategory?: string;
+  tradeCategory?: string | null;
   bucket?: "known" | "risk" | "maintenance"; // which of the 3 calculation buckets
   probability?: number;                       // 0–1, for risk bucket items
   isEstimate?: boolean;                       // true = probability-weighted, not a firm cost
@@ -566,7 +566,7 @@ const TRADE_MAP: Record<string, string> = {
   general:     "General Contractor",
 };
 
-function tradeForCategory(category: string): string {
+function tradeForCategory(category: string | null | undefined): string {
   const key = (category ?? "").toLowerCase();
   for (const [k, v] of Object.entries(TRADE_MAP)) {
     if (key.includes(k)) return v;
@@ -1396,7 +1396,7 @@ function HealthScoreModal({
     return                                   { label: "Note",        color: C.text3, bg: C.bg      };
   }
 
-  function systemIcon(category: string) {
+  function systemIcon(category: string | null | undefined) {
     const k = (category ?? "").toLowerCase();
     if (k.includes("roof"))                           return <HomeIcon  size={15} color={C.text3}/>;
     if (k.includes("hvac") || k.includes("heat") ||
@@ -1771,7 +1771,7 @@ function healthStatusInfo(score: number) {
 }
 
 // ── Warranty coverage check ───────────────────────────────────────────────
-function isLikelyCovered(category: string, coverageItems: string[]): boolean {
+function isLikelyCovered(category: string | null | undefined, coverageItems: string[]): boolean {
   const cat = (category ?? "").toLowerCase();
   return coverageItems.some(item => {
     const it = item.toLowerCase();
@@ -2440,7 +2440,7 @@ export default function Dashboard() {
 
   // ── Multi-property support ────────────────────────────────────────────
   const [activePropertyId, setActivePropertyId] = useState<number | null>(null);
-  const [allProperties, setAllProperties] = useState<Array<{ id: number; address: string; nickname?: string | null; home_type?: string | null; year_built?: number | null }>>([]);
+  const [allProperties, setAllProperties] = useState<Array<{ id: number; address: string | null; nickname?: string | null; home_type?: string | null; year_built?: number | null }>>([]);
   const [showPropDropdown, setShowPropDropdown] = useState(false);
   const [showAddPropDrawer, setShowAddPropDrawer] = useState(false);
   const [addingProp, setAddingProp] = useState(false);
@@ -2575,7 +2575,7 @@ export default function Dashboard() {
 
   // Navigate to Vendors page pre-filtered to the relevant trade category.
   // Pass issue to pre-populate the search input and auto-trigger AI classification.
-  function handleFindVendors(trade: string, context?: string, issue?: string) {
+  function handleFindVendors(trade: string | null | undefined, context?: string | null, issue?: string) {
     setShowHealthModal(false);
     setShowCostModal(false);
     setVendorPrefill(toVendorKey(trade));
@@ -5791,7 +5791,7 @@ export default function Dashboard() {
             style={{ width: "100%", display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.1)", cursor: "pointer", textAlign: "left" }}>
             <MapPin size={13} color="rgba(255,255,255,0.5)"/>
             <span style={{ flex: 1, fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.85)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || toTitleCase(p.address || "").split(",")[0] || "My Property") : "My Property"; })()}
+              {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || (p.address ? toTitleCase(p.address).split(",")[0] : null) || "Unnamed Property") : "My Property"; })()}
             </span>
             <ChevronDown size={13} color="rgba(255,255,255,0.4)" style={{ flexShrink: 0, transform: showPropDropdown ? "rotate(180deg)" : "none", transition: "transform 0.18s" }}/>
           </button>
@@ -5804,9 +5804,9 @@ export default function Dashboard() {
                     <HomeIcon size={12} color={p.id === activePropertyId ? "white" : "rgba(255,255,255,0.4)"}/>
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 12, fontWeight: 600, color: p.id === activePropertyId ? "white" : "rgba(255,255,255,0.7)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {p.nickname || toTitleCase(p.address).split(",")[0]}
+                        {p.nickname || (p.address ? toTitleCase(p.address).split(",")[0] : null) || "Unnamed Property"}
                       </p>
-                      {p.nickname && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toTitleCase(p.address)}</p>}
+                      {p.nickname && p.address && <p style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{toTitleCase(p.address)}</p>}
                     </div>
                     {p.id === activePropertyId && <Check size={12} color="white" style={{ flexShrink: 0 }}/>}
                   </button>
@@ -5886,7 +5886,7 @@ export default function Dashboard() {
                 style={{ display: "flex", alignItems: "center", gap: 6, padding: "7px 12px", borderRadius: 20, background: C.surface, border: `1px solid ${C.border}`, cursor: "pointer", maxWidth: "100%" }}>
                 <MapPin size={12} color={C.accent}/>
                 <span style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200 }}>
-                  {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || toTitleCase(p.address || "").split(",")[0] || "My Property") : "My Property"; })()}
+                  {(() => { const p = allProperties.find(p => p.id === activePropertyId); return p ? (p.nickname || (p.address ? toTitleCase(p.address).split(",")[0] : null) || "Unnamed Property") : "My Property"; })()}
                 </span>
                 <ChevronDown size={12} color={C.text3} style={{ transform: showPropDropdown ? "rotate(180deg)" : "none", transition: "transform 0.18s" }}/>
               </button>
@@ -5898,7 +5898,7 @@ export default function Dashboard() {
                         style={{ flex: 1, display: "flex", alignItems: "center", gap: 8, padding: "10px 14px", background: p.id === activePropertyId ? C.accentLt + "15" : "transparent", border: "none", cursor: "pointer", textAlign: "left", minWidth: 0 }}>
                         <HomeIcon size={12} color={p.id === activePropertyId ? C.accent : C.text3}/>
                         <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                          {p.nickname || toTitleCase(p.address || "").split(",")[0] || "My Property"}
+                          {p.nickname || (p.address ? toTitleCase(p.address).split(",")[0] : null) || "Unnamed Property"}
                         </span>
                         {p.id === activePropertyId && <Check size={12} color={C.accent}/>}
                       </button>

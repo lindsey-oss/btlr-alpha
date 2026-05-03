@@ -59,8 +59,8 @@ export interface ScoreDeduction {
 // Items that were credited (repairs, replacements, services)
 // ─────────────────────────────────────────────────────────────────
 export interface ResolvedItem {
-  system: string;
-  component: string;
+  system: string | null;
+  component: string | null;
   category: string;
   resolution_type: "repair_completed" | "component_replaced" | "system_serviced";
   confidence: number;
@@ -90,8 +90,8 @@ export interface CategoryScoreAudit {
 // Compact representation of each input item for reconstruction
 // ─────────────────────────────────────────────────────────────────
 export interface NormalizedInputSummary {
-  system: string;
-  component: string;
+  system: string | null;
+  component: string | null;
   category: string;
   condition_score: number;
   deficiency_severity: string;
@@ -264,7 +264,7 @@ export function extractDeductions(items: NormalizedItem[]): ScoreDeduction[] {
     if (defPts < 0) {
       deductions.push({
         category: item.category,
-        item_description: item.notes.slice(0, 80) || item.system,
+        item_description: item.notes.slice(0, 80) || item.system || "",
         deduction_type: "severity_penalty",
         points: defPts,
         reason: `Deficiency severity "${item.deficiency_severity}" → ${Math.abs(defPts)} point penalty`,
@@ -278,7 +278,7 @@ export function extractDeductions(items: NormalizedItem[]): ScoreDeduction[] {
     if (safePts < 0) {
       deductions.push({
         category: item.category,
-        item_description: item.notes.slice(0, 80) || item.system,
+        item_description: item.notes.slice(0, 80) || item.system || "",
         deduction_type: "safety_penalty",
         points: safePts,
         reason: `Safety impact "${item.safety_impact}" → ${Math.abs(safePts)} point penalty`,
@@ -292,7 +292,7 @@ export function extractDeductions(items: NormalizedItem[]): ScoreDeduction[] {
     if (funcPts < 0) {
       deductions.push({
         category: item.category,
-        item_description: item.notes.slice(0, 80) || item.system,
+        item_description: item.notes.slice(0, 80) || item.system || "",
         deduction_type: "functional_adjustment",
         points: funcPts,
         reason: `Functional status "${item.functional_status}" → ${Math.abs(funcPts)} point adjustment`,
@@ -306,7 +306,7 @@ export function extractDeductions(items: NormalizedItem[]): ScoreDeduction[] {
     if (maintPts !== 0) {
       deductions.push({
         category: item.category,
-        item_description: item.notes.slice(0, 80) || item.system,
+        item_description: item.notes.slice(0, 80) || item.system || "",
         deduction_type: "maintenance_adjustment",
         points: maintPts,
         reason: `Maintenance state "${item.maintenance_state}" → ${maintPts > 0 ? "+" : ""}${maintPts} point adjustment`,
@@ -328,7 +328,7 @@ export function extractDeductions(items: NormalizedItem[]): ScoreDeduction[] {
     if (lifePts !== 0) {
       deductions.push({
         category: item.category,
-        item_description: item.notes.slice(0, 80) || item.system,
+        item_description: item.notes.slice(0, 80) || item.system || "",
         deduction_type: item.source_type === "system_age" ? "system_age_penalty" : "life_remaining_penalty",
         points: lifePts,
         reason: `${Math.round(lifePct)}% remaining life → ${lifePts > 0 ? "+" : ""}${lifePts} point adjustment`,

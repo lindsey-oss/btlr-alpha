@@ -42,7 +42,7 @@ function card(extra?: React.CSSProperties): React.CSSProperties {
 
 // ── Category label formatter ─────────────────────────────────────────────────
 // Maps canonical BTLR category keys and raw AI strings to human-readable labels.
-function formatCategory(raw: string): string {
+function formatCategory(raw: string | null | undefined): string {
   const t = (raw || "").toLowerCase().trim();
   // Exact canonical BTLR keys
   const EXACT: Record<string, string> = {
@@ -73,7 +73,7 @@ function formatCategory(raw: string): string {
   if (t.includes("safety") || t.includes("smoke") || t.includes("mold"))   return "Safety";
   if (t.includes("pool") || t.includes("spa"))       return "Pool & Spa";
   // Generic fallback: title-case the raw string
-  return raw.replace(/[_-]/g, " ").replace(/\b\w/g, c => c.toUpperCase()).trim() || "General";
+  return (raw ?? "").replace(/[_-]/g, " ").replace(/\b\w/g, c => c.toUpperCase()).trim() || "General";
 }
 
 // ── Trade icon lookup ─────────────────────────────────────────────────────────
@@ -662,7 +662,7 @@ function NearbyVendorsMap({
 }
 
 interface Finding {
-  category: string;
+  category: string | null;  // mirrors dashboard Finding — DB allows null
   description: string;
   severity: string;
   estimated_cost: number | null;
@@ -804,8 +804,8 @@ export default function VendorsView({ address, inspectionFindings, userEmail, us
           estimated_cost_low:      result.avg_cost_low ?? null,
           estimated_cost_high:     result.avg_cost_high ?? null,
           related_findings:        inspectionFindings.filter(f =>
-            f.category.toLowerCase().includes(result.category_label.toLowerCase().split(" ")[0]) ||
-            result.category_label.toLowerCase().includes(f.category.toLowerCase().split(" ")[0])
+            (f.category ?? "").toLowerCase().includes(result.category_label.toLowerCase().split(" ")[0]) ||
+            result.category_label.toLowerCase().includes((f.category ?? "").toLowerCase().split(" ")[0])
           ),
         }),
       });

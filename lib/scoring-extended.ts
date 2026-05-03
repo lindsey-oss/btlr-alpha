@@ -67,7 +67,7 @@ export interface ExtendedConditionResult {
  * Returns true when a finding belongs to the Extended Condition layer.
  * Checks both the category string and the description.
  */
-export function isExtendedItem(category: string, description?: string): boolean {
+export function isExtendedItem(category: string | null | undefined, description?: string): boolean {
   const c = (category    || "").toLowerCase();
   const d = (description || "").toLowerCase();
   return TIER2_KEYWORDS.some(kw => c.includes(kw) || d.includes(kw));
@@ -127,12 +127,12 @@ const LABEL_MODIFIER: Record<ExtendedConditionLabel, number> = {
  * a home without a pool/deck/garage is not penalized for their absence.
  */
 export function computeExtendedCondition(
-  findings: { category: string; description: string; severity: string }[],
+  findings: { category: string | null; description: string; severity: string }[],
 ): ExtendedConditionResult {
   const extItems: ExtendedItem[] = findings
     .filter(f => isExtendedItem(f.category, f.description))
     .map(f => ({
-      category:    f.category,
+      category:    f.category ?? "general",
       description: f.description,
       severity:    (["critical", "warning", "info"].includes((f.severity || "").toLowerCase())
                      ? f.severity.toLowerCase()

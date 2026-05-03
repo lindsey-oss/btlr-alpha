@@ -49,7 +49,7 @@ export const SUPPLEMENTAL_SYSTEMS: readonly string[] = [
  *  3. If category/description contains a scored-system keyword → scorable
  *  4. Otherwise → not scorable (safety net for unknown categories)
  */
-export function isScorable(category: string, description?: string): boolean {
+export function isScorable(category: string | null | undefined, description?: string): boolean {
   const t = (category    || "").toLowerCase();
   const d = (description || "").toLowerCase();
 
