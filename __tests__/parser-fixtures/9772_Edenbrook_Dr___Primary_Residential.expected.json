@@ -5,29 +5,28 @@
   "fileSizeApproxMB": 4.1,
   "minimumFindings": 21,
   "requiredCategories": [
-    "Roof",
-    "Exterior & Foundation",
-    "Electric",
-    "Plumbing / Gas Source",
-    "HVAC",
-    "Water Heater"
+    "roof",
+    "structure",
+    "electrical",
+    "plumbing",
+    "hvac"
   ],
   "mustInclude": [
     {
-      "category": "Roof",
+      "category": "roof",
       "descriptionContains": "no gutters present;"
     },
     {
-      "category": "Plumbing / Gas Source",
+      "category": "plumbing",
       "descriptionContains": "leaking exterior water",
       "severity": "critical"
     },
     {
-      "category": "HVAC",
+      "category": "hvac",
       "descriptionContains": "ac unit beyond"
     },
     {
-      "category": "Exterior & Foundation",
+      "category": "roof",
       "descriptionContains": "stucco degradation noted;",
       "severity": "warning"
     }

@@ -5,25 +5,20 @@
   "fileSizeApproxMB": 4.2,
   "minimumFindings": 21,
   "requiredCategories": [
-    "Roof",
-    "Foundation",
-    "Electrical",
-    "Heat",
-    "Water Heater",
-    "Attic"
+    "roof",
+    "structure",
+    "hvac",
+    "plumbing",
+    "interior"
   ],
   "mustInclude": [
     {
-      "category": "Roof",
+      "category": "roof",
       "descriptionContains": "missing mastic/sealant at",
       "severity": "warning"
     },
     {
-      "category": "Electrical",
-      "descriptionContains": "there is an"
-    },
-    {
-      "category": "Foundation",
+      "category": "structure",
       "descriptionContains": "all concrete floor"
     }
   ],

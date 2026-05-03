@@ -5,31 +5,31 @@
   "fileSizeApproxMB": 12.2,
   "minimumFindings": 74,
   "requiredCategories": [
-    "Roofing",
-    "Electrical System",
-    "Plumbing System",
-    "Heating Equipment",
-    "Structural Components",
-    "Built-In Kitchen Appliances"
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac",
+    "structure",
+    "appliances"
   ],
   "mustInclude": [
     {
-      "category": "Roofing",
+      "category": "roof",
       "descriptionContains": "cracked roof tile",
       "severity": "warning"
     },
     {
-      "category": "Electrical System",
+      "category": "electrical",
       "descriptionContains": "light cover missing",
       "severity": "warning"
     },
     {
-      "category": "Plumbing System",
+      "category": "plumbing",
       "descriptionContains": "original polybutylene plumbing",
       "severity": "warning"
     },
     {
-      "category": "Structural Components",
+      "category": "structure",
       "descriptionContains": "damaged wood framing",
       "severity": "warning"
     }

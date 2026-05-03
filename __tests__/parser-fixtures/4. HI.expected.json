@@ -5,25 +5,25 @@
   "fileSizeApproxMB": 2.2,
   "minimumFindings": 40,
   "requiredCategories": [
-    "Roofing",
-    "Electrical System",
-    "Plumbing System",
-    "Heating",
-    "Built-In Kitchen Appliances",
-    "Insulation"
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac",
+    "appliances",
+    "interior"
   ],
   "mustInclude": [
     {
-      "category": "Roofing",
+      "category": "roof",
       "descriptionContains": "cracked and missing",
       "severity": "warning"
     },
     {
-      "category": "Electrical System",
+      "category": "electrical",
       "descriptionContains": "some kitchen and"
     },
     {
-      "category": "Plumbing System",
+      "category": "plumbing",
       "descriptionContains": "unable to determine",
       "severity": "warning"
     }

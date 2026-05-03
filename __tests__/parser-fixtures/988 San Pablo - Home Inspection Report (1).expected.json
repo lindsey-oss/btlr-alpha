@@ -5,26 +5,25 @@
   "fileSizeApproxMB": 8.7,
   "minimumFindings": 20,
   "requiredCategories": [
-    "Roof System",
-    "Electrical Panels",
-    "Plumbing System",
-    "Heating System",
-    "Water Heater",
-    "Interior Components"
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac",
+    "interior"
   ],
   "mustInclude": [
     {
-      "category": "Roof System",
+      "category": "roof",
       "descriptionContains": "roof tiles are",
       "severity": "critical"
     },
     {
-      "category": "Electrical Panels",
+      "category": "electrical",
       "descriptionContains": "breakers have more",
       "severity": "critical"
     },
     {
-      "category": "Plumbing System",
+      "category": "plumbing",
       "descriptionContains": "main water line",
       "severity": "critical"
     }

@@ -5,25 +5,25 @@
   "fileSizeApproxMB": 0.9,
   "minimumFindings": 20,
   "requiredCategories": [
-    "Roofs",
-    "Electrical",
-    "Plumbing",
-    "Heat",
-    "Water Heater",
-    "Structures"
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac",
+    "interior",
+    "structure"
   ],
   "mustInclude": [
     {
-      "category": "Roofs",
+      "category": "roof",
       "descriptionContains": "the roof is"
     },
     {
-      "category": "Electrical",
+      "category": "electrical",
       "descriptionContains": "grounding clamp is",
       "severity": "warning"
     },
     {
-      "category": "Plumbing",
+      "category": "plumbing",
       "descriptionContains": "hose bib/faucet at",
       "severity": "warning"
     }

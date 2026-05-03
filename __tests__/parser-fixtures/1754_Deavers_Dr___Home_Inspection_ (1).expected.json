@@ -5,27 +5,30 @@
   "fileSizeApproxMB": 15.7,
   "minimumFindings": 102,
   "requiredCategories": [
-    "Plumbing System",
-    "Electrical Systems",
-    "Roof"
+    "plumbing",
+    "electrical",
+    "roof",
+    "hvac",
+    "appliances",
+    "safety"
   ],
   "mustInclude": [
     {
-      "category": "Roof",
+      "category": "roof",
       "descriptionContains": "tile roof appears",
       "severity": "critical"
     },
     {
-      "category": "Electrical Systems",
+      "category": "electrical",
       "descriptionContains": "knock-out missing from"
     },
     {
-      "category": "Plumbing System",
+      "category": "plumbing",
       "descriptionContains": "drain/sink basin connection",
       "severity": "warning"
     },
     {
-      "category": "Fire/Safety",
+      "category": "safety",
       "descriptionContains": "door stopper defeats",
       "severity": "warning"
     }
