@@ -691,6 +691,16 @@ export function normalizeLegacyFindings(
       recommended_action = "Monitor and perform routine maintenance";
     }
 
+    // Safety impact only applies to findings in the safety_environmental category.
+    // Other critical findings (roof crack, plumbing leak, electrical issue) are already
+    // penalized through the weighted category score — applying the safety hard modifier
+    // to them as well causes double-counting and artificially depresses the score.
+    // Only genuine safety hazards (missing CO detector, mold, active electrical hazard
+    // in a safety category) should trigger the safety hard modifier.
+    const safetyImpact = category === "safety_environmental"
+      ? severityToSafety(f.severity)
+      : "none";
+
     return {
       system:                           f.category,
       component:                        f.category,
@@ -698,7 +708,7 @@ export function normalizeLegacyFindings(
       condition_label,
       condition_score,
       deficiency_severity:              severityToDeficiency(f.severity),
-      safety_impact:                    severityToSafety(f.severity),
+      safety_impact:                    safetyImpact,
       functional_status:                f.severity === "critical" ? "partially" : "functional",
       estimated_remaining_life_percent: remainingPct,
       maintenance_state:                f.severity === "critical" ? "deferred" : f.severity === "warning" ? "adequate" : "adequate",

@@ -4896,7 +4896,12 @@ export default function Dashboard() {
               const parseRes = await fetch("/api/parse-repair", {
                 method: "POST",
                 headers: { "Content-Type": "application/json", ...authHeader },
-                body: JSON.stringify({ signedUrl: signed.signedUrl, filename: receiptFile.name, storagePath }),
+                body: JSON.stringify({
+                  signedUrl:  signed.signedUrl,
+                  filename:   receiptFile.name,
+                  storagePath,
+                  propertyId: propId,  // required so repair_documents row gets the right property_id
+                }),
               });
               const parseData = await parseRes.json();
               // Patch storage_path onto the repair_documents row so View PDF works
@@ -4905,6 +4910,11 @@ export default function Dashboard() {
                   .update({ storage_path: storagePath })
                   .eq("id", parseData.repair_doc_id);
               }
+              // Reload repair docs immediately so the receipt shows up in Repair History
+              // without the user needing to refresh. The parse-repair API now always
+              // creates a repair_documents row (even for image receipts), so this will
+              // always find a new row to display.
+              await loadRepairDocs();
             }
           } catch { /* receipt stored even if parse fails */ }
 
@@ -5341,7 +5351,12 @@ export default function Dashboard() {
     ? computeExtendedCondition(activeFindings)
     : { label: null, modifier: 0, itemCount: 0, items: [] };
 
-  const health       = Math.max(0, Math.min(100, breakdown.score + extCondition.modifier));
+  // Use the patent-aligned weighted score when available (homeHealthReport is set by
+  // runScoringPipeline in loadProperty + recomputeScore). Falls back to the deduction-
+  // model score only when no inspection has been uploaded yet (homeHealthReport = null).
+  // extCondition.modifier adds the Tier-2 supplemental modifier (deck, garage, fireplace)
+  // which the 6-system patent engine intentionally excludes.
+  const health       = Math.max(0, Math.min(100, (homeHealthReport?.home_health_score ?? breakdown.score) + extCondition.modifier));
   const healthColor  = health >= 90 ? "#22c55e" : health >= 80 ? "#84cc16" : health >= 65 ? C.amber : health >= 50 ? "#f97316" : C.red;
   const healthSt     = healthStatusInfo(health);
   const criticalCount = breakdown.deductions.filter(d => d.severity === "critical").length;

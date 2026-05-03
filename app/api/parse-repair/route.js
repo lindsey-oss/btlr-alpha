@@ -93,6 +93,7 @@ export async function POST(req) {
 
     let parsed = {};
     let extractedText = "";
+    let parseWarning = null;  // non-fatal note (e.g. image file, short text)
 
     try {
       // Download and extract text from PDF
@@ -105,41 +106,41 @@ export async function POST(req) {
       console.log(`[parse-repair] Extraction: ${extractedText.length} chars`);
 
       if (extractedText.length < 30) {
-        return Response.json({
-          success: false,
-          error: "Could not extract text from this document. Please try a text-based PDF."
-        });
-      }
-
-      // Send to AI (cap at 20k chars — repair docs are usually short)
-      const textToSend = extractedText.slice(0, 20000);
-
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        response_format: { type: "json_object" },
-        temperature: 0,
-        seed: 42,
-        messages: [
-          { role: "system", content: SYSTEM_PROMPT },
-          { role: "user", content: `Parse this home repair document:\n\n${textToSend}` },
-        ],
-        max_tokens: 1000,
-      });
-
-      const raw = completion.choices[0]?.message?.content || "";
-      const result = safeParseJson(raw);
-      if (result) {
-        parsed = result;
+        // Image files (JPG, PNG) or scanned PDFs return near-zero text.
+        // Don't return early — still create the repair_documents row so the
+        // receipt appears in Repair History. Just skip the AI parse step.
+        parseWarning = "Receipt saved. Text extraction not available for image files — details were not auto-filled.";
+        console.log("[parse-repair] Short/empty text — saving receipt without AI parse");
       } else {
-        console.error("[parse-repair] JSON parse failed:", raw.slice(0, 200));
-        return Response.json({ success: false, error: "AI returned unexpected format — please try again." });
+        // Send to AI (cap at 20k chars — repair docs are usually short)
+        const textToSend = extractedText.slice(0, 20000);
+
+        const completion = await openai.chat.completions.create({
+          model: "gpt-4o-mini",
+          response_format: { type: "json_object" },
+          temperature: 0,
+          seed: 42,
+          messages: [
+            { role: "system", content: SYSTEM_PROMPT },
+            { role: "user", content: `Parse this home repair document:\n\n${textToSend}` },
+          ],
+          max_tokens: 1000,
+        });
+
+        const raw = completion.choices[0]?.message?.content || "";
+        const result = safeParseJson(raw);
+        if (result) {
+          parsed = result;
+        } else {
+          console.error("[parse-repair] JSON parse failed:", raw.slice(0, 200));
+          parseWarning = "Receipt saved. AI parsing returned an unexpected format.";
+        }
       }
 
     } catch (parseErr) {
       console.error("[parse-repair] Processing error:", parseErr?.message);
-      return Response.json({ success: false, error: parseErr?.message || "Processing error" });
-    } finally {
-      // Keep storage file — user needs to be able to view the original PDF
+      // Don't return — fall through so the repair_documents row is still created.
+      parseWarning = parseErr?.message || "Processing error — receipt saved but details not extracted.";
     }
 
     // Match repair to existing findings
@@ -178,7 +179,7 @@ export async function POST(req) {
             filename:              filename || "repair-document.pdf",
             vendor_name:           parsed.vendor_name || null,
             service_date:          parsed.service_date || null,
-            repair_summary:        parsed.repair_summary || null,
+            repair_summary:        parsed.repair_summary || (parseWarning ? "Receipt uploaded — details not extracted" : null),
             system_category:       parsed.system_category || null,
             cost:                  parsed.cost || null,
             is_completed:          isCompleted,
@@ -222,7 +223,7 @@ export async function POST(req) {
     }
 
     return Response.json({
-      success: true,
+      success:            true,
       repair_doc_id:      repairDocId,
       vendor_name:        parsed.vendor_name        || null,
       service_date:       parsed.service_date        || null,
@@ -233,6 +234,7 @@ export async function POST(req) {
       warranty_period:    parsed.warranty_period     || null,
       line_items:         parsed.line_items          || [],
       notes:              parsed.notes               || null,
+      parse_warning:      parseWarning,              // non-null when text extraction was skipped (image files)
       // Matching results
       suggested_matches:  suggestedMatches,   // all matches for user review
       auto_resolved:      autoResolvedKeys,   // auto-resolved (high confidence always; medium when completed)
