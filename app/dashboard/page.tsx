@@ -4767,7 +4767,8 @@ export default function Dashboard() {
       if (!propId) return;
 
       // Layer 1 — per-row updates for findings that have a normalized_finding_key
-      const allFindings = [...(inspectionResult?.findings ?? []), ...photoFindings];
+      // Use same deduplicated array as the score engine so index-based keys match.
+      const allFindings = deduplicateFindings([...(inspectionResult?.findings ?? []), ...photoFindings]);
       const rowUpdates: PromiseLike<unknown>[] = [];
       allFindings.forEach((f, idx) => {
         const key = findingKey(f, idx);
@@ -4845,10 +4846,12 @@ export default function Dashboard() {
   async function markCategoryComplete(costItem: CostItem, receiptFile?: File) {
     setMarkCompleteUploading(true);
     try {
-      const allFindings: Finding[] = [
+      // IMPORTANT: must use the same deduplicated array as the score engine (line 5308)
+      // so findingKey(f, idx) generates identical keys in both places.
+      const allFindings: Finding[] = deduplicateFindings([
         ...(inspectionResult?.findings ?? []),
         ...photoFindings,
-      ];
+      ]);
 
       // Mark every finding that maps to this cost item's category as "completed"
       const categoryKey = toCategoryKey(costItem.label);

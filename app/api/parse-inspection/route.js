@@ -938,8 +938,20 @@ export async function POST(req) {
           home_health_report    = computeHomeHealthReport(normalizedItems);
         } catch { /* non-fatal */ }
 
+        // Fetch the property's current address so the client can display it
+        // (the address is stored on the properties row, not in findings).
+        let cachedAddress = null;
+        try {
+          const { data: propRow } = await supabaseAdmin
+            .from("properties")
+            .select("address")
+            .eq("id", propertyId)
+            .maybeSingle();
+          cachedAddress = propRow?.address ?? null;
+        } catch { /* non-fatal */ }
+
         return Response.json({
-          property_address:  null,   // already stored on the property row
+          property_address:  cachedAddress,
           inspection_date:   null,
           company_name:      null,
           inspector_name:    null,
