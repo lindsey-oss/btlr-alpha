@@ -422,7 +422,7 @@ export function normalizeFinding(raw: RawFinding): NormalizedFinding {
 
   // 2. Validate / coerce severity
   const rawSev = (raw.severity || "info").toLowerCase();
-  const severity: "critical" | "warning" | "info" =
+  let severity: "critical" | "warning" | "info" =
     rawSev === "critical" ? "critical"
     : rawSev === "warning" ? "warning"
     : "info";
@@ -431,6 +431,13 @@ export function normalizeFinding(raw: RawFinding): NormalizedFinding {
   const issueType = raw.issue_type
     ? slugLabel(raw.issue_type)
     : deriveIssueType(raw.description || "");
+
+  // 3b. Severity floor: promote info → warning for issue types that are never
+  // truly informational. End-of-life and needs-replacement findings always carry
+  // real cost or risk, regardless of how hedged the AI description is.
+  if (severity === "info" && (issueType === "needs_replacement" || issueType === "end_of_life")) {
+    severity = "warning";
+  }
 
   // 4. Extract location
   const location = deriveLocation(raw.description || "", raw.location);
