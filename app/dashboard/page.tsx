@@ -414,7 +414,7 @@ function computeHealthScore(
 
   for (const [key, items] of byKey.entries()) {
     const findings = items.map(it => it.f);
-    const category = findings[0].category;
+    const category = findings[0].category ?? "general";  // null guard — photo findings may have null category
 
     const criticalItems = items.filter(it => it.f.severity === "critical");
     const ncItems       = items.filter(it => it.f.severity !== "critical");
@@ -567,7 +567,7 @@ const TRADE_MAP: Record<string, string> = {
 };
 
 function tradeForCategory(category: string): string {
-  const key = category.toLowerCase();
+  const key = (category ?? "").toLowerCase();
   for (const [k, v] of Object.entries(TRADE_MAP)) {
     if (key.includes(k)) return v;
   }
@@ -1397,7 +1397,7 @@ function HealthScoreModal({
   }
 
   function systemIcon(category: string) {
-    const k = category.toLowerCase();
+    const k = (category ?? "").toLowerCase();
     if (k.includes("roof"))                           return <HomeIcon  size={15} color={C.text3}/>;
     if (k.includes("hvac") || k.includes("heat") ||
         k.includes("cool") || k.includes("air"))      return <Wind      size={15} color={C.text3}/>;
@@ -1772,7 +1772,7 @@ function healthStatusInfo(score: number) {
 
 // ── Warranty coverage check ───────────────────────────────────────────────
 function isLikelyCovered(category: string, coverageItems: string[]): boolean {
-  const cat = category.toLowerCase();
+  const cat = (category ?? "").toLowerCase();
   return coverageItems.some(item => {
     const it = item.toLowerCase();
     return it.includes(cat) || cat.includes(it.split(" ")[0]) ||
@@ -3628,9 +3628,11 @@ export default function Dashboard() {
         })();
       }
 
-      // Load photo findings
+      // Load photo findings — sanitize null categories so render helpers never crash
       if (data.photo_findings?.length > 0) {
-        setPhotoFindings(data.photo_findings ?? []);
+        setPhotoFindings(
+          (data.photo_findings ?? []).map((f: Finding) => f.category ? f : { ...f, category: "general" })
+        );
       }
 
       // ── Load findings — findings table first, JSONB fallback ─────────────
