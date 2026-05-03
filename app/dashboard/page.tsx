@@ -80,6 +80,29 @@ function toCategoryKey(category: string): string {
   return (category || "general").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
+// Validate a parsed property address — rejects inspection section headers,
+// photo captions, and other garbage strings that look nothing like a real address.
+// Returns true only if the string looks like a legitimate street address.
+function isValidPropertyAddress(addr: string | null | undefined): boolean {
+  if (!addr) return false;
+  const s = addr.trim();
+  // Must be non-empty and not absurdly long (real addresses < 120 chars)
+  if (s.length < 5 || s.length > 120) return false;
+  const lower = s.toLowerCase();
+  // Reject strings containing inspection-report jargon
+  const junkPhrases = [
+    "facing front", "facing rear", "exterior side", "item 1", "item 2",
+    "inspected", "picture", "= inspected", "in ni", "ni np", "np rr",
+    "io items", "deficiency", "repair needed", "recommend", "inspector",
+    "report date", "client name", "page ", "section ", "component ",
+    "photo ", "image ", "figure ", "table ", "appendix",
+  ];
+  if (junkPhrases.some(p => lower.includes(p))) return false;
+  // Must contain at least one digit (real addresses have a street number)
+  if (!/\d/.test(s)) return false;
+  return true;
+}
+
 /// Per-finding status key.
 // Uses normalized_finding_key when available (stable across re-uploads of same report).
 // Falls back to category+index for legacy / photo findings that predate the pipeline.
@@ -3454,10 +3477,10 @@ export default function Dashboard() {
       setAllProperties(prev => [...prev, data]);
       setShowPropDropdown(false);
       clearPropertyState();
-      setAddress("New Property");
+      activePropertyIdRef.current = data.id; // set ref before any async that reads it
+      setAddress(newAddress); // match what's actually in DB
       setNav("Documents"); // open Documents tab so inspection upload is front-and-center
       setActivePropertyId(data.id);
-      activePropertyIdRef.current = data.id;
       localStorage.setItem("btlr_active_property_id", String(data.id));
       phCapture("property_created", { property_id: data.id, method: "blank" });
       showToast("New property created — upload an inspection report to get started", "success");
@@ -4089,7 +4112,8 @@ export default function Dashboard() {
             ? { home_type: result.property_type }
             : {}),
           // Persist address from inspection report so vendor search stays correct on reload
-          ...(result.property_address ? { address: result.property_address }          : {}),
+          // Only use if it looks like a real address — inspection jargon/section headers are rejected
+          ...(isValidPropertyAddress(result.property_address) ? { address: result.property_address } : {}),
           updated_at:            new Date().toISOString(),
         };
         let activePropId = activePropertyIdRef.current;
@@ -4239,7 +4263,7 @@ export default function Dashboard() {
 
         if (result.roof_year) setRoofYear(String(result.roof_year));
         if (result.hvac_year) setHvacYear(String(result.hvac_year));
-        if (result.property_address) setAddress(result.property_address);
+        if (isValidPropertyAddress(result.property_address)) setAddress(result.property_address);
         // Sync detected property type into allProperties so scoring uses it immediately
         if (result.property_type) {
           setAllProperties(prev => prev.map(p =>
@@ -5875,6 +5899,7 @@ export default function Dashboard() {
           {/* ── Vendors ───────────────────────────────────────────────── */}
           {nav === "Vendors" && (
             <VendorsView
+              key={activePropertyId ?? "no-prop"}
               address={address}
               inspectionFindings={inspectionResult?.findings ?? []}
               userEmail={user?.email}
