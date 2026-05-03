@@ -3426,7 +3426,7 @@ export default function Dashboard() {
       // The full property detail (including optional columns) is loaded in loadProperty().
       const { data, error } = await supabase
         .from("properties")
-        .select("id, address")
+        .select("id, address, nickname")
         .eq("user_id", u.id)          // explicit filter — belt-and-suspenders on top of RLS
         .order("id", { ascending: true });  // created_at may not exist on older schemas
       if (error) { console.error("[loadAllProperties] query failed:", error.message, error.code); return null; }
