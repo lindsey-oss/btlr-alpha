@@ -3292,7 +3292,7 @@ export default function Dashboard() {
           inspection_date:      d.inspection_date ?? null,
           inspector_company:    d.inspector_name  ?? null,
           finding_statuses:     freshStatuses,
-          ...(d.property_address ? { address: d.property_address } : {}),
+          ...(isValidPropertyAddress(d.property_address) ? { address: d.property_address } : {}),
           updated_at: new Date().toISOString(),
         };
         if (propId) {
@@ -3565,7 +3565,16 @@ export default function Dashboard() {
         setMaintScheduled(savedSched ? JSON.parse(savedSched) : {});
       } catch { setMaintCompletions({}); setMaintScheduled({}); }
 
-      setAddress(data.address ?? "My Home");
+      // Validate address loaded from DB — reject inspection jargon that may have
+      // been persisted before the validator was in place.
+      const loadedAddress = isValidPropertyAddress(data.address) ? data.address : null;
+      setAddress(loadedAddress ?? "My Home");
+      // Scrub the bad value from DB so it doesn't persist
+      if (data.address && !loadedAddress) {
+        supabase.from("properties").update({ address: null }).eq("id", propId).then(() => {
+          console.log("[loadProperty] Cleared invalid address from DB:", data.address?.slice(0, 60));
+        });
+      }
       setRoofYear(data.roof_year?.toString() ?? "");
       setHvacYear(data.hvac_year?.toString() ?? "");
       setInspectionSource((data.inspection_source ?? null) as "professional" | "self" | null);
