@@ -208,6 +208,7 @@ function getScoreImpact(category: string, severity?: string, description?: strin
 
 // Maps a raw finding category to a broader display group key
 function toGroupKey(category: string): string {
+  if (!category) return "general";           // null/undefined guard — DB rows can have null category
   const t = category.toLowerCase().trim();
 
   // ── Canonical BTLR category keys (exact match wins — avoids substring collision)
@@ -1912,8 +1913,8 @@ function CostDetailModal({
 
   // Find all related findings
   const related = findings.filter(f =>
-    f.category.toLowerCase().includes(item.label.toLowerCase().split(" ")[0].toLowerCase()) ||
-    item.label.toLowerCase().includes(f.category.toLowerCase())
+    (f.category ?? "").toLowerCase().includes(item.label.toLowerCase().split(" ")[0].toLowerCase()) ||
+    item.label.toLowerCase().includes((f.category ?? "").toLowerCase())
   );
 
   const trade = tradeForCategory(item.tradeCategory ?? item.label);
@@ -3651,7 +3652,7 @@ export default function Dashboard() {
         loadedFindings = findingsRows.map(row => {
           const f: Finding = {
             ...(row.raw_finding ?? {}),
-            category:               row.category,
+            category:               row.category ?? "general",  // null guard: DB allows null, code does not
             description:            row.description ?? "",
             severity:               row.severity    ?? "info",
             estimated_cost:         row.raw_finding?.estimated_cost ?? null,
@@ -3695,7 +3696,10 @@ export default function Dashboard() {
       // inspection_findings=[] and inspection_summary=null, causing the score
       // card to be hidden after every refresh.
       // Prefer findings-table rows; fall back to JSONB blob for legacy data.
-      const finalFindings = loadedFindings.length > 0 ? loadedFindings : (data.inspection_findings ?? []);
+      // Sanitize: ensure every finding has a non-null category so render helpers
+      // (.toLowerCase() calls in toGroupKey, getFallbackCost, etc.) never throw.
+      const rawFindings   = loadedFindings.length > 0 ? loadedFindings : (data.inspection_findings ?? []);
+      const finalFindings = rawFindings.map((f: Finding) => f.category ? f : { ...f, category: "general" });
       if (finalFindings.length > 0 || data.inspection_summary || data.inspection_type) {
         setInspectionResult({
           inspection_type:      data.inspection_type     ?? "Home Inspection",
@@ -5402,7 +5406,7 @@ export default function Dashboard() {
   ];
 
   function getFallbackCost(category: string, severity: string): number {
-    const cat = category.toLowerCase();
+    const cat = (category ?? "").toLowerCase();
     const row = CATEGORY_COST.find(c => cat.includes(c.match));
     if (row) return row[severity as "critical" | "warning" | "info"] ?? row.warning;
     // Generic severity fallback if no category match
@@ -5410,12 +5414,12 @@ export default function Dashboard() {
   }
 
   activeFindings.forEach(f => {
-    const catKey = f.category.toLowerCase().trim();
+    const catKey = (f.category ?? "").toLowerCase().trim();
     if (usedCategories.has(catKey)) return; // deduplicate
     usedCategories.add(catKey);
     const amount = (f.estimated_cost && f.estimated_cost > 0)
       ? f.estimated_cost
-      : getFallbackCost(f.category, f.severity);
+      : getFallbackCost(f.category ?? "", f.severity ?? "info");
     costs.push({
       label:         categoryLabel(f.category),
       horizon:       f.severity === "critical" ? "Start Soon" : f.severity === "warning" ? "Within 1–2 yrs" : "Ongoing",
