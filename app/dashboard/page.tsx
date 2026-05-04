@@ -506,24 +506,24 @@ interface CostItem {
 
 // ── Design tokens ─────────────────────────────────────────────────────────
 const C = {
-  bg:       "#EDE8E0",   // warm cream
+  bg:       "#F5EFE3",   // BTLR cream
   surface:  "#FFFFFF",   // card white
-  surface2: "#F5F1EB",   // soft warm secondary bg
-  navy:     "#1C2B3A",   // dark navy (sidebar, headings)
-  accent:   "#E8742A",   // brand orange
+  surface2: "#FBF6EB",   // light cream secondary
+  navy:     "#1A2C44",   // BTLR navy
+  accent:   "#E89441",   // BTLR orange
   accentDk: "#C07828",   // darker orange for hover/active
-  accentLt: "#F59842",   // light orange for subtle tints
-  accentBg: "rgba(232,116,42,0.08)", // tint bg
-  text:     "#1C1914",   // warm near-black
-  text2:    "#4A453E",   // warm medium
-  text3:    "#6B6558",   // warm muted
-  border:   "rgba(28,25,20,0.08)", // warm border
-  green:    "#2D6A4F",
-  greenBg:  "#F0FAF4",
-  amber:    "#92400E",
-  amberBg:  "#FFFBEB",
-  red:      "#991B1B",
-  redBg:    "#FEF2F2",
+  accentLt: "#F5A855",   // light orange tint
+  accentBg: "rgba(232,148,65,0.08)", // tint bg
+  text:     "#0E1B2C",   // BTLR ink
+  text2:    "#3D4B5E",   // BTLR ink2
+  text3:    "#7E8A9A",   // BTLR ink3
+  border:   "rgba(26,44,68,0.1)", // navy-tinted border
+  green:    "#5A9A6E",   // BTLR green
+  greenBg:  "#DCE9D6",
+  amber:    "#D4A845",   // BTLR yellow
+  amberBg:  "#F4E8C8",
+  red:      "#C25C4F",   // BTLR red
+  redBg:    "#F5DAD5",
 };
 
 function card(extra?: React.CSSProperties): React.CSSProperties {
@@ -706,7 +706,7 @@ function InspectionReviewModal({
   const statusOptions: { value: FindingStatus; label: string; bg: string; color: string }[] = [
     { value: "completed",     label: "Already Fixed", bg: C.greenBg, color: C.green  },
     { value: "repair_needed", label: "Still Needed",  bg: C.redBg,   color: C.red    },
-    { value: "monitored",     label: "Monitoring",    bg: "#eff6ff",  color: C.accent },
+    { value: "monitored",     label: "Monitoring",    bg: C.accentBg, color: C.accent },
     { value: "not_needed",    label: "Not Needed",    bg: C.bg,       color: C.text3  },
   ];
 
@@ -2034,21 +2034,21 @@ function CostDetailModal({
           {/* Warranty claim hint */}
           {warranty && (warranty.coverageItems?.length ?? 0) > 0 &&
             isLikelyCovered(item.tradeCategory ?? item.label, warranty.coverageItems!) && (
-            <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 10, padding: "10px 14px", marginBottom: 4 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: "#7c3aed", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
+            <div style={{ background: "#F0EBF9", border: "1.5px solid #C4AFEB", borderRadius: 10, padding: "10px 14px", marginBottom: 4 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "#6D4FC2", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
                 <Shield size={12}/> This may be covered by your {warranty.provider ?? "home warranty"}
                 {warranty.serviceFee ? ` — $${warranty.serviceFee} service fee` : ""}
               </p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {warranty.claimUrl && (
                   <a href={`${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "#6D4FC2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
                     <ExternalLink size={11}/> File a Claim
                   </a>
                 )}
                 {warranty.claimPhone && (
                   <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid #6D4FC2", color: "#6D4FC2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
                     📞 Call Claims
                   </a>
                 )}
@@ -2059,21 +2059,21 @@ function CostDetailModal({
           {/* Insurance claim hint */}
           {insurance && (insurance.coverageItems?.length ?? 0) > 0 &&
             isLikelyCovered(item.tradeCategory ?? item.label, insurance.coverageItems!) && (
-            <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 10, padding: "10px 14px", marginBottom: 4 }}>
-              <p style={{ fontSize: 12, fontWeight: 700, color: "#0891b2", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
+            <div style={{ background: "#DBE8F4", border: "1.5px solid #A8C4E0", borderRadius: 10, padding: "10px 14px", marginBottom: 4 }}>
+              <p style={{ fontSize: 12, fontWeight: 700, color: "#2E6FB5", margin: "0 0 6px", display: "flex", alignItems: "center", gap: 5 }}>
                 <Shield size={12}/> This may be covered by your {insurance.provider ?? "home insurance"}
                 {insurance.deductibleStandard ? ` — $${insurance.deductibleStandard.toLocaleString()} deductible` : ""}
               </p>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {insurance.claimUrl && (
                   <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer"
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, background: "#2E6FB5", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
                     <ExternalLink size={11}/> File a Claim
                   </a>
                 )}
                 {insurance.claimPhone && (
                   <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`}
-                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
+                    style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 7, border: "1.5px solid #2E6FB5", color: "#2E6FB5", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}>
                     📞 Call Claims
                   </a>
                 )}
@@ -2289,6 +2289,24 @@ export default function Dashboard() {
   const [profileName, setProfileName]       = useState("");
   const [savingName, setSavingName]         = useState(false);
   const [nameSaved, setNameSaved]           = useState(false);
+  // ── Extended Settings state ───────────────────────────────────────────────
+  const [profilePhone, setProfilePhone]             = useState("");
+  const [profileEmail, setProfileEmail]             = useState("");
+  const [settingsYearBuilt, setSettingsYearBuilt]   = useState("");
+  const [settingsSqft, setSettingsSqft]             = useState("");
+  const [settingsWaterYear, setSettingsWaterYear]   = useState("");
+  const [savingProfile, setSavingProfile]           = useState(false);
+  const [profileSaved, setProfileSaved]             = useState(false);
+  const [loadingProfile, setLoadingProfile]         = useState(false);
+  // Notification pref toggles
+  const [notifOverdue, setNotifOverdue]     = useState(true);
+  const [notifDueSoon, setNotifDueSoon]     = useState(true);
+  const [notifScore, setNotifScore]         = useState(true);
+  const [notifWeekly, setNotifWeekly]       = useState(false);
+  const [notifMonthly, setNotifMonthly]     = useState(true);
+  const [savingNotifs, setSavingNotifs]     = useState(false);
+  const [notifsSaved, setNotifsSaved]       = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [parseDebug, setParseDebug]         = useState<Record<string, string | number | boolean | null | undefined> | null>(null);
   const [showDebug, setShowDebug]           = useState(false);
 
@@ -3989,19 +4007,116 @@ export default function Dashboard() {
     setSavingSettings(true); setSettingsSaved(false);
     try {
       const { data: { session } } = await supabase.auth.getSession();
-      const userId = session?.user?.id;
-      const updateData = { address: address || "My Home", roof_year: roofYear ? Number(roofYear) : null, hvac_year: hvacYear ? Number(hvacYear) : null, updated_at: new Date().toISOString() };
-      const { data: existing } = await supabase.from("properties").select("id").limit(1).maybeSingle();
-      if (existing?.id) {
-        await supabase.from("properties").update(updateData).eq("id", existing.id);
+      const token = session?.access_token;
+      const propId = activePropertyIdRef.current;
+      if (!propId) {
+        // No property yet — fall back to direct insert
+        const userId = session?.user?.id;
+        const updateData = { address: address || "My Home", roof_year: roofYear ? Number(roofYear) : null, hvac_year: hvacYear ? Number(hvacYear) : null, updated_at: new Date().toISOString() };
+        const { data: existing } = await supabase.from("properties").select("id").limit(1).maybeSingle();
+        if (existing?.id) {
+          await supabase.from("properties").update(updateData).eq("id", existing.id);
+        } else {
+          await supabase.from("properties").insert({ ...updateData, user_id: userId });
+        }
       } else {
-        await supabase.from("properties").insert({ ...updateData, user_id: userId });
+        // Use the API route so maintenance tasks are re-seeded on system age changes
+        const res = await fetch("/api/property", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+          body: JSON.stringify({
+            property_id:       propId,
+            address:           address || "My Home",
+            year_built:        settingsYearBuilt || undefined,
+            sqft:              settingsSqft      || undefined,
+            roof_year:         roofYear          || undefined,
+            hvac_year:         hvacYear          || undefined,
+            water_heater_year: settingsWaterYear || undefined,
+          }),
+        });
+        if (!res.ok) throw new Error((await res.json()).error ?? "Save failed");
       }
       setSettingsSaved(true);
       setTimeout(() => setSettingsSaved(false), 3000);
       if (address && address !== "My Home") fetchPropertyData(address);
     } catch (err) { console.error("Save error:", err); }
     setSavingSettings(false);
+  }
+
+  // Load extended profile from /api/me (phone, tier etc.)
+  async function loadSettings() {
+    if (settingsLoaded) return;
+    setLoadingProfile(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch("/api/me", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setProfileName(data.first_name ?? "");
+        setProfileEmail(data.email ?? "");
+        setProfilePhone(data.phone ?? "");
+      }
+      // Load extended property fields
+      const propRes = await fetch("/api/property", {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      if (propRes.ok) {
+        const prop = await propRes.json();
+        if (prop.year_built)        setSettingsYearBuilt(String(prop.year_built));
+        if (prop.sqft)              setSettingsSqft(String(prop.sqft));
+        if (prop.water_heater_year) setSettingsWaterYear(String(prop.water_heater_year));
+      }
+      setSettingsLoaded(true);
+    } catch (err) { console.error("[loadSettings]", err); }
+    setLoadingProfile(false);
+  }
+
+  // Save profile via /api/me
+  async function saveProfile() {
+    setSavingProfile(true); setProfileSaved(false);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      const token = session?.access_token;
+      const res = await fetch("/api/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ first_name: profileName.trim(), phone: profilePhone.trim(), email: profileEmail.trim() || undefined }),
+      });
+      if (!res.ok) throw new Error((await res.json()).error ?? "Profile save failed");
+      // Refresh local user state so greeting updates immediately
+      const { data: { user: refreshed } } = await supabase.auth.getUser();
+      if (refreshed) setUser(refreshed as any);
+      setProfileSaved(true);
+      setTimeout(() => setProfileSaved(false), 3000);
+    } catch (err) { console.error("Profile save error:", err); }
+    setSavingProfile(false);
+  }
+
+  // Save notification preferences (stored in notification_prefs table via supabase directly)
+  async function saveNotifs() {
+    setSavingNotifs(true); setNotifsSaved(false);
+    try {
+      const { data: { user: u } } = await supabase.auth.getUser();
+      if (!u) throw new Error("Not authenticated");
+      await supabase.from("notification_prefs").upsert({
+        user_id:            u.id,
+        overdue_maintenance: notifOverdue,
+        due_soon:           notifDueSoon,
+        score_change:       notifScore,
+        weekly_digest:      notifWeekly,
+        monthly_report:     notifMonthly,
+        channel_email:      true,
+        channel_sms:        false,
+        channel_push:       false,
+        updated_at:         new Date().toISOString(),
+      }, { onConflict: "user_id" });
+      setNotifsSaved(true);
+      setTimeout(() => setNotifsSaved(false), 3000);
+    } catch (err) { console.error("Notif save error:", err); }
+    setSavingNotifs(false);
   }
 
   async function uploadInspection(e: React.ChangeEvent<HTMLInputElement>) {
@@ -5540,7 +5655,7 @@ export default function Dashboard() {
   ];
 
   return (
-    <div style={{ height: "100vh", overflow: "hidden", display: "flex", background: C.bg, fontFamily: "'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}>
+    <div style={{ height: "100vh", overflow: "hidden", display: "flex", background: C.bg, fontFamily: "'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif" }}>
       <style>{`
 
         /* ── Scrollbar ─────────────────────────────────────── */
@@ -5552,8 +5667,8 @@ export default function Dashboard() {
         /* ── Input / select focus ──────────────────────────── */
         input:focus, select:focus, textarea:focus {
           outline: none;
-          border-color: #E8742A !important;
-          box-shadow: 0 0 0 3px rgba(232,116,42,0.12) !important;
+          border-color: #E89441 !important;
+          box-shadow: 0 0 0 3px rgba(232,148,65,0.12) !important;
         }
 
         /* ── Button transitions ────────────────────────────── */
@@ -5987,7 +6102,7 @@ export default function Dashboard() {
             const repStatusConfig: Record<FindingStatus, { label: string; color: string; bg: string }> = {
               repair_needed: { label: "Repair Needed", color: C.red,    bg: C.redBg   },
               completed:     { label: "Completed",     color: C.green,  bg: C.greenBg },
-              monitored:     { label: "Monitoring",    color: C.accent, bg: "#eff6ff" },
+              monitored:     { label: "Monitoring",    color: C.accent, bg: C.accentBg },
               not_needed:    { label: "Not Needed",    color: C.text3,  bg: C.bg      },
             };
             const repArchivedItems: Array<{ f: Finding; globalIdx: number; fk: string }> = [];
@@ -6013,7 +6128,7 @@ export default function Dashboard() {
 
                 {/* ── 5-YEAR COST OUTLOOK HERO ────────────────────────── */}
                 <div style={{
-                  background: "linear-gradient(135deg, #134e4a 0%, #0f766e 60%, #0d9488 100%)",
+                  background: `linear-gradient(135deg, ${C.navy} 0%, #243A56 55%, #2E4866 100%)`,
                   borderRadius: 18, padding: isMobile ? "18px 18px" : "22px 28px",
                   position: "relative", overflow: "hidden",
                 }}>
@@ -6906,7 +7021,7 @@ export default function Dashboard() {
                 id: "inspection",
                 label: "Home Inspection",
                 icon: <FileText size={15} color={C.accent}/>,
-                iconBg: "#eff6ff",
+                iconBg: C.accentBg,
                 accentColor: C.accent,
                 status: inspectionDoc
                   ? `${inspectionDoc.name} · Uploaded`
@@ -6918,9 +7033,9 @@ export default function Dashboard() {
               {
                 id: "warranty",
                 label: "Home Warranty",
-                icon: <Shield size={15} color="#7c3aed"/>,
-                iconBg: "#faf5ff",
-                accentColor: "#7c3aed",
+                icon: <Shield size={15} color="#6D4FC2"/>,
+                iconBg: "#F0EBF9",
+                accentColor: "#6D4FC2",
                 status: warranty
                   ? `${warranty.provider ?? "Uploaded"} · ${warranty.expirationDate ? `Expires ${warranty.expirationDate}` : "Active"}`
                   : "No document uploaded",
@@ -6929,9 +7044,9 @@ export default function Dashboard() {
               {
                 id: "insurance",
                 label: "Home Insurance",
-                icon: <Shield size={15} color="#0891b2"/>,
-                iconBg: "#f0f9ff",
-                accentColor: "#0891b2",
+                icon: <Shield size={15} color="#2E6FB5"/>,
+                iconBg: "#DBE8F4",
+                accentColor: "#2E6FB5",
                 status: insurance
                   ? `${insurance.provider ?? "Uploaded"} · ${insurance.expirationDate ? `Renews ${insurance.expirationDate}` : "Active"}`
                   : "No document uploaded",
@@ -7073,7 +7188,7 @@ export default function Dashboard() {
                             </p>
                             {inspectionDoc ? (
                               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                <div style={{ background: "#eff6ff", border: "1.5px solid #bfdbfe", borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+                                <div style={{ background: C.accentBg, border: `1.5px solid ${C.accent}30`, borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
                                   <FileText size={18} color={C.accent} style={{ flexShrink: 0 }}/>
                                   <div style={{ flex: 1, minWidth: 0 }}>
                                     <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inspectionDoc.name}</p>
@@ -7501,69 +7616,153 @@ export default function Dashboard() {
           })()}
 
           {/* ── Settings ──────────────────────────────────────────────── */}
-          {nav === "Settings" && (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          {nav === "Settings" && (() => {
+            // Lazy-load extended profile the first time this tab opens
+            if (!settingsLoaded && !loadingProfile) loadSettings();
 
-              {/* ── Profile Name ── */}
-              <div style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, padding: "20px 22px" }}>
-                <p style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 16, marginTop: 0 }}>Your Profile</p>
-                <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: 5 }}>First Name</label>
-                <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
-                  <input
-                    value={profileName}
-                    onChange={e => setProfileName(e.target.value)}
-                    placeholder="Your first name"
-                    style={{ flex: 1, padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${C.border}`, fontSize: 16, color: C.text, background: C.bg, outline: "none", boxSizing: "border-box" as const }}
-                  />
+            const fieldStyle: React.CSSProperties = {
+              width: "100%", padding: "9px 12px", borderRadius: 9,
+              border: `1.5px solid ${C.border}`, fontSize: 15, color: C.text,
+              background: C.bg, outline: "none", boxSizing: "border-box",
+            };
+            const labelStyle: React.CSSProperties = {
+              fontSize: 11, fontWeight: 700, color: C.text3,
+              textTransform: "uppercase", letterSpacing: "0.07em",
+              display: "block", marginBottom: 5,
+            };
+            const sectionHead: React.CSSProperties = {
+              fontSize: 16, fontWeight: 800, color: C.text,
+              margin: "0 0 4px", letterSpacing: "-0.2px",
+            };
+            const sectionSub: React.CSSProperties = {
+              fontSize: 12, color: C.text3, margin: "0 0 16px",
+            };
+
+            // Toggle row helper
+            function ToggleRow({ label, sub, checked, onChange, disabled, disabledNote }: {
+              label: string; sub?: string; checked: boolean;
+              onChange: (v: boolean) => void; disabled?: boolean; disabledNote?: string;
+            }) {
+              return (
+                <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "11px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <p style={{ fontSize: 14, fontWeight: 600, color: disabled ? C.text3 : C.text, margin: 0 }}>{label}</p>
+                    {(sub || disabledNote) && (
+                      <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>{disabledNote ?? sub}</p>
+                    )}
+                  </div>
                   <button
-                    onClick={saveProfileName}
-                    disabled={savingName || !profileName.trim()}
-                    style={{ padding: "9px 18px", borderRadius: 10, background: nameSaved ? C.green : C.accent, border: "none", color: "white", fontSize: 14, fontWeight: 700, cursor: profileName.trim() ? "pointer" : "not-allowed", opacity: savingName ? 0.7 : 1, whiteSpace: "nowrap" as const, display: "flex", alignItems: "center", gap: 6 }}>
-                    {savingName ? <><Loader2 size={13}/> Saving…</> : nameSaved ? <><CheckCircle2 size={13}/> Saved!</> : "Save Name"}
+                    onClick={() => !disabled && onChange(!checked)}
+                    style={{
+                      width: 42, height: 24, borderRadius: 12, flexShrink: 0, cursor: disabled ? "not-allowed" : "pointer",
+                      background: checked && !disabled ? C.accent : C.border,
+                      border: "none", position: "relative", transition: "background 0.2s",
+                      opacity: disabled ? 0.45 : 1,
+                    }}>
+                    <div style={{
+                      width: 18, height: 18, borderRadius: "50%", background: "white",
+                      position: "absolute", top: 3,
+                      left: checked && !disabled ? 21 : 3,
+                      transition: "left 0.2s",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                    }}/>
                   </button>
                 </div>
-                <p style={{ fontSize: 12, color: C.text3, margin: "6px 0 0" }}>This is how we greet you on the dashboard.</p>
-              </div>
+              );
+            }
 
-              <div style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, padding: "20px 22px" }}>
-                <p style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 16, marginTop: 0 }}>Your Property</p>
-                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                  {[
-                    { label: "Address / Name", val: address,  set: setAddress,  ph: "123 Main St, City, ST" },
-                    { label: "Roof Year",       val: roofYear, set: setRoofYear, ph: "e.g. 2005" },
-                    { label: "HVAC Year",       val: hvacYear, set: setHvacYear, ph: "e.g. 2015" },
-                  ].map(({ label, val, set, ph }) => (
-                    <div key={label}>
-                      <label style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", display: "block", marginBottom: 5 }}>{label}</label>
-                      <input value={val} onChange={e => set(e.target.value)} placeholder={ph} style={{ width: "100%", padding: "9px 12px", borderRadius: 9, border: `1.5px solid ${C.border}`, fontSize: 16, color: C.text, background: C.bg, outline: "none", boxSizing: "border-box" }}/>
+            return (
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+
+                {/* ── Profile Card ── */}
+                <div id="settings-profile" style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, padding: "22px 24px" }}>
+                  <p style={sectionHead}>Profile</p>
+                  <p style={sectionSub}>How we greet you and how to reach you.</p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 13 }}>
+                    <div>
+                      <label style={labelStyle}>First Name</label>
+                      <input value={profileName} onChange={e => setProfileName(e.target.value)} placeholder="Your first name" style={fieldStyle}/>
                     </div>
-                  ))}
+                    <div>
+                      <label style={labelStyle}>Email</label>
+                      <input value={profileEmail} onChange={e => setProfileEmail(e.target.value)} placeholder={user?.email ?? "you@example.com"} type="email" style={fieldStyle}/>
+                      {profileEmail && profileEmail !== user?.email && (
+                        <p style={{ fontSize: 11, color: C.amber, margin: "4px 0 0" }}>Changing email will send a verification link to the new address.</p>
+                      )}
+                    </div>
+                    <div>
+                      <label style={labelStyle}>Phone</label>
+                      <input value={profilePhone} onChange={e => setProfilePhone(e.target.value)} placeholder="(555) 000-0000" type="tel" style={fieldStyle}/>
+                    </div>
+                  </div>
+                  <button
+                    onClick={saveProfile}
+                    disabled={savingProfile}
+                    style={{ marginTop: 18, padding: "10px 22px", borderRadius: 10, background: profileSaved ? C.green : C.accent, border: "none", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 7, opacity: savingProfile ? 0.7 : 1 }}>
+                    {savingProfile ? <><Loader2 size={13}/> Saving…</> : profileSaved ? <><CheckCircle2 size={13}/> Saved!</> : "Save Profile"}
+                  </button>
                 </div>
-                <button onClick={saveSettings} disabled={savingSettings} style={{ marginTop: 16, padding: "10px 22px", borderRadius: 10, background: settingsSaved ? C.green : C.accent, border: "none", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 7, opacity: savingSettings ? 0.7 : 1 }}>
-                  {savingSettings ? <><Loader2 size={13} className="animate-spin"/> Saving…</> : settingsSaved ? <><CheckCircle2 size={13}/> Saved!</> : "Save Property Info"}
-                </button>
-              </div>
-              {[
-                { label: "Account Email",       value: user?.email ?? "—",           connected: false },
-                { label: "OpenAI",              value: "Connected",                   connected: true },
-                { label: "Google Maps",         value: process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY ? "Connected" : "Not set — add NEXT_PUBLIC_GOOGLE_MAPS_KEY in Vercel", connected: !!process.env.NEXT_PUBLIC_GOOGLE_MAPS_KEY },
-                { label: "Email Notifications", value: "Coming soon", connected: false },
-              ].map((item, i) => (
-                <div key={i} style={{ background: C.surface, borderRadius: 14, border: `1px solid ${C.border}`, padding: "14px 18px" }}>
-                  <p style={{ fontSize: 11, color: C.text3, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", margin: 0 }}>{item.label}</p>
-                  <p style={{ fontSize: 14, color: item.connected ? C.green : C.text, fontWeight: 500, margin: "3px 0 0",
-                    display: "flex", alignItems: "center", gap: 5 }}>
-                    {item.connected && <CheckCircle2 size={13} color={C.green}/>}
-                    {item.value}
-                  </p>
-                </div>
-              ))}
-              <button onClick={logout} style={{ padding: "12px 20px", borderRadius: 12, border: `1.5px solid ${C.red}`, background: C.redBg, color: C.red, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 8, width: "fit-content" }}>
-                <LogOut size={14}/> Sign Out
-              </button>
 
-            </div>
-          )}
+                {/* ── Property Card ── */}
+                <div id="settings-property" style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, padding: "22px 24px" }}>
+                  <p style={sectionHead}>Property</p>
+                  <p style={sectionSub}>Used to calculate your score and seed your maintenance schedule.</p>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 13 }}>
+                    {([
+                      { label: "Address / Name",     val: address,            set: setAddress,            ph: "123 Main St, City, ST", col: 2 as number | undefined },
+                      { label: "Year Built",          val: settingsYearBuilt,  set: setSettingsYearBuilt,  ph: "e.g. 1998",             col: undefined },
+                      { label: "Square Footage",      val: settingsSqft,       set: setSettingsSqft,       ph: "e.g. 2200",             col: undefined },
+                      { label: "Roof Year",           val: roofYear,           set: setRoofYear,           ph: "e.g. 2008",             col: undefined },
+                      { label: "HVAC Year",           val: hvacYear,           set: setHvacYear,           ph: "e.g. 2016",             col: undefined },
+                      { label: "Water Heater Year",   val: settingsWaterYear,  set: setSettingsWaterYear,  ph: "e.g. 2018",             col: undefined },
+                    ] as { label: string; val: string; set: (v: string) => void; ph: string; col?: number }[]).map(({ label, val, set, ph, col }) => (
+                      <div key={label} style={col === 2 && !isMobile ? { gridColumn: "1 / -1" } : {}}>
+                        <label style={labelStyle}>{label}</label>
+                        <input value={val} onChange={e => set(e.target.value)} placeholder={ph} style={fieldStyle}/>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={saveSettings} disabled={savingSettings} style={{ marginTop: 18, padding: "10px 22px", borderRadius: 10, background: settingsSaved ? C.green : C.accent, border: "none", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 7, opacity: savingSettings ? 0.7 : 1 }}>
+                    {savingSettings ? <><Loader2 size={13}/> Saving…</> : settingsSaved ? <><CheckCircle2 size={13}/> Saved!</> : "Save Property"}
+                  </button>
+                </div>
+
+                {/* ── Notifications Card ── */}
+                <div id="settings-notifications" style={{ background: C.surface, borderRadius: 16, border: `1px solid ${C.border}`, padding: "22px 24px" }}>
+                  <p style={sectionHead}>Notifications</p>
+                  <p style={sectionSub}>Choose what alerts you receive and how.</p>
+
+                  {/* Channel toggles */}
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.09em", margin: "0 0 2px" }}>Channels</p>
+                  <ToggleRow label="Email" sub="Receive alerts at your account email" checked={true} onChange={() => {}} disabled={false}/>
+                  <ToggleRow label="SMS" sub="Text message alerts" checked={false} onChange={() => {}} disabled={true} disabledNote="Coming soon — SMS setup required"/>
+                  <ToggleRow label="Push (iOS & Android)" sub="Mobile app push notifications" checked={false} onChange={() => {}} disabled={true} disabledNote="Coming soon — mobile app not yet released"/>
+
+                  {/* Alert type toggles */}
+                  <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.09em", margin: "20px 0 2px" }}>Alert Types</p>
+                  <ToggleRow label="Overdue Maintenance" sub="When a maintenance task passes its due date" checked={notifOverdue} onChange={setNotifOverdue}/>
+                  <ToggleRow label="Due Soon" sub="3 days before a task is due" checked={notifDueSoon} onChange={setNotifDueSoon}/>
+                  <ToggleRow label="Score Changes" sub="When your Home Health Score moves significantly" checked={notifScore} onChange={setNotifScore}/>
+                  <ToggleRow label="Weekly Digest" sub="A weekly summary of your home status" checked={notifWeekly} onChange={setNotifWeekly}/>
+                  <div style={{ borderBottom: "none" }}>
+                    <ToggleRow label="Monthly Report" sub="Your full monthly home health report" checked={notifMonthly} onChange={setNotifMonthly}/>
+                  </div>
+
+                  <button onClick={saveNotifs} disabled={savingNotifs} style={{ marginTop: 18, padding: "10px 22px", borderRadius: 10, background: notifsSaved ? C.green : C.accent, border: "none", color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 7, opacity: savingNotifs ? 0.7 : 1 }}>
+                    {savingNotifs ? <><Loader2 size={13}/> Saving…</> : notifsSaved ? <><CheckCircle2 size={13}/> Saved!</> : "Save Preferences"}
+                  </button>
+                </div>
+
+                {/* ── Sign Out ── */}
+                <div>
+                  <button onClick={logout} style={{ padding: "12px 20px", borderRadius: 12, border: `1.5px solid ${C.red}`, background: C.redBg, color: C.red, fontSize: 15, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+                    <LogOut size={14}/> Sign Out
+                  </button>
+                </div>
+
+              </div>
+            );
+          })()}
 
           {/* ── Dashboard content ─────────────────────────────────────── */}
           {nav === "Dashboard" && (
@@ -7725,7 +7924,7 @@ export default function Dashboard() {
                     <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
                       {criticalCount > 0 ? (
                         <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 12px", borderRadius: 20,
-                          background: "rgba(232,116,42,0.10)", color: C.accent, border: `1px solid rgba(232,116,42,0.25)` }}>
+                          background: C.accentBg, color: C.accent, border: `1px solid ${C.accent}40` }}>
                           {criticalCount} Item{criticalCount !== 1 ? "s" : ""} Need{criticalCount === 1 ? "s" : ""} Attention
                         </span>
                       ) : breakdown.deductions.length > 0 ? (

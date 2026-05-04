@@ -1,0 +1,56 @@
+{
+  "_comment": "SD Local Inspections report — 47 pages, ~70 summary items. Created 2026-05-03.",
+  "description": "SD Local Inspections — 12548 Country Rd, Valley Center CA. Inspector: Steven Knowlton. 47-page report with detailed summary across all major systems.",
+  "source": "SD Local Inspections",
+  "fileSizeApproxMB": 7.7,
+  "minimumFindings": 40,
+  "requiredCategories": [
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac",
+    "appliances"
+  ],
+  "mustInclude": [
+    {
+      "_comment": "6.1.1 — Roof tiles cracked, broken, slipped, or missing",
+      "category": "roof",
+      "descriptionContains": "tile",
+      "severity": "warning"
+    },
+    {
+      "_comment": "11.6.1 — Missing GFCI protection",
+      "category": "electrical",
+      "descriptionContains": "gfci"
+    },
+    {
+      "_comment": "11.5.2 — Breaker bar scorched / heat damage",
+      "category": "electrical",
+      "descriptionContains": "scorched"
+    },
+    {
+      "_comment": "10.3.1 — Hose bib leaks",
+      "category": "plumbing",
+      "descriptionContains": "hose bib"
+    },
+    {
+      "_comment": "12.3.1 — Inoperable heating unit",
+      "category": "hvac",
+      "descriptionContains": "inoperable"
+    },
+    {
+      "_comment": "9.2.1 — Garage occupant door not fire resistant",
+      "category": "structure",
+      "descriptionContains": "fire"
+    },
+    {
+      "_comment": "14.3.1 — Evidence of rodents in attic",
+      "category": "structure",
+      "descriptionContains": "rodent"
+    }
+  ],
+  "mustNotInclude": [],
+  "propertyAddressContains": "12548 Country Rd",
+  "allowedTimeoutMs": 240000,
+  "_updateInstructions": "After a successful parse, review mustInclude entries and adjust minimumFindings if needed."
+}

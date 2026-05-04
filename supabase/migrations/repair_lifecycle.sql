@@ -20,7 +20,7 @@ ALTER TABLE properties
 --    Stores parsed repair invoices, receipts, contractor reports
 CREATE TABLE IF NOT EXISTS repair_documents (
   id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  property_id           UUID REFERENCES properties(id) ON DELETE CASCADE,
+  property_id           BIGINT REFERENCES properties(id) ON DELETE CASCADE,
   user_id               UUID REFERENCES auth.users(id) ON DELETE CASCADE,
 
   -- Source file info

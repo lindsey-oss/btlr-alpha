@@ -1,0 +1,50 @@
+{
+  "_comment": "Patton Property Inspections — 46 pages, narrative-style CREIA/InterNACHI report. Created 2026-05-03.",
+  "description": "Patton Property Inspections — 2121 E Grand Ave #28G, Escondido CA. Inspector: Patton. 46-page report with Action Item / Safety Item / Consideration Item severity labels.",
+  "source": "Patton Property Inspections",
+  "fileSizeApproxMB": 5.0,
+  "minimumFindings": 12,
+  "requiredCategories": [
+    "structure",
+    "plumbing",
+    "electrical",
+    "hvac"
+  ],
+  "mustInclude": [
+    {
+      "_comment": "2.3 — Roof rafter trusses cut, compromising structural integrity",
+      "category": "structure",
+      "descriptionContains": "truss",
+      "severity": "critical"
+    },
+    {
+      "_comment": "6.4 — High water pressure at 92 psi",
+      "category": "plumbing",
+      "descriptionContains": "water pressure"
+    },
+    {
+      "_comment": "8.3 — Furnace did not respond to operating controls",
+      "category": "hvac",
+      "descriptionContains": "furnace"
+    },
+    {
+      "_comment": "7.8.1 — Ungrounded three-prong outlets in laundry room",
+      "category": "electrical",
+      "descriptionContains": "ungrounded"
+    },
+    {
+      "_comment": "8.7.2 — Loose/detached ducting at air handler",
+      "category": "hvac",
+      "descriptionContains": "duct"
+    },
+    {
+      "_comment": "6.8.2 — Missing water heater catch pan",
+      "category": "plumbing",
+      "descriptionContains": "catch pan"
+    }
+  ],
+  "mustNotInclude": [],
+  "propertyAddressContains": "2121 E Grand Ave",
+  "allowedTimeoutMs": 240000,
+  "_updateInstructions": "After a successful parse, review mustInclude entries and adjust minimumFindings if needed. This is a narrative-style report — findings count will be lower than photo-heavy reports."
+}

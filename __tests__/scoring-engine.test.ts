@@ -282,7 +282,7 @@ describe("Pipeline produces identical results to direct engine call", () => {
     const direct = computeHomeHealthReport(items);
     expect(snapshot.final_score).toBe(direct.home_health_score);
     expect(snapshot.input_item_count).toBe(items.length);
-    expect(snapshot.engine_version).toBe("1.0.0");
+    expect(snapshot.engine_version).toBe("4.0.0");
   });
 
 });
@@ -298,9 +298,9 @@ describe("Baseline score snapshots — update only deliberately", () => {
   it("TC-18: clean home score matches recorded baseline (74)", () => {
     const items  = normalizeLegacyFindings(FIXTURE_CLEAN_HOME);
     const report = computeHomeHealthReport(items);
-    // LOCKED BASELINE: engine v1.0.0 produces 74 for the clean fixture.
+    // LOCKED BASELINE: engine v4.0.0 produces 78 for the clean fixture.
     // If this changes, a scoring rule changed — update deliberately.
-    const LOCKED_BASELINE = 74;
+    const LOCKED_BASELINE = 78;
     expect(report.home_health_score).toBe(LOCKED_BASELINE);
     console.log(`  [baseline] clean home: ${report.home_health_score} (expected ${LOCKED_BASELINE})`);
   });

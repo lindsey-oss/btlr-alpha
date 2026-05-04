@@ -1,6 +1,7 @@
 @import "tailwindcss";
 
 :root {
+  /* ── Legacy tokens (keep — used throughout existing components) ── */
   --bg:        #f0f4f8;
   --surface:   #ffffff;
   --navy:      #0f1f3d;
@@ -14,6 +15,34 @@
   --green:     #16a34a;
   --amber:     #d97706;
   --red:       #dc2626;
+
+  /* ── BTLR design system tokens (new) ── */
+  --btlr-navy:        #1A2C44;
+  --btlr-navy2:       #243A56;
+  --btlr-navy3:       #2E4866;
+  --btlr-cream:       #F5EFE3;
+  --btlr-cream2:      #FBF6EB;
+  --btlr-paper:       #FFFFFF;
+  --btlr-ink:         #0E1B2C;
+  --btlr-ink2:        #3D4B5E;
+  --btlr-ink3:        #7E8A9A;
+  --btlr-line:        rgba(14,27,44,0.08);
+  --btlr-line2:       rgba(14,27,44,0.04);
+  --btlr-orange:      #E89441;
+  --btlr-orange-soft: #FBEAD2;
+  --btlr-green:       #5A9A6E;
+  --btlr-green-soft:  #DCE9D6;
+  --btlr-blue:        #2E6FB5;
+  --btlr-blue-soft:   #DBE8F4;
+  --btlr-red:         #C25C4F;
+  --btlr-red-soft:    #F5DAD5;
+  --btlr-yellow:      #D4A845;
+  --btlr-yellow-soft: #F4E8C8;
+
+  /* ── Typography ── */
+  --font-display: "Bricolage Grotesque", "Outfit", sans-serif;
+  --font-ui:      "Outfit", "DM Sans", system-ui, sans-serif;
+  --font-meta:    "Outfit", sans-serif;
 }
 
 html {

@@ -205,6 +205,7 @@ async function main() {
   });
 
   console.log(`\nBootstrapping ${toProcess.length} fixture(s)…`);
+  console.log(`Waiting 65s between fixtures to stay under OpenAI rate limits.\n`);
 
   for (const pdf of toProcess) {
     const base = pdf.replace(/\.pdf$/, "");
@@ -248,6 +249,13 @@ async function main() {
 
     } catch (err) {
       console.error(`[${base}] FAILED:`, err.message);
+    }
+
+    // Rate limit guard — wait 90s between fixtures so we don't hit 30k TPM cap
+    // Large reports (100+ findings) burn the full budget on pass 1 alone
+    if (toProcess.indexOf(pdf) < toProcess.length - 1) {
+      console.log(`[rate limit] Waiting 90s before next fixture…`);
+      await new Promise(r => setTimeout(r, 90_000));
     }
   }
 

@@ -27,18 +27,18 @@ const supabase = createClient(
 );
 
 const C = {
-  bg: "#f0f4f8", surface: "#ffffff", navy: "#0f1f3d", navyMid: "#1e3a8a",
-  accent: "#2563eb", text: "#0f172a", text2: "#475569", text3: "#94a3b8",
-  border: "#e2e8f0", green: "#16a34a", greenBg: "#f0fdf4",
-  amber: "#d97706", amberBg: "#fffbeb", red: "#dc2626", redBg: "#fef2f2",
+  bg: "#F5EFE3", surface: "#ffffff", navy: "#1A2C44", navyMid: "#243A56",
+  accent: "#E89441", text: "#0E1B2C", text2: "#3D4B5E", text3: "#7E8A9A",
+  border: "rgba(26,44,68,0.1)", green: "#5A9A6E", greenBg: "#DCE9D6",
+  amber: "#D4A845", amberBg: "#F4E8C8", red: "#C25C4F", redBg: "#F5DAD5",
 };
 
 const STATUS: Record<string, { label: string; color: string; bg: string; icon: React.ReactNode }> = {
-  pending:     { label: "Awaiting Response", color: C.amber,  bg: C.amberBg, icon: <Clock size={13}/> },
-  accepted:    { label: "Accepted",           color: C.green,  bg: C.greenBg, icon: <CheckCircle2 size={13}/> },
-  in_progress: { label: "In Progress",        color: C.accent, bg: "#eff6ff",  icon: <Wrench size={13}/> },
-  completed:   { label: "Completed",          color: C.green,  bg: C.greenBg, icon: <CheckCircle2 size={13}/> },
-  declined:    { label: "Declined",           color: C.red,    bg: C.redBg,   icon: <XCircle size={13}/> },
+  pending:     { label: "Awaiting Response", color: C.amber,  bg: C.amberBg,                    icon: <Clock size={13}/> },
+  accepted:    { label: "Accepted",           color: C.green,  bg: C.greenBg,                    icon: <CheckCircle2 size={13}/> },
+  in_progress: { label: "In Progress",        color: C.accent, bg: "rgba(232,148,65,0.10)",      icon: <Wrench size={13}/> },
+  completed:   { label: "Completed",          color: C.green,  bg: C.greenBg,                    icon: <CheckCircle2 size={13}/> },
+  declined:    { label: "Declined",           color: C.red,    bg: C.redBg,                      icon: <XCircle size={13}/> },
 };
 
 interface Job {
@@ -135,14 +135,11 @@ export default function MyJobsView() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {/* Header */}
+      {/* Toolbar */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, color: C.text, margin: 0 }}>My Jobs</h2>
-          <p style={{ fontSize: 14, color: C.text3, margin: "4px 0 0" }}>
-            {jobs.length} job{jobs.length !== 1 ? "s" : ""} submitted
-          </p>
-        </div>
+        <p style={{ fontSize: 13, color: C.text3, margin: 0 }}>
+          {jobs.length} job{jobs.length !== 1 ? "s" : ""} submitted
+        </p>
         <button onClick={handleRefresh} disabled={refreshing} style={{
           display: "flex", alignItems: "center", gap: 6, padding: "7px 14px",
           borderRadius: 8, border: `1px solid ${C.border}`, background: C.surface,
@@ -180,7 +177,7 @@ export default function MyJobsView() {
                 justifyContent: "space-between", borderBottom: `1px solid ${C.border}` }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                   <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0,
-                    background: "linear-gradient(135deg, #0f1f3d, #1e3a8a)",
+                    background: `linear-gradient(135deg, ${C.navy}, ${C.navyMid})`,
                     display: "flex", alignItems: "center", justifyContent: "center" }}>
                     {getTradeIcon(job.trade, 18, "white")}
                   </div>

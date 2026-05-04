@@ -1,0 +1,55 @@
+{
+  "_comment": "A Better Home Inspection by Forsters Inc — 100 pages, large multi-system report. Created 2026-05-03.",
+  "description": "A Better Home Inspection by Forsters Inc — 14104 Horse Creek Rd, Valley Center CA. Inspector: Danny Forster (InterNACHI). 100-page report covering all major systems.",
+  "source": "A Better Home Inspection by Forsters, Inc.",
+  "fileSizeApproxMB": 9.4,
+  "minimumFindings": 55,
+  "requiredCategories": [
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac",
+    "interior"
+  ],
+  "mustInclude": [
+    {
+      "_comment": "4.2.5 — Multi-taps to neutral wires in main panel",
+      "category": "electrical",
+      "descriptionContains": "neutral"
+    },
+    {
+      "_comment": "4.4.2 — White wires connected to breakers",
+      "category": "electrical",
+      "descriptionContains": "white wire"
+    },
+    {
+      "_comment": "4.5.2 — Hose bib leak",
+      "category": "plumbing",
+      "descriptionContains": "hose bib"
+    },
+    {
+      "_comment": "4.7.2 — Water heater corrosion at valves/connections",
+      "category": "plumbing",
+      "descriptionContains": "corrosion"
+    },
+    {
+      "_comment": "5.1.1 — No formal/modern heating system",
+      "category": "hvac",
+      "descriptionContains": "heating"
+    },
+    {
+      "_comment": "6.1.3 — Active sink leak in kitchen",
+      "category": "plumbing",
+      "descriptionContains": "active leak"
+    },
+    {
+      "_comment": "7.8.2 — Carbon monoxide detectors missing",
+      "category": "safety",
+      "descriptionContains": "carbon monoxide"
+    }
+  ],
+  "mustNotInclude": [],
+  "propertyAddressContains": "14104 Horse Creek",
+  "allowedTimeoutMs": 300000,
+  "_updateInstructions": "After a successful parse, review mustInclude entries and adjust minimumFindings if needed. 100-page report — expect 60–100+ findings."
+}
