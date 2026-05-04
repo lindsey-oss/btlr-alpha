@@ -1,0 +1,17 @@
+{
+  "_comment": "Baseline fixture — tighten minimumFindings and add mustInclude entries after first successful parse.",
+  "description": "Summit Hill inspection report — 2207 Summit Hill. 12MB, likely photo-heavy multi-page report.",
+  "source": "Unknown — identify after first parse",
+  "fileSizeApproxMB": 12.0,
+  "minimumFindings": 20,
+  "requiredCategories": [
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac"
+  ],
+  "mustInclude": [],
+  "mustNotInclude": [],
+  "allowedTimeoutMs": 300000,
+  "_updateInstructions": "After first successful parse: update source, set minimumFindings to 80% of actual count, add mustInclude entries, set propertyAddressContains."
+}

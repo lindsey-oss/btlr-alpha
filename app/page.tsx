@@ -367,7 +367,9 @@ export default function LandingPage() {
           .steps-grid::before{display:none !important}
           .stats-flex{flex-wrap:wrap !important;gap:28px 40px !important;padding:56px 28px !important;justify-content:center !important}
           /* Footer */
-          .footer-flex{flex-direction:column !important;gap:20px !important;text-align:center !important;padding:36px 24px !important}
+          .footer-cols{display:grid;grid-template-columns:1.6fr 1fr 1fr 1.4fr;gap:48px}
+          @media(max-width:900px){.footer-cols{grid-template-columns:1fr 1fr;gap:36px}}
+          @media(max-width:560px){.footer-cols{grid-template-columns:1fr;gap:28px}}
           /* Dollhouse */
           #sv-labels{display:none !important}
           #sv-labels-mobile{display:flex !important}
@@ -812,22 +814,118 @@ export default function LandingPage() {
       </section>
 
       {/* ── FOOTER ── */}
-      <footer className="footer-flex" style={{ borderTop: `1px solid ${C.border}`, padding: "44px 64px", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-        <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 18, fontWeight: 800, letterSpacing: "0.14em", color: C.gold }}>BTLR</div>
-        <ul style={{ display: "flex", gap: 36, listStyle: "none", flexWrap: "wrap" }}>
-          {[
-            { label: "Features",     href: "#features" },
-            { label: "Health Score", href: "#health-score" },
-            { label: "For Contractors", href: "/apply" },
-            { label: "Privacy",      href: "/privacy" },
-            { label: "Terms",        href: "/terms" },
-          ].map(l => (
-            <li key={l.label}>
-              <a href={l.href} className="nav-link-hover" style={{ fontSize: 13, color: C.muted, textDecoration: "none", transition: "color .2s" }}>{l.label}</a>
-            </li>
-          ))}
-        </ul>
-        <div style={{ fontSize: 12, color: C.dim }}>© 2026 BTLR. All rights reserved.</div>
+      <footer style={{ background: C.navy, padding: "64px 64px 40px" }}>
+        <div className="footer-cols">
+
+          {/* ── Col 1: Brand ── */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div style={{ fontFamily: "'Syne', sans-serif", fontSize: 26, fontWeight: 800, letterSpacing: "0.12em", color: "#FFFFFF" }}>BTLR</div>
+            <p style={{ fontFamily: OUTFIT, fontSize: 13, color: "rgba(255,255,255,0.5)", lineHeight: 1.7, margin: 0, maxWidth: 240 }}>
+              The home management platform built around your actual inspection report.
+            </p>
+            <div style={{ marginTop: 8, fontSize: 12, color: "rgba(255,255,255,0.3)", fontFamily: OUTFIT }}>
+              © 2026 BTLR. All rights reserved.
+            </div>
+          </div>
+
+          {/* ── Col 2: For Professionals ── */}
+          <div>
+            <p style={{ fontFamily: OUTFIT, fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", margin: "0 0 20px" }}>
+              For Professionals
+            </p>
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 13 }}>
+              {[
+                { label: "Real Estate Agents",  href: "/agents" },
+                { label: "Mortgage Lenders",    href: "/lenders" },
+                { label: "Escrow & Title",      href: "/escrow" },
+                { label: "Insurance Brokers",   href: "/insurance" },
+              ].map(l => (
+                <li key={l.label}>
+                  <a href={l.href} style={{ fontFamily: OUTFIT, fontSize: 14, color: "rgba(255,255,255,0.65)", textDecoration: "none", transition: "color .2s" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#FFFFFF")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.65)")}>
+                    {l.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* ── Col 3: Company ── */}
+          <div>
+            <p style={{ fontFamily: OUTFIT, fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", margin: "0 0 20px" }}>
+              Company
+            </p>
+            <ul style={{ listStyle: "none", margin: 0, padding: 0, display: "flex", flexDirection: "column", gap: 13 }}>
+              {[
+                { label: "About",          href: "/about" },
+                { label: "Blog",           href: "/blog" },
+                { label: "Contact",        href: "/contact" },
+                { label: "Privacy Policy", href: "/privacy" },
+                { label: "Terms of Service", href: "/terms" },
+              ].map(l => (
+                <li key={l.label}>
+                  <a href={l.href} style={{ fontFamily: OUTFIT, fontSize: 14, color: "rgba(255,255,255,0.65)", textDecoration: "none", transition: "color .2s" }}
+                    onMouseEnter={e => (e.currentTarget.style.color = "#FFFFFF")}
+                    onMouseLeave={e => (e.currentTarget.style.color = "rgba(255,255,255,0.65)")}>
+                    {l.label}
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          {/* ── Col 4: Stay Connected ── */}
+          <div>
+            <p style={{ fontFamily: OUTFIT, fontSize: 11, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: "rgba(255,255,255,0.45)", margin: "0 0 20px" }}>
+              Stay Connected
+            </p>
+            <p style={{ fontFamily: OUTFIT, fontSize: 13, color: "rgba(255,255,255,0.5)", margin: "0 0 14px", lineHeight: 1.6 }}>
+              Get tips, updates, and home care guides.
+            </p>
+            <div style={{ display: "flex", gap: 0, marginBottom: 20 }}>
+              <input
+                type="email"
+                placeholder="your@email.com"
+                style={{ flex: 1, padding: "10px 14px", borderRadius: "8px 0 0 8px", border: "none", fontSize: 13, fontFamily: OUTFIT, background: "rgba(255,255,255,0.1)", color: "white", outline: "none" }}
+              />
+              <button style={{ padding: "10px 18px", borderRadius: "0 8px 8px 0", border: "none", background: C.gold, color: "white", fontSize: 13, fontWeight: 700, fontFamily: OUTFIT, cursor: "pointer", whiteSpace: "nowrap" }}>
+                Submit
+              </button>
+            </div>
+            {/* Social icons */}
+            <div style={{ display: "flex", gap: 12 }}>
+              {/* X / Twitter */}
+              <a href="https://x.com/btlrai" target="_blank" rel="noopener noreferrer"
+                style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", transition: "background .2s" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="rgba(255,255,255,0.7)"><path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-4.714-6.231-5.401 6.231H2.746l7.73-8.835L1.254 2.25H8.08l4.253 5.622 5.911-5.622zm-1.161 17.52h1.833L7.084 4.126H5.117z"/></svg>
+              </a>
+              {/* Instagram */}
+              <a href="https://instagram.com/btlrai" target="_blank" rel="noopener noreferrer"
+                style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", transition: "background .2s" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.7)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="2" width="20" height="20" rx="5" ry="5"/><path d="M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z"/><line x1="17.5" y1="6.5" x2="17.51" y2="6.5"/></svg>
+              </a>
+              {/* LinkedIn */}
+              <a href="https://linkedin.com/company/btlrai" target="_blank" rel="noopener noreferrer"
+                style={{ width: 36, height: 36, borderRadius: 8, background: "rgba(255,255,255,0.1)", display: "flex", alignItems: "center", justifyContent: "center", transition: "background .2s" }}
+                onMouseEnter={e => (e.currentTarget.style.background = "rgba(255,255,255,0.2)")}
+                onMouseLeave={e => (e.currentTarget.style.background = "rgba(255,255,255,0.1)")}>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="rgba(255,255,255,0.7)"><path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z"/><rect x="2" y="9" width="4" height="12"/><circle cx="4" cy="4" r="2"/></svg>
+              </a>
+            </div>
+          </div>
+
+        </div>
+
+        {/* ── Divider + bottom bar ── */}
+        <div style={{ borderTop: "1px solid rgba(255,255,255,0.1)", marginTop: 48, paddingTop: 24, display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
+          <span style={{ fontFamily: OUTFIT, fontSize: 12, color: "rgba(255,255,255,0.3)" }}>Built for homeowners. Trusted by professionals.</span>
+          <span style={{ fontFamily: OUTFIT, fontSize: 12, color: "rgba(255,255,255,0.2)" }}>Patent Pending</span>
+        </div>
       </footer>
     </>
   );

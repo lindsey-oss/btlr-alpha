@@ -1,0 +1,17 @@
+{
+  "_comment": "Baseline fixture — tighten minimumFindings and add mustInclude entries after first successful parse.",
+  "description": "Homefront Inspection report — 11 Sarracenia. 7.3MB photo-heavy report.",
+  "source": "Homefront Inspections",
+  "fileSizeApproxMB": 7.3,
+  "minimumFindings": 15,
+  "requiredCategories": [
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac"
+  ],
+  "mustInclude": [],
+  "mustNotInclude": [],
+  "allowedTimeoutMs": 240000,
+  "_updateInstructions": "After first successful parse: update minimumFindings to 80% of actual count, add 3-5 mustInclude entries for the most specific findings, set propertyAddressContains if address is extractable."
+}

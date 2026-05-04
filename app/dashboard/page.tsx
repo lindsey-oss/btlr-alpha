@@ -2404,6 +2404,7 @@ export default function Dashboard() {
     company_name?: string;
   } | null>(null);
   const [homeHealthReport, setHomeHealthReport] = useState<HomeHealthReport | null>(null);
+  const [cachedScore,      setCachedScore]      = useState<number | null>(null);
   const [regionalRanges,  setRegionalRanges]    = useState<Record<string, Record<string, { estimated_cost_min: number; estimated_cost_max: number }>> | null>(null);
   const [regionalLocation, setRegionalLocation] = useState<{ city?: string; state?: string } | null>(null);
 
@@ -3219,7 +3220,7 @@ export default function Dashboard() {
     setInspectionResult(null); setInspectDone(false);
     setInsurance(null); setWarranty(null); setMortgage(null);
     setFindingStatuses({}); setRepairDocs([]); setPhotoFindings([]);
-    setHomeHealthReport(null); setHomeValue(null); setPropertyTax(null);
+    setHomeHealthReport(null); setCachedScore(null); setHomeValue(null); setPropertyTax(null);
     setTimeline([]); setInsuranceDocCount(0);
     // Timeline for the new property will be restored by switchProperty → loadTimelineFromStorage
     setWarrantyDocUrl(null); setInsuranceDocUrls([]);
@@ -3593,6 +3594,14 @@ export default function Dashboard() {
       setActivePropertyId(active);
       activePropertyIdRef.current = active;
       loadTimelineFromStorage(active);
+      // Hydrate last known score from cache so the score circle appears instantly
+      // on hard refresh while loadProperty() runs async in the background.
+      try {
+        const wasInspected = localStorage.getItem(`btlr_inspected_v1_${active}`);
+        if (wasInspected) setInspectDone(true);
+        const cached = parseInt(localStorage.getItem(`btlr_score_v1_${active}`) ?? "");
+        if (!isNaN(cached) && cached > 0) setCachedScore(cached);
+      } catch {}
       return active;
     } catch { return null; }
   }
@@ -3914,6 +3923,12 @@ export default function Dashboard() {
           });
           setHomeHealthReport(report);
           console.log(`[loadProperty] Score computed: ${report.home_health_score} (${seriousFindings.length} scored / ${scoringFindings.length} total findings from ${loadedFindings.length > 0 ? "findings table" : "JSONB fallback"})`);
+          // Cache score + inspection flag in localStorage so both survive hard refresh.
+          // On next load, the score circle appears immediately while recompute runs.
+          try {
+            localStorage.setItem(`btlr_score_v1_${propId}`, String(report.home_health_score));
+            localStorage.setItem(`btlr_inspected_v1_${propId}`, "1");
+          } catch {}
           // Persist score metadata so confidence bar and renewal funnel survive refresh
           if (propId) {
             supabase.from("properties").update({
@@ -4891,7 +4906,9 @@ export default function Dashboard() {
     setInspectDone(false);
     setInspectionResult(null);
     setHomeHealthReport(null);
+    setCachedScore(null);
     setLastInspectionFilename(null);
+    try { localStorage.removeItem(`btlr_score_v1_${propId}`); localStorage.removeItem(`btlr_inspected_v1_${propId}`); } catch {}
     showToast("Inspection cleared — upload a new report to re-analyze", "success");
   }
 
@@ -5628,7 +5645,8 @@ export default function Dashboard() {
   // model score only when no inspection has been uploaded yet (homeHealthReport = null).
   // extCondition.modifier adds the Tier-2 supplemental modifier (deck, garage, fireplace)
   // which the 6-system patent engine intentionally excludes.
-  const health       = Math.max(0, Math.min(100, (homeHealthReport?.home_health_score ?? breakdown.score) + extCondition.modifier));
+  // Score priority: live report > localStorage cache (shown during async load) > legacy deduction model
+  const health       = Math.max(0, Math.min(100, (homeHealthReport?.home_health_score ?? cachedScore ?? breakdown.score) + extCondition.modifier));
   const healthColor  = health >= 90 ? "#22c55e" : health >= 80 ? "#84cc16" : health >= 65 ? C.amber : health >= 50 ? "#f97316" : C.red;
   const healthSt     = healthStatusInfo(health);
   const criticalCount = breakdown.deductions.filter(d => d.severity === "critical").length;
@@ -7265,6 +7283,10 @@ export default function Dashboard() {
               });
             });
             docs.forEach((d, i) => {
+              // Skip the doc already represented by inspectionDoc — avoids showing
+              // the most recent inspection twice (once from inspectionDoc push above,
+              // once from this loop). Older inspection uploads still appear.
+              if (inspectionDoc && d.id === inspectionDoc.id) return;
               const typeMap: Record<string, string> = {
                 permit: "permit", manual: "manual", deed: "deed",
                 inspection: "inspection", insurance: "insurance", warranty: "warranty", repair: "receipt",
@@ -7276,7 +7298,7 @@ export default function Dashboard() {
                 uploaded: (d as any).created_at
                   ? new Date((d as any).created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
                   : "Uploaded",
-                source: (d as any).source ?? "Uploaded", expires: null, kind: "PDF", raw: d, rawType: "other",
+                source: (d as any).source ?? "Uploaded", expires: null, kind: "PDF", raw: d, rawType: "db-doc",
               });
             });
 
@@ -7631,9 +7653,22 @@ export default function Dashboard() {
                               </div>
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
                                 <span style={{ fontSize: 10, color: C.text3 }}>{d.uploaded}</span>
-                                {isExpiring
-                                  ? <span style={{ padding: "2px 6px", borderRadius: 3, background: C.amberBg, color: C.amber, fontSize: 9, fontWeight: 700, letterSpacing: "0.06em" }}>EXPIRES {d.expires}</span>
-                                  : null}
+                                <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  {isExpiring
+                                    ? <span style={{ padding: "2px 6px", borderRadius: 3, background: C.amberBg, color: C.amber, fontSize: 9, fontWeight: 700, letterSpacing: "0.06em" }}>EXPIRES {d.expires}</span>
+                                    : null}
+                                  {(d.rawType === "db-doc" || d.rawType === "inspection") && (
+                                    <button
+                                      onClick={e => { e.stopPropagation(); d.rawType === "inspection" ? deleteInspectionDoc() : deleteDoc(d.raw); }}
+                                      title="Delete document"
+                                      style={{ appearance: "none" as any, border: "none", background: "transparent", cursor: "pointer", padding: "2px 4px", borderRadius: 4, color: C.text3, fontSize: 13, lineHeight: 1, display: "flex", alignItems: "center" }}
+                                      onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+                                      onMouseLeave={e => (e.currentTarget.style.color = C.text3)}
+                                    >
+                                      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                    </button>
+                                  )}
+                                </div>
                               </div>
                             </article>
                           );
@@ -7664,10 +7699,21 @@ export default function Dashboard() {
                                 <div style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>{cat.label} · {d.source}</div>
                               </div>
                               <span style={{ fontSize: 11, color: C.text3, whiteSpace: "nowrap" }}>{d.uploaded}</span>
-                              <div style={{ flex: "0 0 100px", display: "flex", justifyContent: "flex-end" }}>
+                              <div style={{ flex: "0 0 116px", display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 6 }}>
                                 {isExpiring
                                   ? <span style={{ padding: "2px 8px", borderRadius: 4, background: C.amberBg, color: C.amber, fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", whiteSpace: "nowrap" }}>EXPIRES {d.expires}</span>
                                   : null}
+                                {(d.rawType === "db-doc" || d.rawType === "inspection") && (
+                                  <button
+                                    onClick={e => { e.stopPropagation(); d.rawType === "inspection" ? deleteInspectionDoc() : deleteDoc(d.raw); }}
+                                    title="Delete document"
+                                    style={{ appearance: "none" as any, border: "none", background: "transparent", cursor: "pointer", padding: "4px 5px", borderRadius: 5, color: C.text3, display: "flex", alignItems: "center" }}
+                                    onMouseEnter={e => (e.currentTarget.style.color = C.red)}
+                                    onMouseLeave={e => (e.currentTarget.style.color = C.text3)}
+                                  >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                                  </button>
+                                )}
                               </div>
                             </li>
                           );

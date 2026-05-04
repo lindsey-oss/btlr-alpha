@@ -1,0 +1,16 @@
+{
+  "_comment": "Baseline fixture — tighten minimumFindings and add mustInclude entries after first successful parse.",
+  "description": "Generic home inspection report. 6.2MB — format and source TBD after first parse.",
+  "source": "Unknown — identify after first parse",
+  "fileSizeApproxMB": 6.2,
+  "minimumFindings": 15,
+  "requiredCategories": [
+    "roof",
+    "electrical",
+    "plumbing"
+  ],
+  "mustInclude": [],
+  "mustNotInclude": [],
+  "allowedTimeoutMs": 240000,
+  "_updateInstructions": "After first successful parse: update source, description, minimumFindings to 80% of actual count, add mustInclude entries."
+}

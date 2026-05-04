@@ -1,0 +1,17 @@
+{
+  "_comment": "Baseline fixture — tighten minimumFindings and add mustInclude entries after first successful parse.",
+  "description": "Homefront Inspection report — 32061 Sedge Way. 6.0MB photo-heavy report.",
+  "source": "Homefront Inspections",
+  "fileSizeApproxMB": 6.0,
+  "minimumFindings": 15,
+  "requiredCategories": [
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac"
+  ],
+  "mustInclude": [],
+  "mustNotInclude": [],
+  "allowedTimeoutMs": 240000,
+  "_updateInstructions": "After first successful parse: update minimumFindings to 80% of actual count, add 3-5 mustInclude entries, set propertyAddressContains to 'Sedge'."
+}
