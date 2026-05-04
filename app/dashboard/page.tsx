@@ -256,7 +256,7 @@ function toGroupKey(category: string | null | undefined): string {
 
 // Display label + icon for each group key
 const GROUP_META: Record<string, { label: string; iconFn: (color: string) => React.ReactNode }> = {
-  roof:       { label: "Roof",            iconFn: c => <HomeIcon    size={16} color={c}/> },
+  roof:       { label: "Roof & Exterior",  iconFn: c => <HomeIcon    size={16} color={c}/> },
   exterior:   { label: "Exterior",        iconFn: c => <Shield      size={16} color={c}/> },
   garage:     { label: "Garage",          iconFn: c => <HomeIcon    size={16} color={c}/> },
   plumbing:   { label: "Plumbing",        iconFn: c => <Droplets    size={16} color={c}/> },
@@ -304,7 +304,7 @@ function formatLabel(raw: string | undefined | null): string {
     safety_security:           "Safety & Security",
     hvac:                      "HVAC",
     structure_foundation:      "Foundation",
-    roof_drainage_exterior:    "Roof & Drainage",
+    roof_drainage_exterior:    "Roof & Exterior",
     interior_windows_doors:    "Interior & Windows",
     appliances_water_heater:   "Appliances",
     site_grading_drainage:     "Site & Drainage",
@@ -1495,6 +1495,127 @@ function HealthScoreModal({
             )}
           </>
         )}
+
+        {/* ── Boost Confidence Section ─────────────────────────────────── */}
+        {homeHealthReport && (() => {
+          // Systems that need a licensed pro — too risky or complex for self-assessment
+          const PRO_RECOMMENDED = new Set(["structure_foundation", "electrical", "roof_drainage_exterior"]);
+
+          const CAT_LABELS_CONF: Record<string, string> = {
+            structure_foundation:    "Foundation & Structure",
+            roof_drainage_exterior:  "Roof & Exterior",
+            electrical:              "Electrical",
+            plumbing:                "Plumbing",
+            hvac:                    "HVAC",
+            appliances_water_heater: "Appliances",
+            safety_environmental:    "Safety",
+          };
+
+          const CAT_ICONS_CONF: Record<string, React.ReactNode> = {
+            structure_foundation:    <Activity  size={14} color={C.text3}/>,
+            roof_drainage_exterior:  <HomeIcon  size={14} color={C.text3}/>,
+            electrical:              <Zap       size={14} color={C.text3}/>,
+            plumbing:                <Droplets  size={14} color={C.text3}/>,
+            hvac:                    <Wind      size={14} color={C.text3}/>,
+            appliances_water_heater: <Wrench    size={14} color={C.text3}/>,
+            safety_environmental:    <Shield    size={14} color={C.text3}/>,
+          };
+
+          // Gaps: not_assessed categories + assessed but inspector_confidence average < 0.70
+          const notAssessed = homeHealthReport.category_scores.filter(cs => cs.not_assessed);
+          const lowConf     = homeHealthReport.category_scores.filter(cs =>
+            !cs.not_assessed && cs.confidence < 0.70 && cs.score < 80
+          );
+
+          if (notAssessed.length === 0 && lowConf.length === 0) return null;
+
+          return (
+            <div style={{ borderBottom: `1px solid ${C.border}`, padding: "20px 28px" }}>
+              {/* Header */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+                <div style={{ width: 28, height: 28, borderRadius: 8, background: "#fffbeb", border: "1px solid #fde68a", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <span style={{ fontSize: 14 }}>📈</span>
+                </div>
+                <div>
+                  <p style={{ fontSize: 13, fontWeight: 800, color: C.text, margin: 0, letterSpacing: "-0.1px" }}>Boost Your Confidence Score</p>
+                  <p style={{ fontSize: 11, color: C.text3, margin: "1px 0 0" }}>
+                    {notAssessed.length > 0
+                      ? `${notAssessed.length} system${notAssessed.length !== 1 ? "s" : ""} have no data — fill the gaps to raise accuracy`
+                      : `${lowConf.length} system${lowConf.length !== 1 ? "s" : ""} have low data confidence — add more evidence`
+                    }
+                  </p>
+                </div>
+              </div>
+
+              {/* Gap rows */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 14 }}>
+                {notAssessed.map(cs => {
+                  const stepKey  = CATEGORY_TO_STEP_KEY[cs.category];
+                  const isPro    = PRO_RECOMMENDED.has(cs.category);
+                  const label    = CAT_LABELS_CONF[cs.category] ?? formatLabel(cs.category);
+                  const icon     = CAT_ICONS_CONF[cs.category];
+                  return (
+                    <div key={cs.category} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 12, background: C.surface2, border: `1px solid ${C.border}` }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: "white", border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {icon}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>{label}</p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: "1px 0 0" }}>Not assessed — no score yet</p>
+                      </div>
+                      <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                        {stepKey && (
+                          <button
+                            onClick={() => { onClose(); onStartSystemAssess(stepKey); }}
+                            style={{ fontSize: 11, fontWeight: 700, padding: "6px 11px", borderRadius: 8, background: C.accentBg, color: C.accent, border: `1px solid ${C.accent}30`, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                            <Camera size={11}/> Self-Inspect
+                          </button>
+                        )}
+                        {isPro && (
+                          <button
+                            onClick={() => { onClose(); onFindVendors("Home Inspector", label, `Professional inspection needed — ${label} not assessed`); }}
+                            style={{ fontSize: 11, fontWeight: 700, padding: "6px 11px", borderRadius: 8, background: C.navy, color: "white", border: "none", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap" }}>
+                            <Users size={11}/> Request Pro
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+
+                {lowConf.map(cs => {
+                  const stepKey  = CATEGORY_TO_STEP_KEY[cs.category];
+                  const label    = CAT_LABELS_CONF[cs.category] ?? formatLabel(cs.category);
+                  const icon     = CAT_ICONS_CONF[cs.category];
+                  if (!stepKey) return null;
+                  return (
+                    <div key={cs.category} style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 12, background: C.surface2, border: `1px solid ${C.border}` }}>
+                      <div style={{ width: 32, height: 32, borderRadius: 8, background: "white", border: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                        {icon}
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>{label}</p>
+                        <p style={{ fontSize: 11, color: C.text3, margin: "1px 0 0" }}>Low data confidence — add photos to improve accuracy</p>
+                      </div>
+                      <button
+                        onClick={() => { onClose(); onStartSystemAssess(stepKey); }}
+                        style={{ fontSize: 11, fontWeight: 700, padding: "6px 11px", borderRadius: 8, background: C.accentBg, color: C.accent, border: `1px solid ${C.accent}30`, cursor: "pointer", display: "flex", alignItems: "center", gap: 4, whiteSpace: "nowrap", flexShrink: 0 }}>
+                        <Camera size={11}/> Add Photos
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Confidence explanation */}
+              <div style={{ marginTop: 14, padding: "10px 12px", borderRadius: 8, background: "#f0f9ff", border: "1px solid #bae6fd" }}>
+                <p style={{ fontSize: 11, color: "#0369a1", margin: 0, lineHeight: 1.5 }}>
+                  <strong>Self-inspect</strong> adds photo evidence (+10–15 pts). <strong>Professional inspection</strong> gives the highest confidence (+20–25 pts) for structural and electrical systems.
+                </p>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* ── Score Breakdown ──────────────────────────────────────────── */}
         <div style={{ borderBottom: `1px solid ${C.border}` }}>
@@ -8036,7 +8157,7 @@ export default function Dashboard() {
                 {/* SYSTEM OVERVIEW */}
                 {homeHealthReport?.category_scores && homeHealthReport.category_scores.some(cs => !cs.not_assessed) && (() => {
                   const CAT_LABELS: Record<string,string> = {
-                    structure_foundation: "Foundation", roof_drainage_exterior: "Roof",
+                    structure_foundation: "Foundation", roof_drainage_exterior: "Roof & Exterior",
                     electrical: "Electrical", plumbing: "Plumbing", hvac: "HVAC",
                     appliances_water_heater: "Appliances", safety_environmental: "Safety",
                   };
