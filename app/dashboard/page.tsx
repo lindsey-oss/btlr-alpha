@@ -6325,12 +6325,19 @@ export default function Dashboard() {
                                     gap: 7,
                                     opacity: isResolved ? 0.72 : 1,
                                   }}>
-                                    {/* Category label (small, muted) */}
-                                    <span style={{ fontSize: 11, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em" }}>
-                                      {categoryLabel(f.category)}
-                                    </span>
+                                    {/* Category + severity header row */}
+                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                                      <span style={{ fontSize: 11, fontWeight: 600, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em" }}>
+                                        {categoryLabel(f.category)}
+                                      </span>
+                                      {!isResolved && (
+                                        <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 9px", borderRadius: 20, background: impact.color + "18", color: impact.color, letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
+                                          {f.severity === "critical" ? "High Priority" : f.severity === "warning" ? "Moderate" : "Info"}
+                                        </span>
+                                      )}
+                                    </div>
                                     {/* Issue title (bold, human-readable) */}
-                                    <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0, lineHeight: 1.4 }}>
+                                    <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: "2px 0 0", lineHeight: 1.4 }}>
                                       {f.title || f.issue_type || f.description?.slice(0, 90) || "Issue"}
                                     </p>
                                     {/* Description */}
@@ -6364,14 +6371,14 @@ export default function Dashboard() {
                                         const fmt = (n: number) => n >= 1000 ? `$${(n/1000).toFixed(0)}k` : `$${n.toLocaleString()}`;
                                         if (range) {
                                           return (
-                                            <span style={{ fontSize: 11, fontWeight: 600, color: C.text3, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                                            <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8, background: "#f5efe3", color: "#9a7c4e", display: "inline-flex", alignItems: "center", gap: 4 }}>
                                               📍 {fmt(range.estimated_cost_min)}–{fmt(range.estimated_cost_max)}
-                                              {regionalLocation?.city && <span style={{ color: C.text3, fontWeight: 400 }}> in {regionalLocation.city}</span>}
+                                              {regionalLocation?.city && <span style={{ fontWeight: 500 }}> · {regionalLocation.city}</span>}
                                             </span>
                                           );
                                         }
                                         return (
-                                          <span style={{ fontSize: 11, color: C.text3, fontWeight: 600 }}>
+                                          <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 10px", borderRadius: 8, background: "#f5efe3", color: "#9a7c4e" }}>
                                             Est. ${f.estimated_cost!.toLocaleString()}
                                           </span>
                                         );
@@ -6395,7 +6402,7 @@ export default function Dashboard() {
                                       )}
                                       {/* Action buttons — open repairs only */}
                                       {!isResolved && (
-                                        <div style={{ marginLeft: "auto", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                        <div style={{ width: "100%", display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginTop: 2 }}>
                                           <select value={status} onChange={e => toggleFindingStatus(f, globalIdx, e.target.value as FindingStatus)}
                                             style={{ fontSize: 11, fontWeight: 600, padding: "5px 10px", borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, color: C.text2, cursor: "pointer", outline: "none" }}>
                                             <option value="repair_needed">Repair Needed</option>
@@ -6403,16 +6410,16 @@ export default function Dashboard() {
                                             <option value="not_needed">Not Needed</option>
                                           </select>
                                           <button onClick={() => { setChatMessages([{ role: "user", content: f.description ?? f.category }]); askAI(f.description ?? f.category); setNav("Dashboard"); }}
-                                            style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: "#eff6ff", border: `1px solid ${C.accent}30`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-                                            <Shield size={10}/> Check Coverage
+                                            style={{ fontSize: 11, fontWeight: 600, color: C.text2, background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                                            <Shield size={10}/> Coverage
                                           </button>
                                           <button onClick={() => handleFindVendors(f.category, f.category, f.description)}
-                                            style={{ fontSize: 11, fontWeight: 600, color: "white", background: C.accent, border: "none", borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
+                                            style={{ fontSize: 11, fontWeight: 600, color: C.accent, background: C.accentBg, border: `1px solid ${C.accent}30`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
                                             <Users size={10}/> Find Vendors
                                           </button>
                                           <button onClick={() => openCompleteModal(f, globalIdx)}
-                                            style={{ fontSize: 11, fontWeight: 600, color: C.green, background: C.greenBg, border: `1px solid ${C.green}40`, borderRadius: 8, padding: "5px 12px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>
-                                            <CheckCircle2 size={10}/> Mark Complete
+                                            style={{ fontSize: 12, fontWeight: 700, color: "white", background: C.green, border: "none", borderRadius: 8, padding: "6px 14px", cursor: "pointer", display: "flex", alignItems: "center", gap: 4, marginLeft: "auto" }}>
+                                            <CheckCircle2 size={11}/> Mark Complete
                                           </button>
                                         </div>
                                       )}
@@ -6734,6 +6741,18 @@ export default function Dashboard() {
             const maintTitle = getMaintTitle(maintScore);
             const doneTotalCount = MAINT_TASKS.filter(t => taskStates[t.id] === "done").length;
 
+            // System → color tokens for task row badges
+            const SYS_BADGE: Record<string, { bg: string; color: string; border: string }> = {
+              HVAC:       { bg: C.accentBg, color: C.accent,  border: `${C.accent}30`   },
+              Safety:     { bg: C.amberBg,  color: C.amber,   border: `${C.amber}40`    },
+              Plumbing:   { bg: "#eff6ff",  color: "#2563eb", border: "#bfdbfe"          },
+              Electrical: { bg: "#fefce8",  color: "#d97706", border: "#fde68a"          },
+              Roof:       { bg: "#f5f3ff",  color: "#7c3aed", border: "#c4b5fd"          },
+              Appliances: { bg: C.greenBg,  color: C.green,   border: `${C.green}40`    },
+              Exterior:   { bg: "#f0fdfa",  color: "#0d9488", border: "#99f6e4"          },
+              Fireplace:  { bg: C.redBg,    color: C.red,     border: `${C.red}40`      },
+            };
+
             // New task row for the redesigned layout
             function NewTaskRow({ t }: { t: MaintTask }) {
               const state  = taskStates[t.id];
@@ -6741,6 +6760,7 @@ export default function Dashboard() {
               const isDone = state === "done";
               const pts    = PTS[t.weight] ?? 10;
               const dueDateStr = fmtDate(getNextDue(t));
+              const sysBadge = SYS_BADGE[t.system];
 
               const pillStyle = (bg: string, color: string, border: string) => ({
                 fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 8,
@@ -6757,10 +6777,17 @@ export default function Dashboard() {
 
                   {/* Text */}
                   <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 14, fontWeight: 700, color: isDone ? C.text3 : C.text, margin: "0 0 2px", textDecoration: isDone ? "line-through" : "none", letterSpacing: "-0.1px" }}>{t.task}</p>
-                    <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>
-                      {t.freqLabel}{sched?.vendor ? ` · ${sched.vendor}` : ` · ${t.system}`}
-                    </p>
+                    <p style={{ fontSize: 14, fontWeight: 700, color: isDone ? C.text3 : C.text, margin: "0 0 5px", textDecoration: isDone ? "line-through" : "none", letterSpacing: "-0.1px" }}>{t.task}</p>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                      {sysBadge && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: "1px 7px", borderRadius: 6, background: sysBadge.bg, color: sysBadge.color, border: `1px solid ${sysBadge.border}` }}>
+                          {t.system}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 11, color: C.text3 }}>
+                        {t.freqLabel}{sched?.vendor ? ` · ${sched.vendor}` : ""}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Right: date + pill + pts */}
@@ -6779,7 +6806,7 @@ export default function Dashboard() {
                     ) : (
                       <button onClick={() => openSchedule(t)} style={{ ...pillStyle(C.surface2, C.text3, C.border), cursor: "pointer" }}>Planned</button>
                     )}
-                    <span style={{ fontSize: 11, fontWeight: 700, color: themeAccent }}>+{pts} pts</span>
+                    {!isDone && <span style={{ fontSize: 10, fontWeight: 700, color: themeAccent }}>+{pts} pts</span>}
                   </div>
                 </div>
               );
@@ -6826,6 +6853,26 @@ export default function Dashboard() {
                     </div>
 
                   </div>
+
+                  {/* ── Seasonal callout ── */}
+                  {urgentCount > 0 && (
+                    <div style={{ marginTop: 16, padding: "12px 16px", borderRadius: 12, background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", display: "flex", alignItems: "center", gap: 12 }}>
+                      <span style={{ fontSize: 22, flexShrink: 0 }}>
+                        {currentSeason === "Spring" ? "🌸" : currentSeason === "Summer" ? "☀️" : currentSeason === "Fall" ? "🍂" : "❄️"}
+                      </span>
+                      <div style={{ flex: 1 }}>
+                        <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "white", lineHeight: 1.3 }}>
+                          {urgentCount} task{urgentCount !== 1 ? "s" : ""} need attention this {currentSeason}
+                        </p>
+                        <p style={{ margin: "2px 0 0", fontSize: 11, color: "rgba(255,255,255,0.5)" }}>
+                          Tap any status pill below to schedule or mark done
+                        </p>
+                      </div>
+                      <span style={{ fontSize: 11, fontWeight: 700, padding: "4px 10px", borderRadius: 8, background: urgentCount > 0 ? "rgba(239,68,68,0.25)" : "rgba(255,255,255,0.1)", color: urgentCount > 0 ? "#fca5a5" : "rgba(255,255,255,0.6)", border: `1px solid ${urgentCount > 0 ? "rgba(239,68,68,0.3)" : "rgba(255,255,255,0.15)"}`, whiteSpace: "nowrap" }}>
+                        {urgentCount} due
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* ── Two-column: Up This Month | Scheduled & Annual ── */}
@@ -6834,12 +6881,17 @@ export default function Dashboard() {
                   {/* LEFT: Up This Month */}
                   <div style={{ ...card() }}>
                     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 4 }}>
-                      <p style={{ fontSize: 16, fontWeight: 800, color: C.text, margin: 0, letterSpacing: "-0.2px" }}>Up This Month</p>
-                      {urgentCount > 0 && (
-                        <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 8, background: C.redBg, color: C.red, border: `1px solid ${C.red}30` }}>{urgentCount} Overdue</span>
+                      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+                        <p style={{ fontSize: 16, fontWeight: 800, color: C.text, margin: 0, letterSpacing: "-0.2px" }}>Up This Month</p>
+                        <span style={{ fontSize: 15 }}>{currentSeason === "Spring" ? "🌸" : currentSeason === "Summer" ? "☀️" : currentSeason === "Fall" ? "🍂" : "❄️"}</span>
+                      </div>
+                      {urgentCount > 0 ? (
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 8, background: C.redBg, color: C.red, border: `1px solid ${C.red}30` }}>{urgentCount} overdue</span>
+                      ) : (
+                        <span style={{ fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 8, background: C.greenBg, color: C.green, border: `1px solid ${C.green}30` }}>On track</span>
                       )}
                     </div>
-                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 4px" }}>Tap any status pill to schedule</p>
+                    <p style={{ fontSize: 12, color: C.text3, margin: "0 0 4px" }}>Tap any status pill to schedule or log done</p>
                     {upThisMonth.length === 0 ? (
                       <div style={{ textAlign: "center", padding: "28px 0" }}>
                         <CheckCircle2 size={28} color={C.green} style={{ margin: "0 auto 10px" }}/>
