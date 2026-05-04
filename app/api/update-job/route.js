@@ -10,6 +10,7 @@ export async function POST(req) {
     const {
       job_id, status,
       contractor_name, contractor_phone, contractor_notes,
+      scheduled_date,
       // Job details passed from client to avoid RLS SELECT conflict:
       // server-side anon client has auth.uid() = null, which blocks any
       // SELECT against job_requests rows protected by user_id = auth.uid().
@@ -22,9 +23,11 @@ export async function POST(req) {
     if (contractor_name)  update.contractor_name  = contractor_name;
     if (contractor_phone) update.contractor_phone = contractor_phone;
     if (contractor_notes) update.contractor_notes = contractor_notes;
-    if (status === "accepted")  update.accepted_at  = new Date().toISOString();
-    if (status === "declined")  update.declined_at  = new Date().toISOString();
-    if (status === "completed") update.completed_at = new Date().toISOString();
+    if (scheduled_date)   update.scheduled_date   = scheduled_date;
+    if (status === "accepted")    update.accepted_at    = new Date().toISOString();
+    if (status === "in_progress") update.in_progress_at = new Date().toISOString();
+    if (status === "declined")    update.declined_at    = new Date().toISOString();
+    if (status === "completed")   update.completed_at   = new Date().toISOString();
 
     const { error } = await supabase
       .from("job_requests")

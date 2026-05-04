@@ -187,7 +187,7 @@ export default function LoginPage() {
                 <input
                   type="text" required={mode === "signup"} value={firstName}
                   onChange={e => setFirstName(e.target.value)}
-                  placeholder="Lindsey"
+                  placeholder="Jane"
                   style={{ width: "100%", padding: "11px 14px", borderRadius: 10, fontSize: 16,
                     border: `1px solid ${C.border}`, background: C.bg, color: C.text,
                     outline: "none", boxSizing: "border-box" }}

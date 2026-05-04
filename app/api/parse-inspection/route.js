@@ -90,7 +90,7 @@ const AI_SEED = 91472;          // fixed — never change
 // Increment whenever prompt rules or normalization logic change.
 // This invaluates all L1 + L2 cached results so the next upload re-parses
 // with the corrected logic.  DO NOT change the seed above.
-const PARSE_VERSION = "v11";
+const PARSE_VERSION = "v12"; // bumped: stucco HARD OVERRIDE beats section headers
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ADDRESS CANDIDATE PRE-EXTRACTOR
@@ -495,15 +495,19 @@ findings:
       • "Vegetation in contact with siding" → "Siding"
       • "Tree limbs overhanging/touching roof" → "Exterior"
 
-    EXTERIOR CLADDING / STUCCO — CRITICAL OVERRIDE:
+    EXTERIOR CLADDING / STUCCO — HARD OVERRIDE — BEATS ALL SECTION HEADERS:
+      EVEN IF the inspection report lists stucco under a "ROOF", "EXTERIOR", "STRUCTURAL",
+      or any other section heading, the category is ALWAYS "Exterior". Section headers in
+      inspection reports do NOT determine the category — the material and contractor type do.
       • Stucco, EIFS, exterior plaster, exterior cladding, exterior wall finish,
         exterior paint, exterior coating, exterior masonry, exterior brick → "Exterior"
-      • These are wall surface materials — NEVER "Roof", even if they appear near the roofline
-      • "Damaged/deteriorated stucco" → "Exterior"
+      • "Damaged/deteriorated stucco" → "Exterior"  (even under a ROOF section)
       • "Stucco repairs needed" → "Exterior"
       • "Stucco cracks at exterior walls" → "Exterior"
+      • "Licensed stucco contractor" in the recommendation → ALWAYS "Exterior"
       • Chimney stucco/mortar → "Chimney", NOT "Roof"
-      • Rule: if a licensed STUCCO CONTRACTOR does the work → category is "Exterior"
+      • WRONG: { category: "Roof", description: "damaged stucco...stucco contractor" }
+      • RIGHT: { category: "Exterior", description: "damaged stucco...stucco contractor" }
 
     DEDUPLICATION — IMPORTANT:
       • Each distinct physical deficiency must appear EXACTLY ONCE in your findings array.
@@ -579,6 +583,8 @@ Same CRITICAL CATEGORY RULES as pass 1:
   • Exposed wiring / Romex / NM cable / open wiring → ALWAYS "Electrical" regardless of location
   • Vegetation/plants in contact with siding, walls, or roof → "Siding" or "Exterior" (NOT "Roof")
   • Stucco / EIFS / exterior plaster / exterior cladding / exterior wall finish → ALWAYS "Exterior" (NEVER "Roof")
+  • This applies EVEN IF the finding appears under a "Roof" or "Exterior" section in the report
+  • "Licensed stucco contractor" in the recommendation → ALWAYS "Exterior"
   • If a licensed stucco contractor does the repair → category is "Exterior"
   • Do NOT re-extract findings already captured in pass 1 (the merger handles deduplication).
 Return findings you find that are NOT already in the pass 1 list above. Extract ALL missed findings — aim for completeness. Return up to 50 new findings.`;
@@ -976,8 +982,11 @@ export async function POST(req) {
     if (pdfBuffer) {
       const bufHash = createHash("sha256").update(pdfBuffer).digest("hex");
       _parseHash = bufHash;
-      // Skip cache on forceReparse — user is uploading a new/updated report
-      const cachedVision = forceReparse ? null : await cacheGet(bufHash);
+      // Content hash cache is ALWAYS checked — same bytes = same result, every time.
+      // forceReparse only bypasses the property-based DB fast-path, not the content cache.
+      // This is the determinism guarantee: uploading the same file twice must return
+      // identical findings. Users must be able to trust the score doesn't change.
+      const cachedVision = await cacheGet(bufHash);
       if (cachedVision) return Response.json(cachedVision);
 
       console.log("[parse-inspection] Sparse text — trying Files API vision fallback");
@@ -1011,8 +1020,10 @@ export async function POST(req) {
 
     const hash = cacheKey(textForAI);
     _parseHash = hash;
-    // Skip cache on forceReparse — user is uploading a new/updated report
-    const cached = forceReparse ? null : await cacheGet(hash);
+    // Content hash cache is ALWAYS checked — same text = same hash = same result.
+    // forceReparse only bypasses the property-based DB fast-path above.
+    // Uploading the same report twice must return exactly the same findings.
+    const cached = await cacheGet(hash);
     if (cached) return Response.json(cached);
 
     const prompt = buildPrompt(addressCandidates);

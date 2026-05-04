@@ -73,6 +73,7 @@ export default function JobPage() {
   const [name, setName]           = useState("");
   const [phone, setPhone]         = useState("");
   const [notes, setNotes]         = useState("");
+  const [scheduledDate, setScheduledDate] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [done, setDone]           = useState(false);
   const [declined, setDeclined]   = useState(false);
@@ -112,6 +113,7 @@ export default function JobPage() {
       body: JSON.stringify({
         job_id: id, status: "accepted",
         contractor_name: name, contractor_phone: phone, contractor_notes: notes,
+        scheduled_date: scheduledDate || null,
         // Pass job details so the server doesn't need a SELECT (avoids RLS conflict)
         homeowner_email:  job?.homeowner_email,
         issue_summary:    job?.issue_summary,
@@ -372,6 +374,16 @@ export default function JobPage() {
                 <input value={phone} onChange={e => setPhone(e.target.value)}
                   placeholder="(760) 555-0100"
                   type="tel"
+                  style={{ width: "100%", padding: "10px 13px", borderRadius: 10, border: `1.5px solid ${C.border}`,
+                    fontSize: 15, color: C.text, background: C.bg, outline: "none", boxSizing: "border-box" }}/>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, color: C.text2, display: "block", marginBottom: 5 }}>
+                  Proposed Date (optional)
+                </label>
+                <input value={scheduledDate} onChange={e => setScheduledDate(e.target.value)}
+                  type="date"
                   style={{ width: "100%", padding: "10px 13px", borderRadius: 10, border: `1.5px solid ${C.border}`,
                     fontSize: 15, color: C.text, background: C.bg, outline: "none", boxSizing: "border-box" }}/>
               </div>

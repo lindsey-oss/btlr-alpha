@@ -2428,6 +2428,11 @@ export default function Dashboard() {
   const [warrantyError, setWarrantyError]         = useState<string | null>(null);
   const [showWarrantyDetail, setShowWarrantyDetail] = useState(false);
   const [openDocSection, setOpenDocSection]     = useState<string | null>(null);
+  const [docFilter, setDocFilter]               = useState<string>("all");
+  const [docSearch, setDocSearch]               = useState<string>("");
+  const [docView, setDocView]                   = useState<"grid" | "list">("grid");
+  const [docSort, setDocSort]                   = useState<string>("recent");
+  const [docDetailItem, setDocDetailItem]       = useState<any | null>(null);
   const [generatingReport, setGeneratingReport] = useState(false);
   const [monthlyContribution, setMonthlyContribution] = useState<number>(0);
   const [smartSaveMode, setSmartSaveMode] = useState(false);
@@ -4521,14 +4526,15 @@ export default function Dashboard() {
       const uid = session.user.id;
       const propId = activePropertyIdRef.current;
 
-      // ── 1. General docs ("other") ──────────────────────────────────────────
+      // ── 1. All uploaded documents (all types) ──────────────────────────────
+      // Loads inspection, insurance, warranty, repair, permit, manual, deed, other.
+      // The Documents tab grid uses this unified list for the category filter + grid view.
       let otherQuery = supabase
         .from("documents")
         .select("id, file_name, file_path, document_type, created_at")
         .eq("user_id", uid)
-        .eq("document_type", "other")
         .order("created_at", { ascending: false })
-        .limit(200);
+        .limit(400);
       if (propId) otherQuery = otherQuery.eq("property_id", propId);
       const { data: otherData, error: otherErr } = await otherQuery;
 
@@ -7038,61 +7044,96 @@ export default function Dashboard() {
 
           {/* ── Documents ─────────────────────────────────────────────── */}
           {nav === "Documents" && (() => {
-            const docSections = [
-              {
-                id: "inspection",
-                label: "Home Inspection",
-                icon: <FileText size={15} color={C.accent}/>,
-                iconBg: C.accentBg,
-                accentColor: C.accent,
-                status: inspectionDoc
-                  ? `${inspectionDoc.name} · Uploaded`
-                  : inspectDone
-                  ? "Report analyzed — original file not on record"
-                  : "No inspection report uploaded",
-                hasDoc: !!inspectionDoc || inspectDone,
-              },
-              {
-                id: "warranty",
-                label: "Home Warranty",
-                icon: <Shield size={15} color="#6D4FC2"/>,
-                iconBg: "#F0EBF9",
-                accentColor: "#6D4FC2",
-                status: warranty
-                  ? `${warranty.provider ?? "Uploaded"} · ${warranty.expirationDate ? `Expires ${warranty.expirationDate}` : "Active"}`
-                  : "No document uploaded",
-                hasDoc: !!warranty,
-              },
-              {
-                id: "insurance",
-                label: "Home Insurance",
-                icon: <Shield size={15} color="#2E6FB5"/>,
-                iconBg: "#DBE8F4",
-                accentColor: "#2E6FB5",
-                status: insurance
-                  ? `${insurance.provider ?? "Uploaded"} · ${insurance.expirationDate ? `Renews ${insurance.expirationDate}` : "Active"}`
-                  : "No document uploaded",
-                hasDoc: !!insurance,
-              },
-              {
-                id: "repairs",
-                label: "Repair Documents",
-                icon: <CheckCircle2 size={15} color={C.green}/>,
-                iconBg: C.greenBg,
-                accentColor: C.green,
-                status: repairDocs.length > 0 ? `${repairDocs.length} repair${repairDocs.length > 1 ? "s" : ""} on record` : "No receipts uploaded",
-                hasDoc: repairDocs.length > 0,
-              },
-              {
-                id: "other",
-                label: "Other Documents",
-                icon: <FileText size={15} color={C.text3}/>,
-                iconBg: C.bg,
-                accentColor: C.accent,
-                status: docs.length > 0 ? `${docs.length} file${docs.length > 1 ? "s" : ""} uploaded` : "No documents uploaded",
-                hasDoc: docs.length > 0,
-              },
+            // ── normalize all docs into a unified list ──────────────────
+            type DocItem = {
+              id: string; name: string; cat: string; url: string | null;
+              uploaded: string; source: string; expires: string | null;
+              kind: "PDF" | "File"; raw: any; rawType: string;
+            };
+            const allDocsList: DocItem[] = [];
+
+            if (inspectionDoc) {
+              allDocsList.push({
+                id: "inspection-main", name: inspectionDoc.name, cat: "inspection",
+                url: inspectionDoc.url ?? null, uploaded: (inspectionDoc as any).created_at
+                  ? new Date((inspectionDoc as any).created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                  : "Uploaded",
+                source: "Home Inspection", expires: null, kind: "PDF", raw: inspectionDoc, rawType: "inspection",
+              });
+            }
+            if (insurance) {
+              allDocsList.push({
+                id: "insurance-main",
+                name: insurance.provider ? `${insurance.provider}${insurance.policyType ? ` — ${insurance.policyType}` : ""}` : "Home Insurance",
+                cat: "insurance", url: (insurance as any).docUrl ?? null,
+                uploaded: "On file", source: insurance.provider ?? "Insurance",
+                expires: insurance.expirationDate ?? null, kind: "PDF", raw: insurance, rawType: "insurance",
+              });
+            }
+            if (warranty) {
+              allDocsList.push({
+                id: "warranty-main",
+                name: warranty.provider ? `${warranty.provider}${warranty.planName ? ` — ${warranty.planName}` : ""}` : "Home Warranty",
+                cat: "warranty", url: (warranty as any).docUrl ?? null,
+                uploaded: "On file", source: warranty.provider ?? "Warranty",
+                expires: warranty.expirationDate ?? null, kind: "PDF", raw: warranty, rawType: "warranty",
+              });
+            }
+            repairDocs.forEach((r, i) => {
+              allDocsList.push({
+                id: r.id ?? `repair-${i}`,
+                name: r.category ? `${r.vendor ?? "Contractor"} — ${r.category}` : (r.vendor ?? "Repair Receipt"),
+                cat: "receipt", url: r.fileUrl ?? null,
+                uploaded: r.date ? new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "On file",
+                source: r.vendor ?? "Contractor", expires: null, kind: "PDF", raw: r, rawType: "repair",
+              });
+            });
+            docs.forEach((d, i) => {
+              const typeMap: Record<string, string> = {
+                permit: "permit", manual: "manual", deed: "deed",
+                inspection: "inspection", insurance: "insurance", warranty: "warranty", repair: "receipt",
+              };
+              const cat = typeMap[(d as any).document_type] ?? "other";
+              allDocsList.push({
+                id: d.id ?? `doc-${i}`, name: d.name, cat,
+                url: d.url ?? null,
+                uploaded: (d as any).created_at
+                  ? new Date((d as any).created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+                  : "Uploaded",
+                source: (d as any).source ?? "Uploaded", expires: null, kind: "PDF", raw: d, rawType: "other",
+              });
+            });
+
+            // ── category config ──────────────────────────────────────────
+            const DOC_CATS = [
+              { id: "all",        label: "All Documents", icon: "≡",  color: C.navy },
+              { id: "inspection", label: "Inspections",   icon: "◉",  color: C.accent },
+              { id: "insurance",  label: "Insurance",     icon: "◆",  color: C.green },
+              { id: "warranty",   label: "Warranties",    icon: "◇",  color: "#7c3aed" },
+              { id: "permit",     label: "Permits",       icon: "▤",  color: C.amber },
+              { id: "receipt",    label: "Receipts",      icon: "▦",  color: C.text2 },
+              { id: "manual",     label: "Manuals",       icon: "▥",  color: C.text3 },
+              { id: "deed",       label: "Property",      icon: "⌂",  color: C.red },
+              { id: "other",      label: "Other",         icon: "≡",  color: C.text3 },
             ];
+            const catById = Object.fromEntries(DOC_CATS.map(c => [c.id, c]));
+            DOC_CATS.forEach(c => {
+              (c as any).count = c.id === "all" ? allDocsList.length : allDocsList.filter(d => d.cat === c.id).length;
+            });
+
+            // ── filter + search + sort ───────────────────────────────────
+            let visible = allDocsList
+              .filter(d => docFilter === "all" || d.cat === docFilter)
+              .filter(d => {
+                if (!docSearch.trim()) return true;
+                const s = docSearch.toLowerCase();
+                return d.name.toLowerCase().includes(s) || d.source.toLowerCase().includes(s);
+              })
+              .sort((a, b) => {
+                if (docSort === "name") return a.name.localeCompare(b.name);
+                if (docSort === "expiring") return (new Date(a.expires ?? "2099") as any) - (new Date(b.expires ?? "2099") as any);
+                return 0; // "recent" = insertion order (most recent first by index)
+              });
 
             // Summary counts for the report card
             const reportFindings     = inspectionResult?.findings ?? [];
@@ -7102,538 +7143,458 @@ export default function Dashboard() {
             const reportMaintDone    = doneTasks.size;
             const hasReportData      = reportFindings.length > 0 || reportResolved > 0;
 
-            return (
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+            // ── DocThumb ─────────────────────────────────────────────────
+            const DocThumb = ({ cat }: { cat: string }) => {
+              const color = catById[cat]?.color ?? C.text3;
+              return (
+                <div style={{
+                  width: "100%", aspectRatio: "1.4 / 1", borderRadius: 10,
+                  background: `linear-gradient(160deg, ${color}18 0%, ${color}08 100%)`,
+                  border: `1px solid ${color}25`,
+                  position: "relative", overflow: "hidden", display: "grid", placeItems: "center",
+                }}>
+                  <div style={{
+                    width: "50%", height: "70%", background: "white", borderRadius: 4,
+                    boxShadow: "0 4px 12px rgba(14,27,44,0.10)", position: "relative", padding: 8,
+                    display: "flex", flexDirection: "column", gap: 3,
+                  }}>
+                    {[0.7, 0.45, 0.85, 0.4, 0.6].map((w, i) => (
+                      <div key={i} style={{ height: 2, width: `${w * 100}%`, background: "rgba(14,27,44,0.08)", borderRadius: 2 }}/>
+                    ))}
+                    <div style={{ position: "absolute", top: -1, right: -1, width: 12, height: 12, background: C.bg, borderLeft: "1px solid rgba(14,27,44,0.08)", borderBottom: "1px solid rgba(14,27,44,0.08)" }}/>
+                  </div>
+                  <span style={{
+                    position: "absolute", top: 8, left: 8, padding: "3px 7px", borderRadius: 4,
+                    background: color, color: "white", fontSize: 9, fontWeight: 700, letterSpacing: "0.08em",
+                  }}>PDF</span>
+                </div>
+              );
+            };
 
-              {/* ── Generate Full Home Report ─────────────────────────── */}
-              <div style={{ ...card({ padding: "20px 22px" }), background: themeNavy, color: "white" }}>
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
-                      <FileText size={18} color="rgba(255,255,255,0.85)"/>
-                      <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "white" }}>Full Home Report</p>
+            // ── Detail drawer ────────────────────────────────────────────
+            const DetailDrawer = ({ item, onClose }: { item: DocItem | null; onClose: () => void }) => {
+              if (!item) return null;
+              const cat = catById[item.cat] ?? catById["other"];
+              return (
+                <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(14,27,44,0.32)", zIndex: 200, display: "flex", justifyContent: "flex-end" }}>
+                  <div onClick={e => e.stopPropagation()} style={{
+                    width: 460, maxWidth: "92vw", height: "100%", background: "white",
+                    display: "flex", flexDirection: "column", boxShadow: "-12px 0 40px rgba(14,27,44,0.18)", overflowY: "auto",
+                  }}>
+                    <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", flexShrink: 0 }}>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: cat.color }}>{cat.label}</span>
+                      <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: C.text2, fontSize: 18, lineHeight: 1 }}>✕</button>
                     </div>
-                    <p style={{ margin: "0 0 10px", fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>
-                      Compile all repairs, maintenance, and system data into a printable report — useful for selling disclosures, buyer negotiations, or briefing contractors.
-                    </p>
-                    {hasReportData && (
-                      <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                        {reportCritical > 0 && (
-                          <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(220,38,38,0.25)", color: "#fca5a5", borderRadius: 20, padding: "3px 10px" }}>
-                            {reportCritical} critical
-                          </span>
+                    <div style={{ padding: 22, display: "flex", flexDirection: "column", gap: 16, flex: 1 }}>
+                      <DocThumb cat={item.cat} />
+                      <h2 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: C.text, lineHeight: 1.25 }}>{item.name}</h2>
+                      <div style={{ display: "grid", gridTemplateColumns: "100px 1fr", rowGap: 8, columnGap: 12 }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.1em", alignSelf: "center" }}>Source</span>
+                        <span style={{ fontSize: 13, color: C.text }}>{item.source}</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.1em", alignSelf: "center" }}>Uploaded</span>
+                        <span style={{ fontSize: 13, color: C.text }}>{item.uploaded}</span>
+                        {item.expires && (
+                          <>
+                            <span style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.1em", alignSelf: "center" }}>Expires</span>
+                            <span style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{item.expires}</span>
+                          </>
                         )}
-                        {reportWarnings > 0 && (
-                          <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(217,119,6,0.25)", color: "#fcd34d", borderRadius: 20, padding: "3px 10px" }}>
-                            {reportWarnings} warnings
-                          </span>
+                      </div>
+
+                      {/* Insurance rich details */}
+                      {item.rawType === "insurance" && insurance && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {(insurance.dwellingCoverage || insurance.personalProperty || insurance.liabilityCoverage || insurance.deductibleStandard) && (
+                            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                              {insurance.dwellingCoverage   && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Dwelling</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.dwellingCoverage.toLocaleString()}</div></div>}
+                              {insurance.personalProperty   && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Personal Property</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.personalProperty.toLocaleString()}</div></div>}
+                              {insurance.liabilityCoverage  && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Liability</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.liabilityCoverage.toLocaleString()}</div></div>}
+                              {insurance.deductibleStandard && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Deductible</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.deductibleStandard.toLocaleString()}</div></div>}
+                            </div>
+                          )}
+                          {(insurance.claimUrl || insurance.claimPhone) && (
+                            <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
+                              {insurance.claimUrl   && <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 8, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={11}/> File Claim</a>}
+                              {insurance.claimPhone && <a href={`tel:${insurance.claimPhone.replace(/\D/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 8, border: "1px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={11}/> {insurance.claimPhone}</a>}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Warranty rich details */}
+                      {item.rawType === "warranty" && warranty && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                          {warranty.serviceFee && <p style={{ margin: 0, fontSize: 13, color: C.text2 }}>Service fee: <strong>${warranty.serviceFee}</strong></p>}
+                          {(warranty.coverageItems?.length ?? 0) > 0 && (
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Covered ({warranty.coverageItems!.length})</p>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {warranty.coverageItems!.map((item, i) => <span key={i} style={{ fontSize: 11, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 5, padding: "2px 8px", color: "#15803d" }}>{item}</span>)}
+                              </div>
+                            </div>
+                          )}
+                          {(warranty.exclusions?.length ?? 0) > 0 && (
+                            <div>
+                              <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 6px" }}>Excluded ({warranty.exclusions!.length})</p>
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>
+                                {warranty.exclusions!.map((ex, i) => <span key={i} style={{ fontSize: 11, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 5, padding: "2px 8px", color: C.red }}>{ex}</span>)}
+                              </div>
+                            </div>
+                          )}
+                          {(warranty.claimUrl || warranty.claimPhone) && (
+                            <div style={{ display: "flex", gap: 8, paddingTop: 4 }}>
+                              {warranty.claimUrl   && <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 8, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={11}/> File Claim</a>}
+                              {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g,"")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "8px 14px", borderRadius: 8, border: "1px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={11}/> {warranty.claimPhone}</a>}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Repair doc details */}
+                      {item.rawType === "repair" && (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                          {item.raw.summary && <p style={{ fontSize: 13, color: C.text2, margin: 0, lineHeight: 1.5 }}>{item.raw.summary}</p>}
+                          {item.raw.cost && <p style={{ fontSize: 15, fontWeight: 700, color: C.green, margin: 0 }}>${item.raw.cost.toLocaleString()}</p>}
+                          {(item.raw.autoResolved?.length ?? 0) > 0 && (
+                            <p style={{ fontSize: 12, color: C.green, margin: 0, display: "flex", alignItems: "center", gap: 4 }}>
+                              <CheckCircle2 size={11}/> Auto-resolved {item.raw.autoResolved.length} inspection finding{item.raw.autoResolved.length > 1 ? "s" : ""}
+                            </p>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Action buttons */}
+                      <div style={{ display: "flex", gap: 8, marginTop: "auto", paddingTop: 12 }}>
+                        {item.url && (
+                          <a href={item.url} target="_blank" rel="noopener noreferrer" style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 16px", borderRadius: 9, background: C.navy, color: "white", fontSize: 13, fontWeight: 700, textDecoration: "none" }}>
+                            <ExternalLink size={13}/> Open PDF
+                          </a>
                         )}
-                        {reportResolved > 0 && (
-                          <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(22,163,74,0.25)", color: "#86efac", borderRadius: 20, padding: "3px 10px" }}>
-                            {reportResolved} resolved
-                          </span>
+                        {item.rawType === "inspection" && (
+                          <button onClick={() => { setDocDetailItem(null); setNav("Repairs"); }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 16px", borderRadius: 9, border: `1px solid ${C.border}`, background: "white", color: C.text, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                            View Repairs →
+                          </button>
                         )}
-                        {reportMaintDone > 0 && (
-                          <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.75)", borderRadius: 20, padding: "3px 10px" }}>
-                            {reportMaintDone} maintenance tasks done
-                          </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            };
+
+            // ── upload trigger for each category ─────────────────────────
+            const handleCategoryUpload = () => {
+              if (docFilter === "inspection") { inspRef?.current?.click(); return; }
+              if (docFilter === "warranty")   { warrantyRef?.current?.click();  return; }
+              if (docFilter === "insurance")  { insuranceRef?.current?.click(); return; }
+              if (docFilter === "receipt")    { repairRef?.current?.click(); return; }
+              docRef?.current?.click();
+            };
+
+            return (
+            <>
+              {/* Detail drawer — renders outside the scroll context */}
+              <DetailDrawer item={docDetailItem} onClose={() => setDocDetailItem(null)} />
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+
+                {/* ── Generate Full Home Report ──────────────────────── */}
+                <div style={{ ...card({ padding: "20px 22px" }), background: themeNavy, color: "white" }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 16, flexWrap: "wrap" }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                        <FileText size={18} color="rgba(255,255,255,0.85)"/>
+                        <p style={{ margin: 0, fontSize: 16, fontWeight: 700, color: "white" }}>Full Home Report</p>
+                      </div>
+                      <p style={{ margin: "0 0 10px", fontSize: 13, color: "rgba(255,255,255,0.7)", lineHeight: 1.5 }}>
+                        Compile all repairs, maintenance, and system data into a printable report — useful for selling disclosures, buyer negotiations, or briefing contractors.
+                      </p>
+                      {hasReportData && (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                          {reportCritical > 0 && <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(220,38,38,0.25)", color: "#fca5a5", borderRadius: 20, padding: "3px 10px" }}>{reportCritical} critical</span>}
+                          {reportWarnings > 0 && <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(217,119,6,0.25)", color: "#fcd34d", borderRadius: 20, padding: "3px 10px" }}>{reportWarnings} warnings</span>}
+                          {reportResolved > 0 && <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(22,163,74,0.25)", color: "#86efac", borderRadius: 20, padding: "3px 10px" }}>{reportResolved} resolved</span>}
+                          {reportMaintDone > 0 && <span style={{ fontSize: 11, fontWeight: 600, background: "rgba(255,255,255,0.12)", color: "rgba(255,255,255,0.75)", borderRadius: 20, padding: "3px 10px" }}>{reportMaintDone} maintenance tasks done</span>}
+                        </div>
+                      )}
+                      {!hasReportData && (
+                        <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.45)" }}>Upload an inspection report to include findings.</p>
+                      )}
+                    </div>
+                    <button
+                      onClick={generateHomeReport}
+                      disabled={generatingReport}
+                      style={{
+                        flexShrink: 0, padding: "11px 20px", borderRadius: 12,
+                        background: generatingReport ? "rgba(255,255,255,0.1)" : "white",
+                        color: generatingReport ? "rgba(255,255,255,0.4)" : themeNavy,
+                        border: "none", fontWeight: 700, fontSize: 13,
+                        cursor: generatingReport ? "not-allowed" : "pointer",
+                        display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
+                      }}
+                    >
+                      {generatingReport
+                        ? <><span className="animate-spin" style={{ display: "inline-block" }}>⟳</span> Generating…</>
+                        : <><Download size={14}/> Generate Report</>
+                      }
+                    </button>
+                  </div>
+                </div>
+
+                {/* ── Two-column layout ──────────────────────────────── */}
+                <div style={{ display: "flex", gap: 14, alignItems: "flex-start" }}>
+
+                  {/* Category Rail */}
+                  <aside style={{
+                    flex: "0 0 192px", background: "white", border: `1px solid ${C.border}`,
+                    borderRadius: 14, padding: 12, display: "flex", flexDirection: "column", gap: 2, alignSelf: "flex-start",
+                  }}>
+                    <p style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.14em", textTransform: "uppercase", color: C.text3, margin: "0 0 6px 4px" }}>Filter by type</p>
+                    {DOC_CATS.map(cat => {
+                      const active = docFilter === cat.id;
+                      return (
+                        <button key={cat.id} onClick={() => setDocFilter(cat.id)} style={{
+                          appearance: "none" as any, cursor: "pointer", textAlign: "left",
+                          display: "flex", alignItems: "center", gap: 8,
+                          padding: "8px 10px", borderRadius: 9, width: "100%",
+                          background: active ? C.bg : "transparent",
+                          border: `1px solid ${active ? C.border : "transparent"}`,
+                          fontSize: 13, fontWeight: active ? 600 : 500,
+                          color: active ? C.text : C.text2,
+                        }}>
+                          <span style={{ width: 22, height: 22, borderRadius: 6, flexShrink: 0, display: "grid", placeItems: "center", fontSize: 12,
+                            background: active ? cat.color + "18" : "transparent", color: cat.color,
+                          }}>{cat.icon}</span>
+                          <span style={{ flex: 1 }}>{cat.label}</span>
+                          <span style={{ fontSize: 11, color: C.text3, fontVariantNumeric: "tabular-nums" }}>{(cat as any).count}</span>
+                        </button>
+                      );
+                    })}
+                  </aside>
+
+                  {/* Right column: search + grid */}
+                  <div style={{ flex: 1, minWidth: 0, display: "flex", flexDirection: "column", gap: 12 }}>
+
+                    {/* Search bar */}
+                    <div style={{ background: "white", border: `1px solid ${C.border}`, borderRadius: 11, padding: "0 6px", display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ paddingLeft: 8, color: C.text3, fontSize: 14 }}>⌕</span>
+                      <input
+                        value={docSearch}
+                        onChange={e => setDocSearch(e.target.value)}
+                        placeholder="Search documents…"
+                        style={{ flex: 1, minWidth: 0, border: 0, outline: "none", background: "transparent", padding: "10px 6px", fontSize: 13, color: C.text }}
+                      />
+                      <select value={docSort} onChange={e => setDocSort(e.target.value)} style={{
+                        appearance: "none" as any, border: `1px solid ${C.border}`, background: "white",
+                        padding: "7px 10px", borderRadius: 7,
+                        fontSize: 11, fontWeight: 600, color: C.text2, cursor: "pointer", margin: "4px 0",
+                      }}>
+                        <option value="recent">Recent first</option>
+                        <option value="name">Name A–Z</option>
+                        <option value="expiring">Expiring soonest</option>
+                      </select>
+                      <div style={{ display: "flex", border: `1px solid ${C.border}`, borderRadius: 7, overflow: "hidden", margin: "4px 0" }}>
+                        <button onClick={() => setDocView("grid")} style={{ appearance: "none" as any, cursor: "pointer", border: 0, padding: "7px 10px", background: docView === "grid" ? C.bg : "white", color: C.text2, fontSize: 13 }}>▦</button>
+                        <button onClick={() => setDocView("list")} style={{ appearance: "none" as any, cursor: "pointer", border: 0, padding: "7px 10px", background: docView === "list" ? C.bg : "white", color: C.text2, fontSize: 13, borderLeft: `1px solid ${C.border}` }}>≡</button>
+                      </div>
+                    </div>
+
+                    {/* Header row */}
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
+                        {catById[docFilter]?.label ?? "Documents"}
+                        {docSearch.trim() && <span style={{ fontWeight: 400, color: C.text3 }}> · "{docSearch.trim()}"</span>}
+                      </span>
+                      <span style={{ fontSize: 11, color: C.text3 }}>{visible.length} of {allDocsList.length}</span>
+                    </div>
+
+                    {/* Doc grid / list */}
+                    {visible.length === 0 ? (
+                      <div style={{ background: "white", border: `1px dashed ${C.border}`, borderRadius: 12, padding: 40, textAlign: "center" }}>
+                        <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 6px" }}>No documents here yet</p>
+                        <p style={{ fontSize: 13, color: C.text3, margin: "0 0 16px" }}>
+                          {docFilter === "inspection" ? "Upload an inspection report to score your home." :
+                           docFilter === "insurance"  ? "Upload your homeowners insurance declarations page." :
+                           docFilter === "warranty"   ? "Upload your home warranty or maintenance policy." :
+                           "Upload a file to get started."}
+                        </p>
+                        <button onClick={handleCategoryUpload} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "9px 18px", borderRadius: 9, background: C.navy, color: "white", border: "none", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                          <Upload size={13}/> Upload{docFilter !== "all" ? ` ${catById[docFilter]?.label.slice(0,-1) ?? "Document"}` : " Document"}
+                        </button>
+                      </div>
+                    ) : docView === "grid" ? (
+                      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 12 }}>
+                        {visible.map(d => {
+                          const cat = catById[d.cat] ?? catById["other"];
+                          const color = cat.color;
+                          const isExpiring = d.expires && (() => {
+                            const diff = (new Date(d.expires!).getTime() - Date.now()) / 86400000;
+                            return diff > 0 && diff <= 120;
+                          })();
+                          return (
+                            <article key={d.id} onClick={() => setDocDetailItem(d)} style={{
+                              cursor: "pointer", background: "white", border: `1px solid ${C.border}`, borderRadius: 12,
+                              padding: 12, display: "flex", flexDirection: "column", gap: 10,
+                              transition: "transform 150ms, box-shadow 150ms",
+                            }}
+                            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.transform = "translateY(-2px)"; (e.currentTarget as HTMLElement).style.boxShadow = "0 6px 18px rgba(14,27,44,0.06)"; }}
+                            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.transform = "none"; (e.currentTarget as HTMLElement).style.boxShadow = "none"; }}>
+                              {/* Thumb */}
+                              <div style={{ width: "100%", aspectRatio: "1.4 / 1", borderRadius: 9, background: `linear-gradient(160deg, ${color}18 0%, ${color}08 100%)`, border: `1px solid ${color}20`, position: "relative", overflow: "hidden", display: "grid", placeItems: "center" }}>
+                                <div style={{ width: "48%", height: "68%", background: "white", borderRadius: 3, boxShadow: "0 3px 10px rgba(14,27,44,0.10)", padding: 6, display: "flex", flexDirection: "column", gap: 2, position: "relative" }}>
+                                  {[0.7, 0.45, 0.85, 0.4, 0.6].map((w, i) => <div key={i} style={{ height: 1.5, width: `${w * 100}%`, background: "rgba(14,27,44,0.08)", borderRadius: 2 }}/>)}
+                                  <div style={{ position: "absolute", top: -1, right: -1, width: 10, height: 10, background: C.bg, borderLeft: "1px solid rgba(14,27,44,0.08)", borderBottom: "1px solid rgba(14,27,44,0.08)" }}/>
+                                </div>
+                                <span style={{ position: "absolute", top: 7, left: 7, padding: "2px 6px", borderRadius: 3, background: color, color: "white", fontSize: 8, fontWeight: 700, letterSpacing: "0.08em" }}>PDF</span>
+                              </div>
+                              {/* Info */}
+                              <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                                <span style={{ fontSize: 9, fontWeight: 700, color, letterSpacing: "0.12em", textTransform: "uppercase" }}>{cat.label}</span>
+                                <h3 style={{ margin: 0, fontSize: 12.5, fontWeight: 600, color: C.text, lineHeight: 1.35, overflow: "hidden", display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical" as any }}>{d.name}</h3>
+                                <span style={{ fontSize: 10, color: C.text3 }}>{d.source}</span>
+                              </div>
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: 8, borderTop: `1px solid ${C.border}` }}>
+                                <span style={{ fontSize: 10, color: C.text3 }}>{d.uploaded}</span>
+                                {isExpiring
+                                  ? <span style={{ padding: "2px 6px", borderRadius: 3, background: C.amberBg, color: C.amber, fontSize: 9, fontWeight: 700, letterSpacing: "0.06em" }}>EXPIRES {d.expires}</span>
+                                  : null}
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      /* List view */
+                      <ul style={{ listStyle: "none", margin: 0, padding: 0, background: "white", border: `1px solid ${C.border}`, borderRadius: 12, overflow: "hidden" }}>
+                        <li style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderBottom: `1px solid ${C.border}` }}>
+                          <span style={{ flex: "0 0 30px" }}></span>
+                          <span style={{ flex: 1, fontSize: 9, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.12em" }}>Name</span>
+                          <span style={{ fontSize: 9, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.12em", whiteSpace: "nowrap" }}>Uploaded</span>
+                          <span style={{ flex: "0 0 100px" }}></span>
+                        </li>
+                        {visible.map(d => {
+                          const cat = catById[d.cat] ?? catById["other"];
+                          const isExpiring = d.expires && (() => {
+                            const diff = (new Date(d.expires!).getTime() - Date.now()) / 86400000;
+                            return diff > 0 && diff <= 120;
+                          })();
+                          return (
+                            <li key={d.id} onClick={() => setDocDetailItem(d)} style={{ cursor: "pointer", display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderTop: `1px solid ${C.border}` }}
+                              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = C.bg; }}
+                              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = "transparent"; }}>
+                              <div style={{ width: 30, height: 30, borderRadius: 7, background: cat.color + "1a", color: cat.color, display: "grid", placeItems: "center", flex: "0 0 30px", fontSize: 13 }}>{cat.icon}</div>
+                              <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ fontSize: 13, fontWeight: 600, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</div>
+                                <div style={{ fontSize: 11, color: C.text3, marginTop: 1 }}>{cat.label} · {d.source}</div>
+                              </div>
+                              <span style={{ fontSize: 11, color: C.text3, whiteSpace: "nowrap" }}>{d.uploaded}</span>
+                              <div style={{ flex: "0 0 100px", display: "flex", justifyContent: "flex-end" }}>
+                                {isExpiring
+                                  ? <span style={{ padding: "2px 8px", borderRadius: 4, background: C.amberBg, color: C.amber, fontSize: 9, fontWeight: 700, letterSpacing: "0.06em", whiteSpace: "nowrap" }}>EXPIRES {d.expires}</span>
+                                  : null}
+                              </div>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+
+                    {/* Upload / action zone for the selected category */}
+                    {(docFilter === "all" || docFilter === "other" || docFilter === "permit" || docFilter === "manual" || docFilter === "deed") && (
+                      <div style={{
+                        padding: "16px 18px", borderRadius: 12, cursor: "pointer",
+                        border: `1.5px dashed ${docLoading ? C.accent : C.border}`,
+                        background: docLoading ? C.accentBg : C.bg,
+                        display: "flex", alignItems: "center", gap: 12,
+                      }} onClick={() => docRef?.current?.click()}>
+                        <div style={{ width: 34, height: 34, borderRadius: 8, background: "white", border: `1px solid ${C.border}`, display: "grid", placeItems: "center", color: C.accent, flexShrink: 0, fontSize: 15 }}>↑</div>
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+                            {docLoading ? "Uploading…" : "Drop files here, or click to upload"}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.text3, marginTop: 2 }}>Permits, manuals, deeds, and other property files</div>
+                        </div>
+                        <input ref={docRef} type="file" style={{ display: "none" }} onChange={uploadDoc} disabled={docLoading} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"/>
+                      </div>
+                    )}
+
+                    {/* Inspection upload zone — shown when filter = inspection and no doc */}
+                    {docFilter === "inspection" && !inspectionDoc && !inspectDone && (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {inspecting ? (
+                          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, border: `2px dashed ${C.accent}`, background: "#eff6ff" }}>
+                            <Loader2 size={20} color={C.accent} className="animate-spin"/>
+                            <span style={{ fontSize: 14, color: C.accent, textAlign: "center" }}>
+                              {inspectStage === "uploading" ? "Uploading PDF…" : inspectStage === "saving" ? "Saving findings…" : "Analyzing report…"}
+                            </span>
+                            {inspectStage === "analyzing" && <span style={{ fontSize: 11, color: C.text3, textAlign: "center", maxWidth: 220 }}>First analysis takes 45–90 seconds. Safe to wait.</span>}
+                          </div>
+                        ) : (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "18px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${C.border}`, background: C.bg }}>
+                              <FileText size={20} color={C.text3}/>
+                              <span style={{ fontSize: 14, color: C.text }}>Upload inspection report PDF</span>
+                              <span style={{ fontSize: 12, color: C.text3 }}>BTLR extracts all findings and scores your home</span>
+                              <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
+                            </label>
+                            <div style={{ display: "flex", gap: 8 }}>
+                              <button onClick={() => { scanningDocRef.current = "inspection"; setScanningDoc("inspection"); scanDocRef.current?.click(); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 14px", borderRadius: 9, border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                                <Camera size={13}/> Scan Report Pages
+                              </button>
+                              <button onClick={() => photoRef.current?.click()} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "10px 14px", borderRadius: 9, border: `1.5px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                                <Camera size={13}/> Photo Home Issues
+                              </button>
+                            </div>
+                          </div>
                         )}
                       </div>
                     )}
-                    {!hasReportData && (
-                      <p style={{ margin: 0, fontSize: 12, color: "rgba(255,255,255,0.45)" }}>
-                        Upload an inspection report to include findings.
-                      </p>
+
+                    {/* Inspection — existing doc + replace */}
+                    {docFilter === "inspection" && inspectionDoc && (
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", width: "fit-content" }}>
+                        {inspecting ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Upload size={11}/> Upload New Report</>}
+                        <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
+                      </label>
                     )}
+
+                    {/* Warranty upload zone */}
+                    {docFilter === "warranty" && !warranty && (
+                      <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingWarranty ? "#7c3aed" : C.border}`, background: parsingWarranty ? "#faf5ff" : C.bg }}>
+                        {parsingWarranty
+                          ? <><Loader2 size={20} color="#7c3aed" className="animate-spin"/><span style={{ fontSize: 14, color: "#7c3aed" }}>Parsing warranty document…</span></>
+                          : <><Shield size={20} color="#7c3aed"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
+                        }
+                        <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
+                      </label>
+                    )}
+
+                    {/* Insurance upload zone */}
+                    {docFilter === "insurance" && !insurance && (
+                      <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingInsurance ? "#0891b2" : C.border}`, background: parsingInsurance ? "#f0f9ff" : C.bg }}>
+                        {parsingInsurance
+                          ? <><Loader2 size={20} color="#0891b2" className="animate-spin"/><span style={{ fontSize: 14, color: "#0891b2" }}>Parsing insurance documents…</span></>
+                          : <><Shield size={20} color="#0891b2"/><span style={{ fontSize: 14, color: C.text }}>Upload homeowners insurance policy or dec page</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text</span></>
+                        }
+                        <input key={insuranceFileKey} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
+                      </label>
+                    )}
+
+                    {/* Repair / receipt upload zone */}
+                    {docFilter === "receipt" && (
+                      <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "18px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${uploadingRepair ? C.green : "#bbf7d0"}`, background: uploadingRepair ? C.greenBg : "#f0fdf4" }}>
+                        {uploadingRepair
+                          ? <><Loader2 size={20} color={C.green} className="animate-spin"/><span style={{ fontSize: 14, color: C.green }}>Parsing repair document…</span></>
+                          : <><CheckCircle2 size={20} color={C.green}/><span style={{ fontSize: 14, color: C.text }}>Upload invoice, receipt, or contractor report</span><span style={{ fontSize: 12, color: C.text3 }}>PDF, image, or document</span></>
+                        }
+                        <input ref={repairRef} type="file" style={{ display: "none" }} onChange={uploadRepairDoc} disabled={uploadingRepair} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"/>
+                      </label>
+                    )}
+
                   </div>
-                  <button
-                    onClick={generateHomeReport}
-                    disabled={generatingReport}
-                    style={{
-                      flexShrink: 0, padding: "11px 20px", borderRadius: 12,
-                      background: generatingReport ? "rgba(255,255,255,0.1)" : "white",
-                      color: generatingReport ? "rgba(255,255,255,0.4)" : themeNavy,
-                      border: "none", fontWeight: 700, fontSize: 13,
-                      cursor: generatingReport ? "not-allowed" : "pointer",
-                      display: "flex", alignItems: "center", gap: 7, whiteSpace: "nowrap",
-                    }}
-                  >
-                    {generatingReport
-                      ? <><span className="animate-spin" style={{ display: "inline-block" }}>⟳</span> Generating…</>
-                      : <><Download size={14}/> Generate Report</>
-                    }
-                  </button>
                 </div>
               </div>
-
-              {/* Accordion card */}
-              <div style={{ ...card({ padding: 0, overflow: "hidden" }) }}>
-                {docSections.map((sec, si) => {
-                  const isOpen = openDocSection === sec.id;
-                  return (
-                    <div key={sec.id} style={{ borderBottom: si < docSections.length - 1 ? `1px solid ${C.border}` : "none" }}>
-                      {/* Row header */}
-                      <button
-                        onClick={() => setOpenDocSection(isOpen ? null : sec.id)}
-                        style={{
-                          width: "100%", display: "flex", alignItems: "center", gap: 12,
-                          padding: "14px 18px", background: isOpen ? C.bg : "transparent",
-                          border: "none", cursor: "pointer", textAlign: "left",
-                          transition: "background 0.15s",
-                        }}
-                        onMouseEnter={e => { if (!isOpen) (e.currentTarget as HTMLButtonElement).style.background = C.bg; }}
-                        onMouseLeave={e => { if (!isOpen) (e.currentTarget as HTMLButtonElement).style.background = "transparent"; }}
-                      >
-                        <div style={{ width: 34, height: 34, borderRadius: 9, background: sec.iconBg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, border: `1px solid ${sec.accentColor}20` }}>
-                          {sec.icon}
-                        </div>
-                        <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>{sec.label}</div>
-                          <div style={{ fontSize: 12, color: sec.hasDoc ? C.text3 : C.text3, marginTop: 1 }}>{sec.status}</div>
-                        </div>
-                        {sec.hasDoc && (
-                          <span style={{ fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 20, background: C.greenBg, color: C.green, marginRight: 6 }}>✓</span>
-                        )}
-                        <div style={{ transition: "transform 0.2s", transform: isOpen ? "rotate(180deg)" : "rotate(0deg)", flexShrink: 0 }}>
-                          <ChevronDown size={15} color={C.text3}/>
-                        </div>
-                      </button>
-
-                      {/* Expanded content */}
-                      {isOpen && (
-                        <div style={{ padding: "16px 18px 20px", background: C.bg, borderTop: `1px solid ${C.border}` }}>
-
-                          {/* ── Inspection Report content ── */}
-                          {sec.id === "inspection" && (<>
-                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>
-                              Your home inspection report. Upload a new report to re-analyze and update your Home Health Score.
-                            </p>
-                            {inspectionDoc ? (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                <div style={{ background: C.accentBg, border: `1.5px solid ${C.accent}30`, borderRadius: 12, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-                                  <FileText size={18} color={C.accent} style={{ flexShrink: 0 }}/>
-                                  <div style={{ flex: 1, minWidth: 0 }}>
-                                    <p style={{ fontSize: 14, fontWeight: 700, color: C.text, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{inspectionDoc.name}</p>
-                                    <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>Inspection Report</p>
-                                  </div>
-                                  <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                                    {inspectionDoc.url && (
-                                      <a href={inspectionDoc.url} target="_blank" rel="noopener noreferrer"
-                                        style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 8, background: C.accent, color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}>
-                                        <ExternalLink size={11}/> View PDF
-                                      </a>
-                                    )}
-                                    <button
-                                      onClick={deleteInspectionDoc}
-                                      title="Remove report"
-                                      style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: 30, height: 30, borderRadius: 8, border: `1px solid ${C.border}`, background: "white", color: C.red, cursor: "pointer", flexShrink: 0 }}
-                                    >
-                                      <Trash2 size={13}/>
-                                    </button>
-                                  </div>
-                                </div>
-
-                                {/* ── Score-reset confirmation banner ── */}
-                                {confirmDeleteInspection && (
-                                  <div style={{ background: "#fef2f2", border: `1.5px solid ${C.red}40`, borderRadius: 10, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-                                    <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                                      <AlertTriangle size={16} color={C.red} style={{ flexShrink: 0, marginTop: 1 }}/>
-                                      <div>
-                                        <p style={{ fontSize: 13, fontWeight: 700, color: C.red, margin: "0 0 3px" }}>Are you sure?</p>
-                                        <p style={{ fontSize: 13, color: "#7f1d1d", margin: 0, lineHeight: 1.5 }}>
-                                          This will delete your inspection report and <strong>reset your Home Health Score</strong>. You can re-upload a report at any time.
-                                        </p>
-                                      </div>
-                                    </div>
-                                    <div style={{ display: "flex", gap: 8 }}>
-                                      <button onClick={() => setConfirmDeleteInspection(false)} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: `1px solid ${C.border}`, background: "white", fontSize: 13, fontWeight: 600, color: C.text2, cursor: "pointer" }}>
-                                        Cancel
-                                      </button>
-                                      <button onClick={confirmAndDeleteInspectionDoc} style={{ flex: 1, padding: "8px 0", borderRadius: 8, border: "none", background: C.red, color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
-                                        Yes, Delete Report
-                                      </button>
-                                    </div>
-                                  </div>
-                                )}
-
-                                <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", width: "fit-content" }}>
-                                  {inspecting ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Upload size={11}/> Upload New Report</>}
-                                  <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
-                                </label>
-                              </div>
-                            ) : inspectDone ? (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                <div style={{ background: "#fefce8", border: "1.5px solid #fde68a", borderRadius: 10, padding: "12px 14px" }}>
-                                  <p style={{ fontSize: 13, color: "#92400e", margin: 0 }}>Report was analyzed but the original file is not on record. Re-upload to save a permanent copy.</p>
-                                </div>
-                                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.accent}`, color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                                    {inspecting ? <><Loader2 size={11} className="animate-spin"/> Analyzing…</> : <><Upload size={11}/> Upload Report</>}
-                                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
-                                  </label>
-                                  <button onClick={clearInspectionAnalysis} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "6px 14px", borderRadius: 8, border: `1px solid ${C.border}`, background: "white", color: C.red, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
-                                    <Trash2 size={11}/> Clear Analysis
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                                {inspecting ? (
-                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, border: `2px dashed ${C.accent}`, background: "#eff6ff" }}>
-                                    <Loader2 size={20} color={C.accent} className="animate-spin"/>
-                                    <span style={{ fontSize: 14, color: C.accent, textAlign: "center" }}>
-                                      {inspectStage === "uploading" ? "Uploading PDF…" : inspectStage === "saving" ? "Saving findings…" : "Analyzing report…"}
-                                    </span>
-                                    {inspectStage === "analyzing" && (
-                                      <span style={{ fontSize: 11, color: C.text3, textAlign: "center", maxWidth: 220 }}>
-                                        First analysis takes 45–90 seconds. Results are saved automatically — safe to wait.
-                                      </span>
-                                    )}
-                                  </div>
-                                ) : photoAnalyzing ? (
-                                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, border: `2px dashed ${C.accent}`, background: "#eff6ff" }}>
-                                    <Loader2 size={20} color={C.accent} className="animate-spin"/>
-                                    <span style={{ fontSize: 14, color: C.accent }}>Analyzing photos…</span>
-                                  </div>
-                                ) : (
-                                  <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                    <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "18px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${C.border}`, background: C.bg }}>
-                                      <FileText size={20} color={C.text3}/>
-                                      <span style={{ fontSize: 14, color: C.text }}>Upload inspection report PDF</span>
-                                      <span style={{ fontSize: 12, color: C.text3 }}>BTLR extracts all findings and scores your home</span>
-                                      <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
-                                    </label>
-                                    <div style={{ display: "flex", gap: 8 }}>
-                                      <button onClick={() => { scanningDocRef.current = "inspection"; setScanningDoc("inspection"); scanDocRef.current?.click(); }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.accent}`, background: "transparent", color: C.accent, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                                        <Camera size={14}/> Scan Report Pages
-                                      </button>
-                                      <button onClick={() => photoRef.current?.click()} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6, padding: "11px 14px", borderRadius: 10, border: `1.5px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                                        <Camera size={14}/> Photo Home Issues
-                                      </button>
-                                    </div>
-                                    {photoErr && <p style={{ fontSize: 12, color: C.red, margin: 0 }}>{photoErr}</p>}
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </>)}
-
-                          {/* ── Warranty content ── */}
-                          {sec.id === "warranty" && (<>
-                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>
-                              Upload your home warranty or maintenance policy. BTLR will extract your coverage, exclusions, service fee, and claim contact info.
-                            </p>
-                            {!warranty ? (
-                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingWarranty ? "#7c3aed" : C.border}`, background: parsingWarranty ? "#faf5ff" : C.bg }}>
-                                {parsingWarranty
-                                  ? <><Loader2 size={20} color="#7c3aed" className="animate-spin"/><span style={{ fontSize: 14, color: "#7c3aed" }}>Parsing warranty document…</span></>
-                                  : <><Shield size={20} color="#7c3aed"/><span style={{ fontSize: 14, color: C.text }}>Upload home warranty or maintenance policy</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text document</span></>
-                                }
-                                <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
-                              </label>
-                            ) : (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                <div style={{ display: "flex", justifyContent: "flex-end" }}>
-                                  <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid ${C.accent}", color: "#7c3aed", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                                    {parsingWarranty ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
-                                    {parsingWarranty ? "Parsing…" : "Replace"}
-                                    <input type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
-                                  </label>
-                                </div>
-                                <div style={{ background: "#faf5ff", border: "1.5px solid #e9d5ff", borderRadius: 12, padding: "14px 16px" }}>
-                                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 8, flexWrap: "wrap", marginBottom: 4 }}>
-                                    <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: 0 }}>
-                                      {warranty.provider ?? "Warranty"}{warranty.planName ? ` — ${warranty.planName}` : ""}
-                                    </p>
-                                    {/* Expiry badge */}
-                                    {warranty.expirationDate && (() => {
-                                      const exp  = new Date(warranty.expirationDate);
-                                      const days = Math.round((exp.getTime() - Date.now()) / 86400000);
-                                      if (days <= 0) return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, background: "#fef2f2", border: "1px solid #fca5a5", color: "#dc2626", fontWeight: 700 }}>Expired</span>;
-                                      const color  = days < 30 ? "#dc2626" : days < 90 ? "#d97706" : "#16a34a";
-                                      const bg     = days < 30 ? "#fef2f2" : days < 90 ? "#fffbeb" : "#f0fdf4";
-                                      const border = days < 30 ? "#fca5a5" : days < 90 ? "#fcd34d" : "#86efac";
-                                      return <span style={{ fontSize: 11, padding: "3px 9px", borderRadius: 12, background: bg, border: `1px solid ${border}`, color, fontWeight: 700 }}>{days} days left</span>;
-                                    })()}
-                                  </div>
-                                  <p style={{ fontSize: 13, color: C.text3, margin: "0 0 8px" }}>
-                                    {[warranty.policyNumber ? `#${warranty.policyNumber}` : null, warranty.serviceFee ? `$${warranty.serviceFee} service fee` : null, warranty.expirationDate ? `Expires ${warranty.expirationDate}` : null, warranty.autoRenews ? "Auto-renews" : null].filter(Boolean).join(" · ")}
-                                  </p>
-                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                    {warranty.claimUrl && (
-                                      <a href={warranty.claimUrl.startsWith("http") ? warranty.claimUrl : `https://${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 7, background: "#7c3aed", color: "white", fontSize: 11, fontWeight: 700, textDecoration: "none" }}>
-                                        <RefreshCw size={10}/> Renew
-                                      </a>
-                                    )}
-                                    {warrantyDocUrl ? (
-                                      <a href={warrantyDocUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 7, border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 11, fontWeight: 700, textDecoration: "none", background: "white" }}>
-                                        <FileText size={10}/> View PDF
-                                      </a>
-                                    ) : (
-                                      <span style={{ fontSize: 11, color: C.text3 }}>Re-upload to enable PDF view</span>
-                                    )}
-                                  </div>
-                                </div>
-                                {(warranty.claimUrl || warranty.claimPhone || warranty.claimEmail) && (
-                                  <div style={{ background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "12px 16px" }}>
-                                    <p style={{ fontSize: 12, fontWeight: 700, color: C.accent, margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><Send size={11}/> File a Claim</p>
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                      {warranty.claimUrl && <a href={warranty.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#7c3aed", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
-                                      {warranty.claimPhone && <a href={`tel:${warranty.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={12}/> {warranty.claimPhone}</a>}
-                                      {warranty.claimEmail && <a href={`mailto:${warranty.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid ${C.accent}", color: "#7c3aed", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Mail size={12}/> Email Claims</a>}
-                                    </div>
-                                    {warranty.responseTime && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>Typical response: {warranty.responseTime}</p>}
-                                  </div>
-                                )}
-                                {(warranty.coverageItems?.length ?? 0) > 0 && (
-                                  <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered ({warranty.coverageItems!.length})</p>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                      {warranty.coverageItems!.map((item, i) => <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>)}
-                                    </div>
-                                  </div>
-                                )}
-                                {(warranty.exclusions?.length ?? 0) > 0 && (
-                                  <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Excluded ({warranty.exclusions!.length})</p>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                      {warranty.exclusions!.map((item, i) => <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>)}
-                                    </div>
-                                  </div>
-                                )}
-                                {warranty.coverageLimits && Object.keys(warranty.coverageLimits).length > 0 && (
-                                  <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Coverage Limits</p>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                      {Object.entries(warranty.coverageLimits).map(([sys, limit]) => <span key={sys} style={{ fontSize: 12, background: C.amberBg, border: `1px solid ${C.amber}40`, borderRadius: 6, padding: "3px 9px", color: C.amber }}>{sys}: ${(limit as number).toLocaleString()}</span>)}
-                                    </div>
-                                  </div>
-                                )}
-                              </div>
-                            )}
-                          </>)}
-
-                          {/* ── Insurance content ── */}
-                          {sec.id === "insurance" && (<>
-                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>
-                              Upload your homeowners insurance declarations page. BTLR will extract coverage amounts, deductibles, exclusions, and claim contact info.
-                            </p>
-                            {!insurance ? (
-                              <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${parsingInsurance ? "#0891b2" : C.border}`, background: parsingInsurance ? "#f0f9ff" : C.bg }}>
-                                {parsingInsurance
-                                  ? <><Loader2 size={20} color="#0891b2" className="animate-spin"/><span style={{ fontSize: 14, color: "#0891b2" }}>Parsing insurance documents…</span></>
-                                  : <><Shield size={20} color="#0891b2"/><span style={{ fontSize: 14, color: C.text }}>Upload homeowners insurance policy or dec page</span><span style={{ fontSize: 12, color: C.text3 }}>PDF or text — select multiple files at once</span></>
-                                }
-                                <input key={insuranceFileKey} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
-                              </label>
-                            ) : (
-                              <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-                                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-                                  {insuranceDocCount > 0 && (
-                                    <span style={{ fontSize: 11, color: C.text3 }}>
-                                      {insuranceDocCount} document{insuranceDocCount !== 1 ? "s" : ""} uploaded
-                                    </span>
-                                  )}
-                                  <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>
-                                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                                      {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}
-                                      {parsingInsurance ? "…" : "Add Policy"}
-                                      <input key={`doc-add-${insuranceFileKey}`} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={addSecondaryPolicy} disabled={parsingInsurance}/>
-                                    </label>
-                                    <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 6, border: "1px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
-                                      {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
-                                      {parsingInsurance ? "Parsing…" : "Replace"}
-                                      <input key={`doc-rep-${insuranceFileKey}`} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
-                                    </label>
-                                  </div>
-                                </div>
-                                <div style={{ background: "#f0f9ff", border: "1.5px solid #bae6fd", borderRadius: 12, padding: "14px 16px" }}>
-                                  <p style={{ fontSize: 15, fontWeight: 700, color: C.text, margin: "0 0 2px" }}>
-                                    {insurance.provider ?? "Insurance"}{insurance.policyType ? ` — ${insurance.policyType}` : ""}
-                                  </p>
-                                  <p style={{ fontSize: 13, color: C.text3, margin: "0 0 8px" }}>
-                                    {[insurance.policyNumber ? `#${insurance.policyNumber}` : null, (insurance.annualPremium ?? insurance.premium) ? `$${(insurance.annualPremium ?? insurance.premium)?.toLocaleString()}/yr` : null, insurance.deductibleStandard ? `$${insurance.deductibleStandard.toLocaleString()} deductible` : null, insurance.expirationDate ? `Renews ${insurance.expirationDate}` : null].filter(Boolean).join(" · ")}
-                                  </p>
-                                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                    {insuranceDocUrls.length > 0 ? (
-                                      insuranceDocUrls.map((url, i) => (
-                                        <a key={i} href={url} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "5px 12px", borderRadius: 7, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 11, fontWeight: 700, textDecoration: "none", background: "white" }}>
-                                          <FileText size={10}/> {insuranceDocUrls.length > 1 ? `View PDF ${i + 1}` : "View PDF"}
-                                        </a>
-                                      ))
-                                    ) : (
-                                      <span style={{ fontSize: 11, color: C.text3 }}>Re-upload to enable PDF view</span>
-                                    )}
-                                  </div>
-                                </div>
-                                {(insurance.dwellingCoverage || insurance.personalProperty || insurance.liabilityCoverage) && (
-                                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                                    {insurance.dwellingCoverage   && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Dwelling</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.dwellingCoverage.toLocaleString()}</div></div>}
-                                    {insurance.personalProperty   && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Personal Property</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.personalProperty.toLocaleString()}</div></div>}
-                                    {insurance.liabilityCoverage  && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Liability</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.liabilityCoverage.toLocaleString()}</div></div>}
-                                    {insurance.deductibleStandard && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "8px 12px" }}><div style={{ fontSize: 10, color: "#0891b2", fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase" }}>Deductible</div><div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>${insurance.deductibleStandard.toLocaleString()}</div></div>}
-                                  </div>
-                                )}
-                                {(insurance.claimUrl || insurance.claimPhone || insurance.claimEmail) && (
-                                  <div style={{ background: "#e0f2fe", border: "1px solid #bae6fd", borderRadius: 10, padding: "12px 16px" }}>
-                                    <p style={{ fontSize: 12, fontWeight: 700, color: "#0891b2", margin: "0 0 8px", display: "flex", alignItems: "center", gap: 5 }}><Send size={11}/> File a Claim</p>
-                                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                                      {insurance.claimUrl   && <a href={insurance.claimUrl} target="_blank" rel="noopener noreferrer" style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, background: "#0891b2", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none" }}><ExternalLink size={12}/> File Online</a>}
-                                      {insurance.claimPhone && <a href={`tel:${insurance.claimPhone.replace(/\D/g, "")}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Phone size={12}/> {insurance.claimPhone}</a>}
-                                      {insurance.claimEmail && <a href={`mailto:${insurance.claimEmail}`} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "7px 14px", borderRadius: 8, border: "1.5px solid #0891b2", color: "#0891b2", fontSize: 12, fontWeight: 700, textDecoration: "none", background: "white" }}><Mail size={12}/> Email Claims</a>}
-                                    </div>
-                                    {insurance.claimHours && <p style={{ fontSize: 11, color: C.text3, margin: "8px 0 0" }}>{insurance.claimHours}</p>}
-                                  </div>
-                                )}
-                                {(insurance.coverageItems?.length ?? 0) > 0 && (
-                                  <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Covered ({insurance.coverageItems!.length})</p>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                      {insurance.coverageItems!.map((item, i) => <span key={i} style={{ fontSize: 12, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 6, padding: "3px 9px", color: "#15803d" }}>{item}</span>)}
-                                    </div>
-                                  </div>
-                                )}
-                                {(insurance.endorsements?.length ?? 0) > 0 && (
-                                  <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Endorsements ({insurance.endorsements!.length})</p>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                      {insurance.endorsements!.map((item, i) => <span key={i} style={{ fontSize: 12, background: "#e0f2fe", border: "1px solid #7dd3fc", borderRadius: 6, padding: "3px 9px", color: "#0369a1" }}>{item}</span>)}
-                                    </div>
-                                  </div>
-                                )}
-                                {(insurance.exclusions?.length ?? 0) > 0 && (
-                                  <div>
-                                    <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 8px" }}>Excluded ({insurance.exclusions!.length})</p>
-                                    <div style={{ display: "flex", flexWrap: "wrap", gap: 5 }}>
-                                      {insurance.exclusions!.map((item, i) => <span key={i} style={{ fontSize: 12, background: C.redBg, border: "1px solid #fca5a5", borderRadius: 6, padding: "3px 9px", color: C.red }}>{item}</span>)}
-                                    </div>
-                                  </div>
-                                )}
-                                {/* Additional / stacked policies */}
-                                {(insurance.additionalPolicies ?? []).map((ap, i) => (
-                                  <div key={i} style={{ borderTop: "1.5px solid #bae6fd", paddingTop: 12, marginTop: 4 }}>
-                                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                                      <div>
-                                        <span style={{ fontSize: 13, fontWeight: 700, color: C.text }}>
-                                          {ap.provider ?? "Additional Policy"}{ap.policyType ? ` · ${ap.policyType}` : ""}
-                                        </span>
-                                        {ap.policyNumber && <span style={{ fontSize: 11, color: C.text3, marginLeft: 8, fontFamily: "monospace" }}>#{ap.policyNumber}</span>}
-                                      </div>
-                                      <button onClick={async () => {
-                                        if (!confirm("Remove this policy?")) return;
-                                        const propId = activePropertyIdRef.current;
-                                        if (!propId) return;
-                                        const updated = (insurance?.additionalPolicies ?? []).filter((_, j) => j !== i);
-                                        await supabase.from("home_insurance").update({ additional_policies: updated }).eq("property_id", propId);
-                                        setInsurance(prev => prev ? { ...prev, additionalPolicies: updated } : prev);
-                                        showToast("Policy removed", "success");
-                                      }} style={{ background: "none", border: "none", cursor: "pointer", color: C.text3, padding: 2 }}><X size={13}/></button>
-                                    </div>
-                                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                                      {ap.annualPremium && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}><div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Premium</div><div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>${ap.annualPremium.toLocaleString()}<span style={{ fontSize: 10, color: C.text3 }}>/yr</span></div></div>}
-                                      {ap.expirationDate && <div style={{ background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 8, padding: "5px 10px" }}><div style={{ fontSize: 9, color: "#0891b2", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em" }}>Renews</div><div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>{ap.expirationDate}</div></div>}
-                                    </div>
-                                    {(ap.claimPhone || ap.claimUrl) && (
-                                      <button onClick={() => {
-                                        if (ap.claimUrl) window.open(ap.claimUrl);
-                                        else if (ap.claimPhone) window.location.href = `tel:${ap.claimPhone.replace(/\D/g, "")}`;
-                                      }} style={{ marginTop: 8, display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 7, background: C.navy, border: "none", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>
-                                        File Claim
-                                      </button>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </>)}
-
-                          {/* ── Repair Documents content ── */}
-                          {sec.id === "repairs" && (<>
-                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>
-                              Upload invoices, receipts, or contractor reports for completed work. BTLR will parse what was repaired and update your Home Health Score automatically.
-                            </p>
-                            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${uploadingRepair ? C.green : "#bbf7d0"}`, background: uploadingRepair ? C.greenBg : "#f0fdf4" }}>
-                              {uploadingRepair
-                                ? <><Loader2 size={20} color={C.green} className="animate-spin"/><span style={{ fontSize: 14, color: C.green }}>Parsing repair document…</span></>
-                                : <><CheckCircle2 size={20} color={C.green}/><span style={{ fontSize: 14, color: C.text }}>Upload invoice, receipt, or contractor report</span><span style={{ fontSize: 12, color: C.text3 }}>PDF, image, or document</span></>
-                              }
-                              <input ref={repairRef} type="file" style={{ display: "none" }} onChange={uploadRepairDoc} disabled={uploadingRepair} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"/>
-                            </label>
-                            {repairDocs.length > 0 && (
-                              <div style={{ marginTop: 16 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Repair History</p>
-                                {repairDocs.map((r, i) => (
-                                  <div key={r.id ?? i} style={{ background: C.greenBg, border: "1px solid #bbf7d0", borderRadius: 10, padding: "12px 14px", marginBottom: 8 }}>
-                                    <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
-                                      <CheckCircle2 size={13} color={C.green}/>
-                                      <span style={{ fontSize: 14, fontWeight: 600, color: C.text, flex: 1 }}>{formatLabel(r.category) || "Repair"}{r.vendor ? ` — ${r.vendor}` : ""}</span>
-                                      {r.cost ? <span style={{ fontSize: 13, fontWeight: 700, color: C.green }}>${r.cost.toLocaleString()}</span> : null}
-                                      {/* View PDF */}
-                                      {r.fileUrl && (
-                                        <a href={r.fileUrl} target="_blank" rel="noopener noreferrer"
-                                          style={{ display: "inline-flex", alignItems: "center", gap: 3, fontSize: 11, fontWeight: 600, color: C.accent, textDecoration: "none", padding: "2px 8px", borderRadius: 6, background: "#eff6ff", border: `1px solid ${C.accent}30` }}>
-                                          <FileText size={10}/> PDF
-                                        </a>
-                                      )}
-                                      {/* Delete */}
-                                      <button onClick={() => deleteRepairDoc(r)} title="Remove this repair record"
-                                        style={{ display: "inline-flex", alignItems: "center", padding: "2px 4px", borderRadius: 5, background: "transparent", border: "none", cursor: "pointer", color: C.text3 }}
-                                        onMouseEnter={e => (e.currentTarget.style.color = C.red)}
-                                        onMouseLeave={e => (e.currentTarget.style.color = C.text3)}>
-                                        <X size={12}/>
-                                      </button>
-                                    </div>
-                                    {r.summary && <p style={{ fontSize: 12, color: C.text2, margin: "0 0 4px 21px", lineHeight: 1.5 }}>{r.summary}</p>}
-                                    {r.autoResolved && r.autoResolved.length > 0 && (
-                                      <p style={{ fontSize: 11, color: C.green, margin: "0 0 0 21px", display: "flex", alignItems: "center", gap: 3 }}>
-                                        <CheckCircle2 size={10}/> Auto-resolved {r.autoResolved.length} inspection finding{r.autoResolved.length > 1 ? "s" : ""}
-                                      </p>
-                                    )}
-                                  </div>
-                                ))}
-                              </div>
-                            )}
-                          </>)}
-
-                          {/* ── Other Documents content ── */}
-                          {sec.id === "other" && (<>
-                            <p style={{ fontSize: 13, color: C.text3, marginBottom: 14, lineHeight: 1.5, marginTop: 0 }}>Warranties, permits, HOA docs, and other property files.</p>
-                            <label style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, cursor: "pointer", border: `2px dashed ${docLoading ? C.accent : C.border}`, background: docLoading ? C.accentBg : C.bg }}>
-                              {docLoading ? <><Loader2 size={20} color={C.accent} className="animate-spin"/><span style={{ fontSize: 14, color: C.accent }}>Uploading…</span></> : <><CloudUpload size={20} color={C.text3}/><span style={{ fontSize: 14, color: C.text }}>Click to upload file</span></>}
-                              <input ref={docRef} type="file" style={{ display: "none" }} onChange={uploadDoc} disabled={docLoading} accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"/>
-                            </label>
-                            {docs.length > 0 && (
-                              <div style={{ marginTop: 14 }}>
-                                <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.07em", margin: "0 0 10px" }}>Uploaded Files</p>
-                                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                                  {docs.map((doc, i) => (
-                                    <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", background: C.bg, borderRadius: 9, padding: "9px 13px" }}>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
-                                        <FileText size={13} color={C.text3} style={{ flexShrink: 0 }}/>
-                                        <span style={{ fontSize: 13, color: C.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{doc.name}</span>
-                                      </div>
-                                      <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-                                        {doc.url ? <a href={doc.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: C.accent, textDecoration: "none", display: "flex", alignItems: "center", gap: 3 }}>View <ExternalLink size={10}/></a> : <span style={{ fontSize: 12, color: C.text3 }}>Unavailable</span>}
-                                        <button onClick={() => deleteDoc(doc)} title="Delete file" style={{ width: 24, height: 24, display: "flex", alignItems: "center", justifyContent: "center", background: "transparent", border: "none", cursor: "pointer", borderRadius: 5, color: C.text3 }}
-                                          onMouseEnter={e => (e.currentTarget.style.color = C.red)}
-                                          onMouseLeave={e => (e.currentTarget.style.color = C.text3)}>
-                                          <X size={12}/>
-                                        </button>
-                                      </div>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            )}
-                          </>)}
-
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+            </>
             );
           })()}
 
@@ -7859,22 +7820,22 @@ export default function Dashboard() {
                     {(() => {
                       const criticals = activeFindings.filter(f => f.severity === "critical");
                       const warnings  = activeFindings.filter(f => f.severity === "warning");
-                      type ChipDef = { label: string; color: string; action: () => void };
+                      type ChipDef = { label: string; color: string; icon: string; action: () => void };
                       const chips: ChipDef[] = [];
                       if (criticals.length > 0) {
                         const top = criticals[0];
-                        chips.push({ label: "View Repairs", color: C.red, action: () => setNav("Repairs") });
-                        chips.push({ label: `Find a ${tradeForCategory(top.system ?? top.category ?? "")}`, color: C.red, action: () => handleFindVendors(top.category, top.category, top.description) });
+                        chips.push({ label: "View Repairs", color: C.red, icon: "⚒", action: () => setNav("Repairs") });
+                        chips.push({ label: `Find a ${tradeForCategory(top.system ?? top.category ?? "")}`, color: C.red, icon: "◯", action: () => handleFindVendors(top.category, top.category, top.description) });
                       } else if (warnings.length > 0) {
                         const top = warnings[0];
-                        chips.push({ label: "View Repairs", color: C.amber, action: () => setNav("Repairs") });
-                        chips.push({ label: `Find a ${tradeForCategory(top.system ?? top.category ?? "")}`, color: C.amber, action: () => handleFindVendors(top.category, top.category, top.description) });
+                        chips.push({ label: "View Repairs", color: C.amber, icon: "⚒", action: () => setNav("Repairs") });
+                        chips.push({ label: `Find a ${tradeForCategory(top.system ?? top.category ?? "")}`, color: C.amber, icon: "◯", action: () => handleFindVendors(top.category, top.category, top.description) });
                       } else if (!inspectDone) {
-                        chips.push({ label: "Upload Inspection Report", color: C.accent, action: () => inspRef.current?.click() });
-                        chips.push({ label: "Self-Inspection", color: C.accent, action: () => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); } });
+                        chips.push({ label: "Upload Inspection Report", color: C.accent, icon: "◉", action: () => inspRef.current?.click() });
+                        chips.push({ label: "Self-Inspection", color: C.accent, icon: "⚒", action: () => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); } });
                       } else {
-                        chips.push({ label: "Schedule Maintenance", color: C.green, action: () => setNav("Maintenance") });
-                        chips.push({ label: "Find a Vendor", color: C.green, action: () => setNav("Vendors") });
+                        chips.push({ label: "Schedule Maintenance", color: C.green, icon: "⏱", action: () => setNav("Maintenance") });
+                        chips.push({ label: "Find a Vendor", color: C.green, icon: "◯", action: () => setNav("Vendors") });
                       }
                       return (
                         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
@@ -7887,6 +7848,7 @@ export default function Dashboard() {
                               whiteSpace: "nowrap" as const, fontFamily: "'Outfit', sans-serif",
                             }}>
                               <span style={{ width: 6, height: 6, borderRadius: 6, background: chip.color, display: "inline-block", flexShrink: 0 }}/>
+                              <span style={{ fontSize: 13, lineHeight: 1, opacity: 0.9 }}>{chip.icon}</span>
                               {chip.label}
                             </button>
                           ))}
