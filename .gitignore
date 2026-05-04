@@ -40,3 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 .env.local
+
+# Capacitor native projects (generated — do not edit manually)
+/ios
+/android

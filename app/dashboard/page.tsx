@@ -23,6 +23,7 @@ import { configureSupabaseStore } from "../../lib/score-snapshot-store";
 import { registerCostOverrides } from "../../lib/scoring-cost-ranges";
 import { isScorable } from "../../lib/findings/scorableRules";
 import { extractPdfTextInBrowser } from "../../lib/extractPdfBrowser";
+import { registerPushNotifications } from "../../lib/push-notifications";
 import { computeExtendedCondition, type ExtendedConditionResult } from "../../lib/scoring-extended";
 import { isEnabled } from "../../lib/feature-flags";
 import { SELF_INSPECT_STEPS, generateSelfInspectionFindings, type SelfInspectAnswers, type SelfInspectQuestion, type SelfInspectOption, isStepComplete } from "../../lib/self-inspection-questionnaire";
@@ -2304,6 +2305,7 @@ export default function Dashboard() {
   const [notifScore, setNotifScore]         = useState(true);
   const [notifWeekly, setNotifWeekly]       = useState(false);
   const [notifMonthly, setNotifMonthly]     = useState(true);
+  const [notifPush, setNotifPush]           = useState(false);
   const [savingNotifs, setSavingNotifs]     = useState(false);
   const [notifsSaved, setNotifsSaved]       = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -3030,6 +3032,8 @@ export default function Dashboard() {
     // Load user tier from user_profiles (non-blocking — defaults to 'free')
     supabase.from("user_profiles").select("tier").eq("id", session.user.id).maybeSingle()
       .then(({ data: profile }) => { if (profile?.tier) setUserTier(profile.tier as "free" | "pro"); });
+    // Register push notifications on native (iOS/Android) — no-op on web
+    registerPushNotifications().catch(console.error);
     return true;
   }
 
@@ -7736,7 +7740,7 @@ export default function Dashboard() {
                   <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.09em", margin: "0 0 2px" }}>Channels</p>
                   <ToggleRow label="Email" sub="Receive alerts at your account email" checked={true} onChange={() => {}} disabled={false}/>
                   <ToggleRow label="SMS" sub="Text message alerts" checked={false} onChange={() => {}} disabled={true} disabledNote="Coming soon — SMS setup required"/>
-                  <ToggleRow label="Push (iOS & Android)" sub="Mobile app push notifications" checked={false} onChange={() => {}} disabled={true} disabledNote="Coming soon — mobile app not yet released"/>
+                  <ToggleRow label="Push (iOS & Android)" sub="Mobile app push notifications" checked={notifPush} onChange={v => { setNotifPush(v); if (v) registerPushNotifications().catch(console.error); }} disabled={false}/>
 
                   {/* Alert type toggles */}
                   <p style={{ fontSize: 11, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.09em", margin: "20px 0 2px" }}>Alert Types</p>
