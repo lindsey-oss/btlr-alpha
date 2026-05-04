@@ -8539,68 +8539,68 @@ export default function Dashboard() {
                 const isUrgent = daysUntilDue <= 7 && !!mortgage?.payment;
                 const dueDateLabel = dueDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
                 return (
-                  <div style={{ borderRadius: 16, overflow: "hidden", background: "linear-gradient(145deg, #1C2B3A 0%, #2A3E54 100%)", boxShadow: "0 1px 4px rgba(15,31,61,0.10)" }}>
-                    {/* Dark header */}
-                    <div style={{ padding: "20px 22px 18px" }}>
-                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <div style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,0.12)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                          <HomeIcon size={15} color="rgba(255,255,255,0.8)"/>
-                        </div>
-                        <div>
-                          <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.55)", letterSpacing: "0.1em", textTransform: "uppercase", margin: 0 }}>Mortgage</p>
-                          {mortgage?.lender && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", margin: 0 }}>{mortgage.lender}</p>}
-                        </div>
+                  <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+                    {/* Header row */}
+                    <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>Mortgage</p>
+                        {mortgage?.lender && <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>{mortgage.lender}{mortgage.rate ? ` · ${(mortgage.rate * 100).toFixed(2)}%` : ""}</p>}
                       </div>
-                      <button onClick={() => setShowMortgageForm(f => !f)} style={{ fontSize: 11, fontWeight: 600, color: "rgba(255,255,255,0.6)", background: "transparent", border: "1px solid rgba(255,255,255,0.2)", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>
+                      <button onClick={() => setShowMortgageForm(f => !f)} style={{ fontSize: 11, fontWeight: 600, color: C.text3, background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer", flexShrink: 0 }}>
                         {showMortgageForm ? "Cancel" : mortgage ? "Edit" : "Add"}
                       </button>
                     </div>
                     {mortgage && !showMortgageForm ? (
                       <>
-                        <p style={{ fontSize: 32, fontWeight: 800, color: "white", letterSpacing: "-0.8px", margin: "0 0 4px", lineHeight: 1 }}>
-                          ${mortgage.payment?.toLocaleString() ?? mortgage.balance?.toLocaleString() ?? "—"}
-                          {mortgage.payment && <span style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.5)" }}>/mo</span>}
-                        </p>
-                        {mortgage.due_day ? (
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "5px 12px", borderRadius: 20,
-                            background: isUrgent ? "rgba(251,191,36,0.22)" : "rgba(255,255,255,0.1)",
-                            border: `1px solid ${isUrgent ? "rgba(251,191,36,0.5)" : "rgba(255,255,255,0.18)"}` }}>
-                            <Clock size={11} color={isUrgent ? "#fbbf24" : "rgba(255,255,255,0.55)"}/>
-                            <span style={{ fontSize: 12, fontWeight: 700, color: isUrgent ? "#fbbf24" : "rgba(255,255,255,0.7)" }}>
-                              Due {dueDateLabel}{isUrgent ? ` — ${daysUntilDue} day${daysUntilDue !== 1 ? "s" : ""}` : ""}
+                        {/* Next payment — prominent */}
+                        <div>
+                          <p style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 3px" }}>Next Payment</p>
+                          <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+                            <span style={{ fontSize: 30, fontWeight: 800, color: C.text, letterSpacing: "-0.5px", lineHeight: 1 }}>
+                              ${mortgage.payment?.toLocaleString() ?? mortgage.balance?.toLocaleString() ?? "—"}
                             </span>
+                            {mortgage.payment && <span style={{ fontSize: 13, color: C.text3 }}>/mo</span>}
                           </div>
-                        ) : null}
-                      </>
-                    ) : null}
-                    </div>{/* /dark header */}
-                    {/* White detail section */}
-                    <div style={{ background: "white", padding: "16px 22px 20px", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                    {mortgage && !showMortgageForm ? (
-                      <>
-                        <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 14 }}>
-                          {mortgage.rate && (
-                            <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ fontSize: 12, color: C.text3 }}>Rate</span>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{(mortgage.rate * 100).toFixed(3)}% fixed</span>
+                          {mortgage.due_day ? (
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, padding: "4px 10px", borderRadius: 20,
+                              background: isUrgent ? C.amberBg : C.surface2,
+                              border: `1px solid ${isUrgent ? C.amber + "60" : C.border}` }}>
+                              <Clock size={11} color={isUrgent ? C.amber : C.text3}/>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: isUrgent ? C.amber : C.text2 }}>
+                                Due {dueDateLabel}{isUrgent ? ` — ${daysUntilDue} day${daysUntilDue !== 1 ? "s" : ""}` : ""}
+                              </span>
                             </div>
-                          )}
+                          ) : null}
+                        </div>
+                        {/* Key-value details */}
+                        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                           {mortgage.balance && (
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
                               <span style={{ fontSize: 12, color: C.text3 }}>Remaining</span>
                               <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>${mortgage.balance.toLocaleString()}</span>
                             </div>
                           )}
-                          {mortgage.payment && mortgage.due_day && (
+                          {mortgage.rate && (
                             <div style={{ display: "flex", justifyContent: "space-between" }}>
-                              <span style={{ fontSize: 12, color: C.text3 }}>Next payment</span>
-                              <span style={{ fontSize: 12, fontWeight: 600, color: C.accent }}>${mortgage.payment.toLocaleString()} · {dueDateLabel}</span>
+                              <span style={{ fontSize: 12, color: C.text3 }}>Rate</span>
+                              <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>{(mortgage.rate * 100).toFixed(3)}% fixed</span>
                             </div>
                           )}
                         </div>
-                        <button style={{ width: "100%", padding: "11px", borderRadius: 10, background: "linear-gradient(135deg, #1C2B3A 0%, #2A3E54 100%)", border: "1px solid rgba(255,255,255,0.08)", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", letterSpacing: "0.02em" }}>
-                          Make Payment
+                        {/* Upload / Scan — green ghost, equal width */}
+                        <div style={{ display: "flex", gap: 8 }}>
+                          <label style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.green}`, background: C.surface, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                            {mortgageStatLoading ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
+                            {mortgageStatLoading ? "Parsing…" : "Upload Statement"}
+                            <input ref={mortgageStatRef} type="file" accept=".pdf" style={{ display: "none" }} onChange={uploadMortgageStatement} disabled={mortgageStatLoading}/>
+                          </label>
+                          <button onClick={() => { scanningDocRef.current = "mortgage"; setScanningDoc("mortgage"); scanDocRef.current?.click(); }} disabled={!!scanningDoc} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.green}`, background: C.surface, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                            <Camera size={11}/>{scanningDoc === "mortgage" ? "Scanning…" : "Scan Pages"}
+                          </button>
+                        </div>
+                        {/* Connect bank — coming soon */}
+                        <button disabled style={{ width: "100%", padding: "8px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface2, color: C.text3, fontSize: 12, fontWeight: 600, cursor: "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                          <LinkIcon size={12}/>Connect Bank <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" as const, background: C.border, color: C.text3, borderRadius: 4, padding: "1px 6px", marginLeft: 4 }}>Coming Soon</span>
                         </button>
                       </>
                     ) : showMortgageForm ? (
@@ -8641,45 +8641,36 @@ export default function Dashboard() {
                             <Camera size={11}/>{scanningDoc === "mortgage" ? "…" : "Scan"}
                           </button>
                         </div>
-                        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 10 }}>
-                          <button onClick={connectPlaid} disabled={connectingPlaid} style={{ width: "100%", padding: "8px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text2, fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: connectingPlaid ? 0.6 : 1 }}>
-                            {connectingPlaid ? <><Loader2 size={12} className="animate-spin"/>Connecting…</> : <><LinkIcon size={12}/>Connect Bank</>}
-                          </button>
-                        </div>
+                        <button disabled style={{ width: "100%", padding: "8px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface2, color: C.text3, fontSize: 12, fontWeight: 600, cursor: "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                          <LinkIcon size={12}/>Connect Bank <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" as const, background: C.border, color: C.text3, borderRadius: 4, padding: "1px 6px", marginLeft: 4 }}>Coming Soon</span>
+                        </button>
                       </div>
                     )}
-                    </div>{/* /white detail */}
                   </div>
                 );
               })()}
 
               {/* Insurance */}
-              <div style={{ borderRadius: 16, overflow: "hidden", background: "linear-gradient(145deg, #0c5460 0%, #0f766e 60%, #0d9488 100%)", boxShadow: "0 1px 4px rgba(15,31,61,0.10)" }}>
-                {/* Dark header */}
-                <div style={{ padding: "20px 22px 18px" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Shield size={15} color="rgba(255,255,255,0.9)"/>
-                    </div>
-                    <div>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Home Insurance</span>
-                      {insurance?.provider && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: 0 }}>{insurance.provider}{insurance.policyType ? ` · ${insurance.policyType}` : ""}</p>}
-                    </div>
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* Header row */}
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>Home Insurance</p>
+                    {insurance?.provider && <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>{insurance.provider}{insurance.policyType ? ` · ${insurance.policyType}` : ""}</p>}
                   </div>
                   {insurance && (
                     <div style={{ display: "flex", gap: 5 }}>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: `1px solid ${C.border}`, color: C.text3, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                         {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Plus size={10}/>}
                         {parsingInsurance ? "…" : "Add"}
                         <input key={`add-${insuranceFileKey}`} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={addSecondaryPolicy} disabled={parsingInsurance}/>
                       </label>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.2)", color: "rgba(255,255,255,0.7)", fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                      <label style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: `1px solid ${C.border}`, color: C.text3, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                         {parsingInsurance ? <Loader2 size={10} className="animate-spin"/> : <Upload size={10}/>}
                         {parsingInsurance ? "…" : "Replace"}
                         <input key={`rep-${insuranceFileKey}`} type="file" accept=".pdf,.txt" multiple style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                       </label>
-                      <button onClick={deleteInsurance} title="Remove insurance record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,100,100,0.8)", fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
+                      <button onClick={deleteInsurance} title="Remove insurance record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: `1px solid ${C.border}`, color: C.red, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
                         <Trash2 size={10}/>
                       </button>
                     </div>
@@ -8687,25 +8678,23 @@ export default function Dashboard() {
                 </div>
                 {insurance ? (
                   <>
-                    <p style={{ fontSize: 32, fontWeight: 800, color: "white", letterSpacing: "-0.8px", margin: "0 0 4px", lineHeight: 1 }}>
-                      ${((insurance.annualPremium ?? insurance.premium) ?? 0).toLocaleString()}
-                      <span style={{ fontSize: 14, fontWeight: 500, color: "rgba(255,255,255,0.5)" }}>/yr</span>
-                    </p>
-                    {insurance.expirationDate && (
-                      <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.2)" }}>
-                        <span style={{ fontSize: 12, color: "rgba(255,255,255,0.75)" }}>✓ Active · Renews {insurance.expirationDate}</span>
+                    {/* Annual premium — prominent */}
+                    <div>
+                      <p style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 3px" }}>Annual Premium</p>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
+                        <span style={{ fontSize: 30, fontWeight: 800, color: C.text, letterSpacing: "-0.5px", lineHeight: 1 }}>
+                          ${((insurance.annualPremium ?? insurance.premium) ?? 0).toLocaleString()}
+                        </span>
+                        <span style={{ fontSize: 13, color: C.text3 }}>/yr</span>
                       </div>
-                    )}
-                  </>
-                ) : (
-                  <p style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.4)", margin: 0 }}>No policy on file</p>
-                )}
-                </div>{/* /dark header */}
-                {/* White detail section */}
-                <div style={{ background: "white", padding: "16px 22px 20px" }}>
-                {insurance ? (
-                  <>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 14 }}>
+                      {insurance.expirationDate && (
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, padding: "4px 10px", borderRadius: 20, background: C.surface2, border: `1px solid ${C.border}` }}>
+                          <span style={{ fontSize: 12, color: C.text2 }}>✓ Active · Renews {insurance.expirationDate}</span>
+                        </div>
+                      )}
+                    </div>
+                    {/* Key-value details */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {insurance.policyNumber && (
                         <div style={{ display: "flex", justifyContent: "space-between" }}>
                           <span style={{ fontSize: 12, color: C.text3 }}>Policy #</span>
@@ -8725,6 +8714,7 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
+                    {/* File Claim + Details */}
                     <div style={{ display: "flex", gap: 8 }}>
                       <button onClick={() => {
                         const rawIns = insurance.claimUrl;
@@ -8735,30 +8725,30 @@ export default function Dashboard() {
                         if (phone) { window.location.href = `tel:${phone.replace(/\D/g, "")}`; return; }
                         if (email) { window.location.href = `mailto:${email}`; return; }
                         showToast("Upload your declarations page to extract the claims contact", "info");
-                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "#0f766e", border: "none", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.green}`, background: C.surface, color: C.green, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         File Claim
                       </button>
-                      <button onClick={() => setShowInsuranceDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid #0f766e", color: "#0f766e", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      <button onClick={() => setShowInsuranceDetail(d => !d)} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text2, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         {showInsuranceDetail ? "Hide Details" : "Details"}
                       </button>
                     </div>
                   </>
                 ) : (
                   <>
-                    <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0f766e", background: "transparent", color: "#0f766e", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    {/* Upload / Scan — green ghost, equal width */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <label style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.green}`, background: C.surface, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                         {parsingInsurance ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
                         {parsingInsurance ? "Parsing…" : "Upload Policy PDF"}
                         <input ref={insuranceRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInsurance} disabled={parsingInsurance}/>
                       </label>
-                      <button onClick={() => { scanningDocRef.current = "insurance"; setScanningDoc("insurance"); scanDocRef.current?.click(); }} disabled={!!scanningDoc} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #0f766e", background: "transparent", color: "#0f766e", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      <button onClick={() => { scanningDocRef.current = "insurance"; setScanningDoc("insurance"); scanDocRef.current?.click(); }} disabled={!!scanningDoc} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.green}`, background: C.surface, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                         <Camera size={11}/> {scanningDoc === "insurance" ? "Scanning…" : "Scan Pages"}
                       </button>
                     </div>
                     {insuranceError && <p style={{ fontSize: 11, color: C.red, margin: "8px 0 0", lineHeight: 1.4 }}>⚠ {insuranceError}</p>}
                   </>
                 )}
-                </div>{/* /white detail */}
 
                 {/* Additional / stacked policies (e.g. CA FAIR Plan + DIC) */}
                 {(insurance?.additionalPolicies ?? []).map((ap, i) => (
@@ -8954,59 +8944,47 @@ export default function Dashboard() {
               </div>
 
               {/* Home Warranty */}
-              <div style={{ borderRadius: 16, overflow: "hidden", background: "linear-gradient(145deg, #4c1d95 0%, #6d28d9 50%, #7c3aed 100%)", boxShadow: "0 1px 4px rgba(15,31,61,0.10)" }}>
-                {/* Dark header */}
-                <div style={{ padding: "20px 22px 18px" }}>
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: 9, background: "rgba(255,255,255,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                      <Shield size={15} color="rgba(255,255,255,0.9)"/>
-                    </div>
-                    <div>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.55)", letterSpacing: "0.08em", textTransform: "uppercase" }}>Home Warranty</span>
-                      {warranty?.provider && <p style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", margin: 0 }}>{warranty.provider}{warranty.planName ? ` · ${warranty.planName}` : ""}</p>}
-                    </div>
+              <div style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 22, display: "flex", flexDirection: "column", gap: 14 }}>
+                {/* Header row */}
+                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                  <div>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: C.text, margin: 0 }}>Home Warranty</p>
+                    {warranty?.provider && <p style={{ fontSize: 12, color: C.text3, margin: "2px 0 0" }}>{warranty.provider}{warranty.planName ? ` · ${warranty.planName}` : ""}</p>}
                   </div>
                   {warranty && (
-                    <button onClick={deleteWarranty} title="Remove warranty record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: "1px solid rgba(255,255,255,0.15)", color: "rgba(255,100,100,0.8)", fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
+                    <button onClick={deleteWarranty} title="Remove warranty record" style={{ display: "inline-flex", alignItems: "center", gap: 4, padding: "4px 9px", borderRadius: 6, border: `1px solid ${C.border}`, color: C.red, fontSize: 11, fontWeight: 600, cursor: "pointer", background: "transparent" }}>
                       <Trash2 size={10}/>
                     </button>
                   )}
                 </div>
                 {warranty ? (
                   <>
+                    {/* Expiration — prominent */}
                     {warranty.expirationDate && (() => {
                       const days = Math.round((new Date(warranty.expirationDate).getTime() - Date.now()) / 86400000);
                       const isExpiringSoon = days <= 60;
                       const expLabel = new Date(warranty.expirationDate).toLocaleDateString("en-US", { month: "short", year: "numeric" });
                       return (
-                        <>
-                          <p style={{ fontSize: 36, fontWeight: 800, color: "white", letterSpacing: "-1px", margin: "0 0 8px", lineHeight: 1 }}>
-                            Expires {expLabel}
-                          </p>
-                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "4px 10px", borderRadius: 20,
-                            background: isExpiringSoon ? "rgba(251,191,36,0.2)" : "rgba(255,255,255,0.1)",
-                            border: `1px solid ${isExpiringSoon ? "rgba(251,191,36,0.4)" : "rgba(255,255,255,0.15)"}` }}>
-                            <span style={{ fontSize: 12, color: isExpiringSoon ? "#fbbf24" : "rgba(255,255,255,0.6)" }}>
+                        <div>
+                          <p style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.08em", margin: "0 0 3px" }}>Expiration</p>
+                          <span style={{ fontSize: 26, fontWeight: 800, color: C.text, letterSpacing: "-0.5px", lineHeight: 1 }}>
+                            {expLabel}
+                          </span>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 5, marginTop: 6, padding: "4px 10px", borderRadius: 20,
+                            background: isExpiringSoon ? C.amberBg : C.surface2,
+                            border: `1px solid ${isExpiringSoon ? C.amber + "60" : C.border}` }}>
+                            <span style={{ fontSize: 12, fontWeight: 600, color: isExpiringSoon ? C.amber : C.text2 }}>
                               {isExpiringSoon ? "⚠ Renewal needed soon" : `${Math.round(days / 30)} months remaining`}
                             </span>
                           </div>
-                        </>
+                        </div>
                       );
                     })()}
                     {!warranty.expirationDate && (
-                      <p style={{ fontSize: 20, fontWeight: 700, color: "white", margin: 0 }}>{warranty.planName ?? "Active"}</p>
+                      <p style={{ fontSize: 20, fontWeight: 700, color: C.text, margin: 0 }}>{warranty.planName ?? "Active"}</p>
                     )}
-                  </>
-                ) : (
-                  <p style={{ fontSize: 16, fontWeight: 600, color: "rgba(255,255,255,0.4)", margin: 0 }}>No warranty on file</p>
-                )}
-                </div>{/* /dark header */}
-                {/* White detail section */}
-                <div style={{ background: "white", padding: "16px 22px 20px" }}>
-                {warranty ? (
-                  <>
-                    <div style={{ display: "flex", flexDirection: "column", gap: 9, marginBottom: 14 }}>
+                    {/* Key-value details */}
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                       {warranty.planName && (
                         <div style={{ display: "flex", justifyContent: "space-between" }}>
                           <span style={{ fontSize: 12, color: C.text3 }}>Plan</span>
@@ -9026,10 +9004,11 @@ export default function Dashboard() {
                         </div>
                       )}
                     </div>
+                    {/* Action buttons */}
                     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                       {warranty.claimUrl && (
                         <a href={warranty.claimUrl.startsWith("http") ? warranty.claimUrl : `https://${warranty.claimUrl}`} target="_blank" rel="noopener noreferrer"
-                          style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "#7c3aed", border: "none", color: "white", fontSize: 12, fontWeight: 700, textDecoration: "none", cursor: "pointer" }}>
+                          style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface, color: C.text2, fontSize: 12, fontWeight: 700, textDecoration: "none", cursor: "pointer" }}>
                           <RefreshCw size={12}/> Renew
                         </a>
                       )}
@@ -9040,30 +9019,30 @@ export default function Dashboard() {
                         if (url) { window.open(url, "_blank"); return; }
                         if (phone) { window.location.href = `tel:${phone.replace(/\D/g, "")}`; return; }
                         showToast("Upload your warranty document to extract the claims contact", "info");
-                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, background: "transparent", border: "1.5px solid #7c3aed", color: "#7c3aed", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+                      }} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.green}`, background: C.surface, color: C.green, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
                         File Claim
                       </button>
                     </div>
-                    <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ width: "100%", marginTop: 8, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "7px 12px", borderRadius: 9, background: "transparent", border: `1px solid ${C.border}`, color: C.text3, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
+                    <button onClick={() => setShowWarrantyDetail(d => !d)} style={{ width: "100%", display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "7px 12px", borderRadius: 9, background: "transparent", border: `1px solid ${C.border}`, color: C.text3, fontSize: 11, fontWeight: 600, cursor: "pointer" }}>
                       {showWarrantyDetail ? "Less" : "More Details"}
                     </button>
                   </>
                 ) : (
                   <>
-                    <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-                      <label style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                    {/* Upload / Scan — green ghost, equal width */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <label style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.green}`, background: C.surface, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                         {parsingWarranty ? <Loader2 size={11} className="animate-spin"/> : <Upload size={11}/>}
                         {parsingWarranty ? "Parsing…" : "Upload Warranty PDF"}
                         <input ref={warrantyRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadWarranty} disabled={parsingWarranty}/>
                       </label>
-                      <button onClick={() => { scanningDocRef.current = "warranty"; setScanningDoc("warranty"); scanDocRef.current?.click(); }} disabled={!!scanningDoc} style={{ display: "inline-flex", alignItems: "center", gap: 5, padding: "9px 14px", borderRadius: 9, border: "1.5px solid #7c3aed", background: "transparent", color: "#7c3aed", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                      <button onClick={() => { scanningDocRef.current = "warranty"; setScanningDoc("warranty"); scanDocRef.current?.click(); }} disabled={!!scanningDoc} style={{ flex: 1, display: "inline-flex", alignItems: "center", justifyContent: "center", gap: 5, padding: "9px 12px", borderRadius: 9, border: `1px solid ${C.green}`, background: C.surface, color: C.green, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
                         <Camera size={11}/> {scanningDoc === "warranty" ? "Scanning…" : "Scan Pages"}
                       </button>
                     </div>
                     {warrantyError && <p style={{ fontSize: 11, color: C.red, margin: "8px 0 0", lineHeight: 1.4 }}>⚠ {warrantyError}</p>}
                   </>
                 )}
-                </div>{/* /white detail */}
               </div>
 
               {/* Warranty detail panel */}
@@ -9142,13 +9121,13 @@ export default function Dashboard() {
             {/* ── REPAIR FUND CARD ─────────────────────────────────── */}
             <div style={{ ...card({ padding: 0, overflow: "hidden" }), border: `1px solid ${C.border}` }}>
 
-              {/* Dark header strip */}
-              <div style={{ background: "linear-gradient(135deg, #134e4a 0%, #0f766e 60%, #0d9488 100%)", padding: "20px 24px" }}>
-                <p style={{ fontSize: 11, fontWeight: 700, color: "rgba(255,255,255,0.5)", textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Projected 12-Month Costs</p>
-                <p style={{ fontSize: 32, fontWeight: 800, color: "white", margin: "4px 0 2px", letterSpacing: "-0.02em" }}>
+              {/* Header strip */}
+              <div style={{ background: C.surface2, borderBottom: `1px solid ${C.border}`, padding: "20px 24px" }}>
+                <p style={{ fontSize: 10, fontWeight: 700, color: C.text3, textTransform: "uppercase", letterSpacing: "0.1em", margin: 0 }}>Projected 12-Month Costs</p>
+                <p style={{ fontSize: 32, fontWeight: 800, color: C.text, margin: "4px 0 2px", letterSpacing: "-0.02em" }}>
                   ~${repairFundNeeded.toLocaleString()}
                 </p>
-                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.6)", margin: 0 }}>
+                <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>
                   estimated — not a guarantee · ${recommendedMonthly.toLocaleString()}/mo recommended
                 </p>
               </div>
@@ -9271,9 +9250,9 @@ export default function Dashboard() {
                         See how your Acorns, savings, or investment balance covers your repair fund.
                       </p>
                       <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-                        <button onClick={connectPlaid} disabled={connectingPlaid}
-                          style={{ padding: "9px 14px", borderRadius: 9, border: `1px solid ${C.accent}`, background: C.accent, color: "white", fontSize: 13, fontWeight: 700, cursor: connectingPlaid ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, opacity: connectingPlaid ? 0.7 : 1 }}>
-                          {connectingPlaid ? <><Loader2 size={13} className="animate-spin"/>Connecting…</> : <><LinkIcon size={13}/>Connect via Plaid</>}
+                        <button disabled
+                          style={{ padding: "9px 14px", borderRadius: 9, border: `1px solid ${C.border}`, background: C.surface2, color: C.text3, fontSize: 13, fontWeight: 600, cursor: "not-allowed", display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}>
+                          <LinkIcon size={13}/>Connect via Plaid <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.06em", textTransform: "uppercase" as const, background: C.border, color: C.text3, borderRadius: 4, padding: "1px 6px", marginLeft: 4 }}>Coming Soon</span>
                         </button>
                         {!editingManualSavings ? (
                           <button onClick={() => setEditingManualSavings(true)}
