@@ -25,7 +25,7 @@
     "openai": "^6.27.0",
     "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^5.7.284",
-    "plaid": "^41.4.0",
+    "plaid": "^42.2.0",
     "posthog-js": "^1.372.3",
     "posthog-node": "^5.30.6",
     "react": "19.2.3",
