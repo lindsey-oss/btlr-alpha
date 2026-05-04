@@ -7795,109 +7795,86 @@ export default function Dashboard() {
                 ? `Last updated ${validInspDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
                 : inspectDone ? "Last updated recently" : "Add your home data to get started";
               return (
-                <div style={{ background: customTheme.bgImage ? `url(${customTheme.bgImage}) center/cover no-repeat` : themeNavy, borderRadius: 16, padding: isMobile ? "18px 20px" : "22px 28px", position: "relative", overflow: "hidden" }}>
+                <div style={{
+                  background: customTheme.bgImage
+                    ? `url(${customTheme.bgImage}) center/cover no-repeat`
+                    : `linear-gradient(115deg, ${C.navy} 0%, #243A56 60%, #2E4866 100%)`,
+                  borderRadius: 16, padding: isMobile ? "22px 20px" : "28px 32px",
+                  position: "relative", overflow: "hidden", color: "#FFF",
+                }}>
                   {customTheme.bgImage && <div style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,0.50)", borderRadius: 16, pointerEvents: "none" }}/>}
-                  <div style={{ position: "relative", zIndex: 1, display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
-                    <div>
-                      <p style={{ fontSize: isMobile ? 20 : 24, fontWeight: 800, color: "white", margin: "0 0 4px", letterSpacing: "-0.3px" }}>
-                        Good {tod}{firstName ? <>, <strong>{firstName}.</strong></> : "."}
-                      </p>
-                      <p style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", margin: 0 }}>
-                        {shortAddr ?? "Your Home"}{" · "}{lastUpd}
+                  {/* Orb decoration */}
+                  <div style={{ position: "absolute", right: -80, top: -80, width: 260, height: 260, borderRadius: "50%", background: "radial-gradient(circle, rgba(232,148,65,0.18) 0%, rgba(232,148,65,0) 70%)", pointerEvents: "none" }}/>
+                  <div style={{ position: "relative", zIndex: 1 }}>
+                    {/* BTLR identity row */}
+                    <div style={{ display: "flex", alignItems: "center", gap: 14, marginBottom: 18 }}>
+                      <div style={{ width: 44, height: 44, borderRadius: 12, background: C.accent, display: "flex", alignItems: "center", justifyContent: "center", boxShadow: `0 2px 8px ${C.accent}45`, flexShrink: 0 }}>
+                        <HomeIcon size={19} color="white"/>
+                      </div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontFamily: "'Bricolage Grotesque', 'Outfit', sans-serif", fontWeight: 800, fontSize: 16, letterSpacing: "0.04em" }}>BTLR</span>
+                          <span style={{ width: 5, height: 5, borderRadius: 5, background: C.green, display: "inline-block" }}/>
+                          <span style={{ fontSize: 10.5, color: "rgba(255,255,255,0.55)", textTransform: "uppercase" as const, letterSpacing: "0.12em" }}>online · policy-aware</span>
+                        </div>
+                        <span style={{ fontSize: 11, color: "rgba(255,255,255,0.45)", display: "block", marginTop: 2 }}>
+                          {shortAddr ?? "Your Home"} · {lastUpd}
+                        </span>
+                      </div>
+                      {/* Customize button */}
+                      <button onClick={e => { e.stopPropagation(); setDraftAccent(customTheme.accent ?? C.accent); setDraftNavy(customTheme.navy ?? C.navy); setDraftBgImg(customTheme.bgImage ?? ""); setShowCustomize(true); }}
+                        style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 20, background: "rgba(255,255,255,0.12)", border: "1px solid rgba(255,255,255,0.22)", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer" }}>
+                        <Settings size={12}/> Customize
+                      </button>
+                    </div>
+                    {/* Greeting */}
+                    <div style={{ marginBottom: 20 }}>
+                      <div style={{ fontFamily: "'Bricolage Grotesque', 'Outfit', sans-serif", fontWeight: 700, fontSize: isMobile ? 26 : 30, letterSpacing: "-0.02em", lineHeight: 1.1 }}>
+                        Good {tod}{firstName ? <>, <strong style={{ fontWeight: 800 }}>{firstName}.</strong></> : "."}
+                      </div>
+                      <p style={{ margin: "10px 0 0", fontSize: 15, lineHeight: 1.55, color: "rgba(255,255,255,0.78)", fontFamily: "'Outfit', sans-serif" }}>
+                        Here's what your home needs today.
                       </p>
                     </div>
-                    {/* Customize button */}
-                    <button onClick={e => { e.stopPropagation(); setDraftAccent(customTheme.accent ?? C.accent); setDraftNavy(customTheme.navy ?? C.navy); setDraftBgImg(customTheme.bgImage ?? ""); setShowCustomize(true); }}
-                      style={{ flexShrink: 0, display: "flex", alignItems: "center", gap: 5, padding: "6px 12px", borderRadius: 20, background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.25)", color: "white", fontSize: 12, fontWeight: 600, cursor: "pointer", backdropFilter: "blur(4px)" }}>
-                      <Settings size={12}/> Customize
-                    </button>
-                  </div>
-                </div>
-              );
-            })()}
 
-            {/* ── PRIORITY ACTION STRIP ─────────────────────────────── */}
-            {(() => {
-              const criticals = activeFindings.filter(f => f.severity === "critical");
-              const warnings  = activeFindings.filter(f => f.severity === "warning");
-
-              let strip: {
-                icon: React.ReactNode;
-                label: string;
-                detail: string;
-                ctaLabel: string;
-                color: string;
-                bg: string;
-                border: string;
-                action: () => void;
-                secondary?: { label: string; action: () => void };
-              } | null = null;
-
-              if (criticals.length > 0) {
-                const top = criticals[0];
-                const trade = tradeForCategory(top.system ?? top.category ?? "");
-                strip = {
-                  icon: <AlertTriangle size={15} color={C.red}/>,
-                  label: `${criticals.length} critical issue${criticals.length > 1 ? "s" : ""} need${criticals.length === 1 ? "s" : ""} attention`,
-                  detail: top.title || top.description?.slice(0, 80) || categoryLabel(top.category),
-                  ctaLabel: `Find a ${trade}`,
-                  color: C.red, bg: C.redBg, border: `${C.red}30`,
-                  action: () => handleFindVendors(top.category, top.category, top.description),
-                  secondary: { label: "View Repairs", action: () => setNav("Repairs") },
-                };
-              } else if (warnings.length > 0) {
-                const top = warnings[0];
-                const trade = tradeForCategory(top.system ?? top.category ?? "");
-                strip = {
-                  icon: <AlertTriangle size={15} color={C.amber}/>,
-                  label: `${warnings.length} item${warnings.length > 1 ? "s" : ""} to monitor`,
-                  detail: top.title || top.description?.slice(0, 80) || categoryLabel(top.category),
-                  ctaLabel: `Find a ${trade}`,
-                  color: C.amber, bg: C.amberBg, border: `${C.amber}30`,
-                  action: () => handleFindVendors(top.category, top.category, top.description),
-                  secondary: { label: "View Repairs", action: () => setNav("Repairs") },
-                };
-              } else if (!inspectDone) {
-                strip = {
-                  icon: <CloudUpload size={15} color={C.accent}/>,
-                  label: "Upload your inspection report to get started",
-                  detail: "Get your Home Health Score and a personalized repair plan",
-                  ctaLabel: "Upload Report",
-                  color: C.accent, bg: C.accentBg, border: `${C.accent}30`,
-                  action: () => inspRef.current?.click(),
-                };
-              }
-
-              if (!strip) return null;
-              return (
-                <div style={{
-                  display: "flex", alignItems: "center", gap: 14, padding: "14px 18px",
-                  borderRadius: 14, background: strip.bg, border: `1px solid ${strip.border}`,
-                  flexWrap: isMobile ? "wrap" : "nowrap",
-                }}>
-                  <div style={{ width: 36, height: 36, borderRadius: 10, background: `${strip.color}15`,
-                    border: `1px solid ${strip.color}25`, display: "flex", alignItems: "center",
-                    justifyContent: "center", flexShrink: 0 }}>
-                    {strip.icon}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: strip.color, margin: "0 0 2px" }}>{strip.label}</p>
-                    <p style={{ fontSize: 12, color: C.text3, margin: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{strip.detail}</p>
-                  </div>
-                  <div style={{ display: "flex", gap: 7, flexShrink: 0, flexWrap: "wrap" }}>
-                    {strip.secondary && (
-                      <button onClick={strip.secondary.action}
-                        style={{ fontSize: 12, fontWeight: 600, padding: "8px 14px", borderRadius: 9,
-                          background: "white", border: `1px solid ${C.border}`, color: C.text2, cursor: "pointer" }}>
-                        {strip.secondary.label}
-                      </button>
-                    )}
-                    <button onClick={strip.action}
-                      style={{ fontSize: 12, fontWeight: 700, padding: "8px 14px", borderRadius: 9,
-                        background: strip.color, border: "none", color: "white", cursor: "pointer",
-                        display: "flex", alignItems: "center", gap: 5 }}>
-                      {strip.ctaLabel} <ChevronRight size={12}/>
-                    </button>
+                    {/* ── Action chips (priority strip) — inside hero ── */}
+                    {(() => {
+                      const criticals = activeFindings.filter(f => f.severity === "critical");
+                      const warnings  = activeFindings.filter(f => f.severity === "warning");
+                      type ChipDef = { label: string; color: string; action: () => void };
+                      const chips: ChipDef[] = [];
+                      if (criticals.length > 0) {
+                        const top = criticals[0];
+                        chips.push({ label: "View Repairs", color: C.red, action: () => setNav("Repairs") });
+                        chips.push({ label: `Find a ${tradeForCategory(top.system ?? top.category ?? "")}`, color: C.red, action: () => handleFindVendors(top.category, top.category, top.description) });
+                      } else if (warnings.length > 0) {
+                        const top = warnings[0];
+                        chips.push({ label: "View Repairs", color: C.amber, action: () => setNav("Repairs") });
+                        chips.push({ label: `Find a ${tradeForCategory(top.system ?? top.category ?? "")}`, color: C.amber, action: () => handleFindVendors(top.category, top.category, top.description) });
+                      } else if (!inspectDone) {
+                        chips.push({ label: "Upload Inspection Report", color: C.accent, action: () => inspRef.current?.click() });
+                        chips.push({ label: "Self-Inspection", color: C.accent, action: () => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); } });
+                      } else {
+                        chips.push({ label: "Schedule Maintenance", color: C.green, action: () => setNav("Maintenance") });
+                        chips.push({ label: "Find a Vendor", color: C.green, action: () => setNav("Vendors") });
+                      }
+                      return (
+                        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" as const }}>
+                          {chips.map((chip, i) => (
+                            <button key={i} onClick={chip.action} style={{
+                              display: "inline-flex", alignItems: "center", gap: 8,
+                              padding: "9px 14px", borderRadius: 999,
+                              background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.16)",
+                              color: "#FFF", fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+                              whiteSpace: "nowrap" as const, fontFamily: "'Outfit', sans-serif",
+                            }}>
+                              <span style={{ width: 6, height: 6, borderRadius: 6, background: chip.color, display: "inline-block", flexShrink: 0 }}/>
+                              {chip.label}
+                            </button>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               );
@@ -7905,7 +7882,7 @@ export default function Dashboard() {
 
             {/* ── TOP TWO-COLUMN LAYOUT ─────────────────────────────── */}
             <div style={{ display: isMobile ? "flex" : "grid", flexDirection: "column",
-              gridTemplateColumns: "1fr 380px", gap: 16, alignItems: "start" }}>
+              gridTemplateColumns: "minmax(0, 1.6fr) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
 
             {/* LEFT: Health Score Card */}
             {(inspectDone || roofYear || hvacYear) ? (
@@ -8230,36 +8207,37 @@ export default function Dashboard() {
             {/* Hidden inspection upload input (Dashboard) */}
             <input ref={inspRef} type="file" accept=".pdf,.txt" style={{ display: "none" }} onChange={uploadInspection} disabled={inspecting}/>
 
-            {/* ── Renewal prompt banner — shown when inspection data is aging/stale/expired ── */}
+            {/* ── Check-in bar — shown when inspection data is aging/stale/expired ── */}
             {inspectDone && homeHealthReport?.decay?.label && ["Aging", "Stale", "Expired"].includes(homeHealthReport.decay.label) && (
-              <div style={{ borderRadius: 14, padding: "14px 18px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap",
-                background: userTier === "pro" ? "rgba(44,95,138,0.08)" : "rgba(234,179,8,0.10)",
-                border: `1px solid ${userTier === "pro" ? "rgba(44,95,138,0.2)" : "rgba(234,179,8,0.3)"}` }}>
-                <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-                  <Clock size={16} color={userTier === "pro" ? C.accent : C.amber}/>
-                  <div>
-                    <p style={{ fontSize: 13, fontWeight: 700, color: userTier === "pro" ? C.accent : C.amber, margin: "0 0 1px" }}>
-                      {userTier === "pro" ? "Time for your annual professional inspection" : "Update your home's health score"}
-                    </p>
-                    <p style={{ fontSize: 12, color: C.text3, margin: 0 }}>
-                      {userTier === "pro"
-                        ? `Last inspection is ${homeHealthReport.decay.label.toLowerCase()} — schedule with a certified BTLR inspector to stay verified`
-                        : (() => {
-                            const d = inspectionResult?.inspection_date ? new Date(inspectionResult.inspection_date + "T12:00:00") : null;
-                            const validD = d && !isNaN(d.getTime()) ? d : null;
-                            return validD
-                              ? `Last inspected ${validD.toLocaleDateString("en-US", { month: "long", year: "numeric" })} — answer a quick 7-step check-in to refresh your score`
-                              : "Answer a quick 7-step check-in to refresh your score";
-                          })()}
-                    </p>
+              <div style={{
+                background: C.surface2, border: `1px solid ${C.border}`, borderRadius: 14,
+                padding: "16px 22px", display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" as const,
+              }}>
+                <div style={{ width: 36, height: 36, borderRadius: 18, background: `${C.accent}20`, color: C.accent, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                  <Clock size={16}/>
+                </div>
+                <div style={{ flex: 1, minWidth: 220 }}>
+                  <div style={{ fontSize: 14, fontWeight: 700, color: C.text, fontFamily: "'Outfit', sans-serif" }}>
+                    {userTier === "pro" ? "Time for your annual professional inspection" : "Update your home's health score"}
+                  </div>
+                  <div style={{ fontSize: 11.5, color: C.text2, marginTop: 2, fontFamily: "'Outfit', sans-serif" }}>
+                    {userTier === "pro"
+                      ? `Last inspection is ${homeHealthReport.decay.label.toLowerCase()} — schedule with a certified BTLR inspector to stay verified`
+                      : (() => {
+                          const d = inspectionResult?.inspection_date ? new Date(inspectionResult.inspection_date + "T12:00:00") : null;
+                          const validD = d && !isNaN(d.getTime()) ? d : null;
+                          return validD
+                            ? `Last inspected ${validD.toLocaleDateString("en-US", { month: "long", year: "numeric" })} — answer a quick 7-step check-in to refresh your score`
+                            : "Answer a quick 7-step check-in to refresh your score";
+                        })()}
                   </div>
                 </div>
                 {userTier === "pro" ? (
-                  <button onClick={() => setNav("Vendors")} style={{ padding: "8px 16px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                  <button onClick={() => setNav("Vendors")} style={{ padding: "11px 20px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, flexShrink: 0, letterSpacing: "0.04em" }}>
                     Find an Inspector
                   </button>
                 ) : (
-                  <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ padding: "8px 16px", borderRadius: 10, background: C.amber, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap", flexShrink: 0 }}>
+                  <button onClick={() => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); }} style={{ padding: "11px 20px", borderRadius: 10, background: C.accent, border: "none", color: "white", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" as const, flexShrink: 0, letterSpacing: "0.04em" }}>
                     Start Check-In
                   </button>
                 )}
@@ -8539,24 +8517,17 @@ export default function Dashboard() {
               `}</style>
             </div>
 
-            {/* ── Property Card ─────────────────────────────────────── */}
-            <div style={{ ...card(), padding: 0, overflow: "hidden" }}>
-              {/* Label row */}
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 16px 0" }}>
-                <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", textTransform: "uppercase", color: C.text3 }}>Your Property</span>
-                {address && address !== "My Home" && (
-                  <span style={{ fontSize: 11, color: C.text3, display: "flex", alignItems: "center", gap: 4 }}>
-                    <MapPin size={10}/>{toTitleCase(address).split(",")[0]}
-                  </span>
-                )}
+            {/* ── Financial section ─────────────────────────────────── */}
+            <div>
+              {/* Section header */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                <div>
+                  <p style={{ fontSize: 10.5, fontWeight: 700, letterSpacing: "0.16em", textTransform: "uppercase" as const, color: C.accent, margin: "0 0 4px", fontFamily: "'Outfit', sans-serif" }}>Financial</p>
+                  <p style={{ fontFamily: "'Bricolage Grotesque', 'Outfit', sans-serif", fontWeight: 700, fontSize: 22, color: C.text, margin: 0, letterSpacing: "-0.02em" }}>Your home's books</p>
+                </div>
               </div>
-              <div style={{ padding: "10px 14px 14px" }}>
-                <HousePhoto address={toTitleCase(address)} height={isMobile ? 110 : 140} />
-              </div>
-            </div>
-
-            {/* Financial row */}
-            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, 1fr)", gap: 14 }}>
+            {/* Financial cards grid */}
+            <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "repeat(3, minmax(0, 1fr))", gap: 14 }}>
 
               {/* Mortgage */}
               {(() => {
@@ -9441,6 +9412,7 @@ export default function Dashboard() {
               </div>
               )} {/* end repairFundExpanded */}
             </div>
+            </div>{/* /financial section */}
 
 
             {/* Timeline */}
