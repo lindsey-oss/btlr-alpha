@@ -19,17 +19,17 @@
     "@capacitor/push-notifications": "^8.0.3",
     "@capacitor/splash-screen": "^8.0.1",
     "@capacitor/status-bar": "^8.0.2",
-    "@supabase/supabase-js": "^2.99.0",
+    "@supabase/supabase-js": "^2.105.3",
     "lucide-react": "^0.577.0",
     "next": "^16.2.4",
-    "openai": "^6.27.0",
+    "openai": "^6.36.0",
     "pdf-parse": "^1.1.1",
     "pdfjs-dist": "^5.7.284",
     "plaid": "^41.4.0",
-    "posthog-js": "^1.372.3",
-    "posthog-node": "^5.30.6",
-    "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "posthog-js": "^1.372.8",
+    "posthog-node": "^5.33.2",
+    "react": "19.2.5",
+    "react-dom": "19.2.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
