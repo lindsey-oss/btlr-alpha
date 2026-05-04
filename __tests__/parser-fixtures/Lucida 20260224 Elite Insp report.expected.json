@@ -1,0 +1,17 @@
+{
+  "_comment": "Baseline fixture — tighten minimumFindings and add mustInclude entries after first successful parse.",
+  "description": "Lucida Elite inspection report — Feb 24 2026. 19MB, likely photo-heavy. Expect high finding count.",
+  "source": "Lucida / Elite Inspections — confirm after first parse",
+  "fileSizeApproxMB": 19.0,
+  "minimumFindings": 20,
+  "requiredCategories": [
+    "roof",
+    "electrical",
+    "plumbing",
+    "hvac"
+  ],
+  "mustInclude": [],
+  "mustNotInclude": [],
+  "allowedTimeoutMs": 360000,
+  "_updateInstructions": "After first successful parse: update source, set minimumFindings to 80% of actual count, add mustInclude entries. 19MB is large — if parse times out, increase allowedTimeoutMs to 480000."
+}

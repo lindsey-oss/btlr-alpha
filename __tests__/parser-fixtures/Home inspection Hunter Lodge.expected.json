@@ -1,0 +1,16 @@
+{
+  "_comment": "Baseline fixture — tighten minimumFindings and add mustInclude entries after first successful parse.",
+  "description": "Hunter Lodge home inspection report. 5.6MB — format and source TBD after first parse.",
+  "source": "Unknown — identify after first parse",
+  "fileSizeApproxMB": 5.6,
+  "minimumFindings": 15,
+  "requiredCategories": [
+    "roof",
+    "electrical",
+    "plumbing"
+  ],
+  "mustInclude": [],
+  "mustNotInclude": [],
+  "allowedTimeoutMs": 240000,
+  "_updateInstructions": "After first successful parse: update source, set minimumFindings to 80% of actual count, add 3-5 mustInclude entries for the most specific findings, set propertyAddressContains if address is extractable."
+}
