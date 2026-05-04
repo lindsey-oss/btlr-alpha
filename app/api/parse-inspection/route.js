@@ -1139,6 +1139,88 @@ export async function POST(req) {
 
     if (_parseHash) cacheSet(_parseHash, finalResult);
 
+    // ── Server-side DB persistence ────────────────────────────────────────
+    // Save findings to the DB before responding so the data survives browser
+    // disconnects, hard refreshes mid-parse, and client-side save failures.
+    // The client will also save (belt-and-suspenders), but this is the primary
+    // guarantee — the user can hard-refresh at any point and still see results.
+    if (propertyId) {
+      try {
+        // Verify the JWT so we know which user owns this upload
+        const authHeader = req.headers.get("Authorization") ?? "";
+        const token = authHeader.replace(/^Bearer\s+/i, "");
+        let userId = null;
+        if (token) {
+          const { data: { user } } = await supabaseAdmin.auth.getUser(token);
+          userId = user?.id ?? null;
+        }
+
+        if (userId) {
+          // Verify the property actually belongs to this user (security check)
+          const { data: propCheck } = await supabaseAdmin
+            .from("properties").select("user_id").eq("id", propertyId).maybeSingle();
+
+          if (propCheck?.user_id === userId) {
+            // 1. Save inspection_findings JSONB — the loadProperty fallback path reads this
+            const propPayload = {
+              inspection_findings: normalizedFindings,
+              inspection_type:     parsed.inspection_type    ?? "Home Inspection",
+              inspection_summary:  parsed.summary            ?? null,
+              inspection_date:     parsed.inspection_date    ?? null,
+              updated_at:          new Date().toISOString(),
+              ...(safeRoofYear ? { roof_year: safeRoofYear } : {}),
+              ...(safeHvacYear ? { hvac_year: safeHvacYear } : {}),
+            };
+            const { error: propErr } = await supabaseAdmin
+              .from("properties").update(propPayload).eq("id", propertyId);
+            if (propErr) console.error("[parse-inspection] Server-side properties save failed:", propErr.message);
+            else console.log(`[parse-inspection] ✓ Server-side saved ${normalizedFindings.length} findings to properties.inspection_findings`);
+
+            // 2. Upsert to findings table (status-preserving) — the primary read path
+            const KEY_RE = /^[a-z0-9_]+(__[a-z0-9_]+){4}$/;
+            const findingRows = normalizedFindings
+              .filter(f => f.normalized_finding_key && KEY_RE.test(f.normalized_finding_key))
+              .map(f => ({
+                property_id:            propertyId,
+                user_id:                userId,
+                normalized_finding_key: f.normalized_finding_key,
+                title:                  f.title,
+                category:               f.category,
+                system:                 f.system,
+                component:              f.component,
+                issue_type:             f.issue_type,
+                description:            f.description,
+                location:               f.location,
+                severity:               f.severity,
+                scorable:               f.scorable,
+                score_impact:           f.score_impact,
+                recommended_action:     f.recommended_action,
+                estimated_cost_min:     f.estimated_cost_min,
+                estimated_cost_max:     f.estimated_cost_max,
+                confidence_score:       f.confidence_score,
+                classification_reason:  f.classification_reason,
+                needs_review:           f.needs_review,
+                raw_finding:            JSON.stringify(f.raw_finding),
+              }));
+
+            if (findingRows.length > 0) {
+              const { error: rpcErr } = await supabaseAdmin.rpc(
+                "upsert_findings_preserve_status",
+                { p_findings: JSON.stringify(findingRows) },
+              );
+              if (rpcErr) console.error("[parse-inspection] Server-side RPC save failed:", rpcErr.message);
+              else console.log(`[parse-inspection] ✓ Server-side upserted ${findingRows.length} findings to findings table`);
+            }
+          } else {
+            console.warn("[parse-inspection] Server-side save skipped: property does not belong to this user");
+          }
+        }
+      } catch (serverSaveErr) {
+        // Non-fatal: client will attempt its own save; log and continue
+        console.error("[parse-inspection] Server-side save error (non-fatal):", serverSaveErr?.message);
+      }
+    }
+
     return Response.json(finalResult);
   } catch {
     return Response.json({

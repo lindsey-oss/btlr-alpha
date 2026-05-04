@@ -7144,9 +7144,14 @@ export default function Dashboard() {
                                 {inspecting ? (
                                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, border: `2px dashed ${C.accent}`, background: "#eff6ff" }}>
                                     <Loader2 size={20} color={C.accent} className="animate-spin"/>
-                                    <span style={{ fontSize: 14, color: C.accent }}>
+                                    <span style={{ fontSize: 14, color: C.accent, textAlign: "center" }}>
                                       {inspectStage === "uploading" ? "Uploading PDF…" : inspectStage === "saving" ? "Saving findings…" : "Analyzing report…"}
                                     </span>
+                                    {inspectStage === "analyzing" && (
+                                      <span style={{ fontSize: 11, color: C.text3, textAlign: "center", maxWidth: 220 }}>
+                                        First analysis takes 45–90 seconds. Results are saved automatically — safe to wait.
+                                      </span>
+                                    )}
                                   </div>
                                 ) : photoAnalyzing ? (
                                   <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8, padding: "22px 16px", borderRadius: 12, border: `2px dashed ${C.accent}`, background: "#eff6ff" }}>
