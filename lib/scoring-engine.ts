@@ -329,6 +329,7 @@ export function computeHomeHealthReport(
   items: NormalizedItem[],
   propertyType?: string | null,
   inspectionDate?: string | null,
+  hasCompletedInspection?: boolean,  // true when an inspection exists but all findings resolved
 ): HomeHealthReport {
   const weights = getWeightsForPropertyType(propertyType);
 
@@ -341,9 +342,13 @@ export function computeHomeHealthReport(
   }
 
   // Whether we have any inspection data at all.
-  // When true: systems with no active findings score 100 (inspector found nothing wrong).
-  // When false (empty dashboard): all systems are not-assessed so we never show 100 with zero data.
-  const hasInspectionData = items.length > 0;
+  // When true:  systems with no active findings score 100 (inspector found nothing wrong,
+  //             or all repairs have been completed).
+  // When false (empty dashboard, no inspection ever uploaded): all systems are not-assessed
+  //             so we never show 100 with zero data.
+  // hasCompletedInspection=true covers the case where the user has resolved ALL findings —
+  //             items is empty but a real inspection WAS done, so clean systems should score 100.
+  const hasInspectionData = items.length > 0 || !!hasCompletedInspection;
 
   // Compute per-category scores
   const categoryScores: CategoryScore[] = Object.entries(weights).map(([cat, weight]) => {

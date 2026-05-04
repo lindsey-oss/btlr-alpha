@@ -323,3 +323,66 @@ describe("Baseline score snapshots — update only deliberately", () => {
   });
 
 });
+
+// ─────────────────────────────────────────────────────────────────
+// BUG FIX VERIFICATION — "All repairs completed → score drops to 0"
+// Regression tests for the hasCompletedInspection fix.
+// ─────────────────────────────────────────────────────────────────
+
+describe("All-repairs-resolved must NOT produce score of 0 (bug fix verification)", () => {
+
+  it("TC-21: empty items[] without hasCompletedInspection produces score 0 (baseline for no data)", () => {
+    // No inspection done at all — should be 0 / Not Assessed
+    const report = computeHomeHealthReport([], null, null, false);
+    expect(report.home_health_score).toBe(0);
+    expect(report.category_scores.every(cs => cs.not_assessed)).toBe(true);
+    console.log(`  [bug-fix] no inspection, empty items: ${report.home_health_score} (expected 0)`);
+  });
+
+  it("TC-22: empty items[] WITH hasCompletedInspection=true produces high score (all resolved → healthy)", () => {
+    // Inspection was done, all findings resolved — should score high (near 100)
+    const report = computeHomeHealthReport([], null, null, true);
+    expect(report.home_health_score).toBeGreaterThanOrEqual(90);
+    expect(report.category_scores.every(cs => !cs.not_assessed)).toBe(true);
+    expect(report.category_scores.every(cs => cs.score === 100)).toBe(true);
+    console.log(`  [bug-fix] all resolved, hasCompletedInspection=true: ${report.home_health_score} (expected ≥90)`);
+  });
+
+  it("TC-23: resolving all critical findings improves score vs. keeping them open", () => {
+    // Before: distressed home with 5 critical findings → low score
+    const allItems   = normalizeLegacyFindings(FIXTURE_DISTRESSED_HOME);
+    const before     = computeHomeHealthReport(allItems).home_health_score;
+
+    // After: all findings resolved → pass hasCompletedInspection=true with empty items
+    const after = computeHomeHealthReport([], null, null, true).home_health_score;
+
+    expect(after).toBeGreaterThan(before);
+    console.log(`  [bug-fix] distressed→resolved: before=${before}, after=${after}`);
+  });
+
+  it("TC-24: pipeline passes hasCompletedInspection through correctly", () => {
+    // Via pipeline — same behavior as direct engine call
+    const { report } = runScoringPipeline({
+      items: [],
+      propertyId: "test-all-resolved",
+      hasCompletedInspection: true,
+    });
+    expect(report.home_health_score).toBeGreaterThanOrEqual(90);
+    console.log(`  [bug-fix] pipeline with hasCompletedInspection=true: ${report.home_health_score}`);
+  });
+
+  it("TC-25: partial resolution — one critical remaining — scores between 0 and resolved", () => {
+    // One critical finding still open → score between resolved (≥90) and all-open (low)
+    const oneRemaining = normalizeLegacyFindings([
+      { category: "Foundation", description: "Active structural cracking", severity: "critical" },
+    ]);
+    const partial = computeHomeHealthReport(oneRemaining, null, null, true);
+    const resolved = computeHomeHealthReport([], null, null, true);
+    const allOpen  = computeHomeHealthReport(normalizeLegacyFindings(FIXTURE_DISTRESSED_HOME));
+
+    expect(partial.home_health_score).toBeGreaterThan(allOpen.home_health_score);
+    expect(partial.home_health_score).toBeLessThan(resolved.home_health_score);
+    console.log(`  [bug-fix] partial: all-open=${allOpen.home_health_score}, one-remaining=${partial.home_health_score}, fully-resolved=${resolved.home_health_score}`);
+  });
+
+});

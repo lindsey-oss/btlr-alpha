@@ -678,11 +678,12 @@ export default function LandingPage() {
           <ScoreRing score={84}/>
           <div style={{ width: "100%", display: "flex", flexDirection: "column", gap: 14 }}>
             {[
-              { name: "Roof",       val: 82, color: C.gold },
-              { name: "HVAC",       val: 91, color: "#3A78AA" },
-              { name: "Plumbing",   val: 78, color: C.gold },
-              { name: "Electrical", val: 95, color: C.goldDk },
-              { name: "Foundation", val: 88, color: C.gold },
+              { name: "Roof",        val: 82, color: C.gold },
+              { name: "HVAC",        val: 91, color: "#3A78AA" },
+              { name: "Plumbing",    val: 78, color: C.gold },
+              { name: "Electrical",  val: 95, color: C.goldDk },
+              { name: "Foundation",  val: 88, color: C.gold },
+              { name: "Appliances",  val: 74, color: C.muted },
             ].map(b => (
               <div key={b.name} style={{ display: "flex", alignItems: "center", gap: 14 }}>
                 <div style={{ fontSize: 13, color: C.muted, width: 100, flexShrink: 0 }}>{b.name}</div>

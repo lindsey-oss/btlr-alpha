@@ -58,6 +58,12 @@ export interface PipelineInput {
    */
   inspectionDate?: string | null;
 
+  /** Pass true when an inspection has been completed but ALL findings are now resolved.
+   *  Prevents the score from collapsing to 0 when items[] is empty after all repairs done.
+   *  When true and items is empty, all unpenalized categories score 100 (clean bill of health).
+   */
+  hasCompletedInspection?: boolean;
+
   /** Optional: resolved items for audit log enrichment */
   resolvedItems?: Array<{
     system: string;
@@ -88,10 +94,10 @@ export interface PipelineOutput {
 // MAIN PIPELINE FUNCTION
 // ─────────────────────────────────────────────────────────────────
 export function runScoringPipeline(input: PipelineInput): PipelineOutput {
-  const { items, propertyId, propertyType = null, inspectionDate = null, resolvedItems = [] } = input;
+  const { items, propertyId, propertyType = null, inspectionDate = null, resolvedItems = [], hasCompletedInspection = false } = input;
 
   // ── Step 1: Run baseline engine (property-type-aware, decay-aware) ───
-  const report = computeHomeHealthReport(items, propertyType, inspectionDate);
+  const report = computeHomeHealthReport(items, propertyType, inspectionDate, hasCompletedInspection);
 
   // ── Step 2: Build audit snapshot ─────────────────────────────
   const snapshot = buildSnapshot(items, report, propertyId, propertyType, inspectionDate, resolvedItems);
