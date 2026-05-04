@@ -811,8 +811,8 @@ export function applyRepairEvent(items: NormalizedItem[], repair: RepairEvent): 
     if (repair.event_type === "component_replaced") {
       // Full replacement — reset to near-new condition
       updated.condition_label = "good";
-      updated.condition_score = 92 + Math.floor(Math.random() * 5); // 92–96
-      updated.estimated_remaining_life_percent = 90 + Math.floor(Math.random() * 10); // 90–100
+      updated.condition_score = 94;                         // deterministic — same input always scores 94
+      updated.estimated_remaining_life_percent = 95;        // deterministic — reset to near-new
       updated.estimated_age_years = 0;
       updated.deficiency_severity = "none";
       updated.maintenance_state = "well";

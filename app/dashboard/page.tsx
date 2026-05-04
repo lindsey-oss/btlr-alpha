@@ -323,12 +323,13 @@ function formatLabel(raw: string | undefined | null): string {
     .trim();
 }
 
-// Findings are "active" if status is repair_needed or not yet set
+// Findings are "active" if status is repair_needed/open (DB default) or monitored.
+// "open" is the DB-side representation of repair_needed — treat them identically.
 // index = position in the global allFindings array
 function isActiveFinding(finding: Finding, index: number, statuses: Record<string, FindingStatus>): boolean {
   const key = findingKey(finding, index);
   const status = statuses[key] ?? "repair_needed";
-  return status === "repair_needed" || status === "monitored";
+  return status === "repair_needed" || status === "monitored" || (status as string) === "open";
 }
 
 // ── Deterministic Health Score Engine ────────────────────────────────────
@@ -1380,8 +1381,12 @@ function HealthScoreModal({
   onStartSystemAssess: (stepKey: string) => void;
 }) {
   const { score, deductions, resolvedDeductions } = breakdown;
+  // Use the patent-aligned 6-system weighted score (homeHealthReport) when available.
+  // Falls back to the legacy deduction model (breakdown.score) only when no inspection
+  // has been uploaded yet. This must match the score shown in the dashboard circle.
+  const coreScore     = homeHealthReport?.home_health_score ?? score;
   // Adjusted score = Core Score + Extended Condition modifier (±8, 0 when no data)
-  const adjustedScore = Math.max(0, Math.min(100, score + (extCondition?.modifier ?? 0)));
+  const adjustedScore = Math.max(0, Math.min(100, coreScore + (extCondition?.modifier ?? 0)));
   const st            = healthStatusInfo(adjustedScore);
   const scoreColor    = adjustedScore >= 90 ? "#22c55e" : adjustedScore >= 80 ? "#84cc16" : adjustedScore >= 65 ? C.amber : adjustedScore >= 50 ? "#f97316" : C.red;
 
@@ -3698,7 +3703,15 @@ export default function Dashboard() {
             needs_review:           row.needs_review            ?? false,
           };
           if (row.normalized_finding_key) {
-            statusesFromRows[row.normalized_finding_key] = row.status ?? "repair_needed";
+            // Map DB status values → app status values.
+            // DB uses 'open' as the default (matches findings table CHECK constraint).
+            // App uses 'repair_needed'. Map here so scoring engine sees the right status.
+            const dbStatus = row.status ?? "open";
+            const appStatus: FindingStatus =
+              dbStatus === "open"      ? "repair_needed" :
+              dbStatus === "dismissed" ? "not_needed"    :
+              dbStatus as FindingStatus;
+            statusesFromRows[row.normalized_finding_key] = appStatus;
           }
           return f;
         });
@@ -4902,10 +4915,14 @@ export default function Dashboard() {
         const key = findingKey(f, idx);
         const newStatus = statuses[key];
         if (f.normalized_finding_key && newStatus) {
-          const validStatus = ["repair_needed","completed","not_needed","monitored"].includes(newStatus) ? newStatus : "repair_needed";
+          // Map app status → DB status (findings table CHECK constraint: open/completed/dismissed/monitored)
+          const dbStatus =
+            newStatus === "repair_needed" ? "open"      :
+            newStatus === "not_needed"    ? "dismissed" :
+            newStatus; // "completed" and "monitored" match DB values directly
           rowUpdates.push(
             supabase.from("findings")
-              .update({ status: validStatus, updated_at: new Date().toISOString() })
+              .update({ status: dbStatus, updated_at: new Date().toISOString() })
               .eq("property_id", propId)
               .eq("normalized_finding_key", f.normalized_finding_key)
               .then()
@@ -4934,20 +4951,21 @@ export default function Dashboard() {
       const roofAge = roofYear ? currentYear - parseInt(roofYear) : null;
       const hvacAge = hvacYear ? currentYear - parseInt(hvacYear) : null;
 
-      // Keep only findings that are still active (repair_needed / monitor)
+      // Keep only findings that are still active (repair_needed/open / monitor)
       // AND only critical/warning severity — info-level items (sticky door,
       // missing vent cap, minor vegetation, cosmetic notes) are visible in
       // the Repairs tab but never penalize the Home Health Score.
+      // "open" is the DB-side alias for repair_needed — treat it as active.
       const inspActive = inspFindings.filter((f, i) => {
-        const s = newStatuses[findingKey(f, i)] ?? "repair_needed";
-        return s !== "completed" && s !== "not_needed" &&
+        const s = (newStatuses[findingKey(f, i)] ?? "repair_needed") as string;
+        return s !== "completed" && s !== "not_needed" && s !== "dismissed" &&
                (f.severity === "critical" || f.severity === "warning");
       });
       const photoActive = photoFindings.filter((f, i) => {
         // Photo findings are indexed after inspection findings
         const baseIdx = inspFindings.length + i;
-        const s = newStatuses[findingKey(f, baseIdx)] ?? "repair_needed";
-        return s !== "completed" && s !== "not_needed" &&
+        const s = (newStatuses[findingKey(f, baseIdx)] ?? "repair_needed") as string;
+        return s !== "completed" && s !== "not_needed" && s !== "dismissed" &&
                (f.severity === "critical" || f.severity === "warning");
       });
 
