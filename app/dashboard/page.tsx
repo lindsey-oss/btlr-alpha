@@ -4734,6 +4734,10 @@ export default function Dashboard() {
           document_type: "inspection",
           url:           signed?.signedUrl ?? undefined,
         });
+        // File in documents table means an inspection was completed — ensure
+        // the score card renders even if the localStorage cache is cold.
+        // loadProperty() will overwrite homeHealthReport with the real computed score.
+        setInspectDone(true);
         console.log("[loadDocs] ✓ Restored inspection file reference:", row.file_name);
       }
 
@@ -4867,8 +4871,8 @@ export default function Dashboard() {
 
   async function deleteInspectionDoc() {
     if (!inspectionDoc) return;
-    // Show the custom confirmation modal — don't use browser confirm()
-    setConfirmDeleteInspection(true);
+    if (!confirm("Remove this inspection report file? Your score and analysis data will still be saved.")) return;
+    await confirmAndDeleteInspectionDoc();
   }
 
   async function confirmAndDeleteInspectionDoc() {
