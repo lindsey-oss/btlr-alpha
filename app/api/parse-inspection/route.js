@@ -455,7 +455,9 @@ findings:
       • "Safety Concern" / "Safety Issue" / "SC"
       • "Major Concern" / "Minor Concern" (Spectora)
       • "Deficiency" / numbered items / checkboxes
-      • "Recommended" / "Noted" / "Observed" / "Monitor"
+      • "Recommended" / "Noted" / "Observed" / "Monitor" / "Advisory"
+      • "Action Required" / "Further Action Required" / "Further Action Needed" (Homefront)
+      • "Maintenance Item" / "Maintenance Recommended" / "Significant Finding" (Homefront)
       • Items in any summary, deficiency list, or findings list
       • Inline narrative text: "was found to be...", "requires repair", "recommend..."
   - category: use EXACTLY one of these strings:
@@ -489,11 +491,16 @@ findings:
         electrical finding into a roof or exterior finding.
 
     VEGETATION / LANDSCAPING:
-      • Vegetation, trees, shrubs, plants, vines, or branches in contact with or
-        growing against the building → "Exterior" or "Siding"
-      • This is NOT a "Roof" finding even if plant material touches the roof.
+      • ANY finding mentioning vegetation, trees, shrubs, plants, vines, branches,
+        overgrowth, or landscaping near or affecting the building → "Exterior" or "Siding"
+      • This includes: growing near, overhanging, touching, in contact with, or
+        recommendations to trim/clear vegetation away from the structure
+      • This is NEVER a "Roof" finding, even if plant material touches the roof.
       • "Vegetation in contact with siding" → "Siding"
       • "Tree limbs overhanging/touching roof" → "Exterior"
+      • "Trees growing near the roof — trim back" → "Exterior"
+      • "Trim branches away from structure" → "Exterior"
+      • "Overgrowth observed at rear of home" → "Exterior"
 
     EXTERIOR CLADDING / STUCCO — HARD OVERRIDE — BEATS ALL SECTION HEADERS:
       EVEN IF the inspection report lists stucco under a "ROOF", "EXTERIOR", "STRUCTURAL",
@@ -518,11 +525,24 @@ findings:
       • It IS correct to have multiple findings with the same category when they describe
         genuinely different physical defects (e.g., damaged gutters AND damaged stucco are
         two separate findings even though both are "Exterior/Siding").
-  - severity:
+  - severity — map report labels to these values:
       "critical" = immediate safety hazard, structural failure, active leak, mold, pest infestation, open wiring, gas leak
+                   Report labels → critical: "Safety Concern", "Safety Issue", "Action Required",
+                   "Further Action Required", "SC", "Urgent", "Immediate"
       "warning"  = significant repair needed, system nearing end of life, inspector recommends repair soon
+                   Report labels → warning: "Repair or Replace", "R/R", "Further Evaluation", "FE",
+                   "Major Concern", "Deficiency", "Significant Finding", "Recommend Repair"
       "info"     = maintenance tip, minor cosmetic issue, monitor only, advisory note
-  - estimated_cost: dollar amount only if stated; otherwise null
+                   Report labels → info: "Maintenance Item", "Maintenance Recommended", "Minor Concern",
+                   "Monitor", "Observe", "Advisory", "Noted", "Recommended", "Consideration Item"
+  - estimated_cost: extract as an integer number of dollars (no decimals, no $ sign):
+      • Single amount: "$1,500" → 1500
+      • Range ("$800–$1,200" or "$800 to $1,200") → use the LOWER bound: 800
+      • Sum ("$500 labor + $1,500 materials") → add them: 2000
+      • Conditional ("if structural damage confirmed: $5,000") → use the stated amount: 5000
+      • Percentage ("3% of replacement cost") → return null (cannot compute without total)
+      • "or more" / "at least" / "minimum" → use the stated floor: "$500 or more" → 500
+      • Return null ONLY when no dollar figure appears anywhere in the finding text
   - age_years: years old if mentioned; null otherwise
   - remaining_life_years: inspector's stated remaining useful life; null if not stated
   - lifespan_years defaults (use when relevant):
@@ -618,13 +638,33 @@ function mergeFindings(pass1, pass2) {
     return similarity(a, b) >= 0.50;
   }
 
+  // Extract coarse location token so "water damage in basement" ≠ "water damage in attic"
+  const LOCATION_TOKENS = [
+    "basement","attic","crawl","garage","kitchen","bathroom","bath","bedroom",
+    "living","dining","laundry","exterior","roof","foundation","deck","porch",
+    "hallway","stairway","utility","master","first floor","second floor",
+    "front","rear","left","right","north","south","east","west",
+  ];
+  function extractDupLocation(text) {
+    const t = norm(text);
+    for (const tok of LOCATION_TOKENS) {
+      if (t.includes(tok)) return tok;
+    }
+    return null;
+  }
+
   const merged = [...pass1];
 
   for (const f2 of pass2) {
-    const dupIdx = merged.findIndex(f1 =>
-      categoriesMatch(f1.category, f2.category) &&
-      similarity(f1.description, f2.description) >= 0.55
-    );
+    const loc2 = extractDupLocation(f2.description);
+    const dupIdx = merged.findIndex(f1 => {
+      if (!categoriesMatch(f1.category, f2.category)) return false;
+      if (similarity(f1.description, f2.description) < 0.70) return false;
+      // If both descriptions have a location token and they differ → not a dup
+      const loc1 = extractDupLocation(f1.description);
+      if (loc1 && loc2 && loc1 !== loc2) return false;
+      return true;
+    });
 
     if (dupIdx === -1) {
       const catOnlyDup = merged.findIndex(f1 =>

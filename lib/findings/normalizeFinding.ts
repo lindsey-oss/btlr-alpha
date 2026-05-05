@@ -411,6 +411,49 @@ export function generateNormalizedFindingKey(
 }
 
 // ─────────────────────────────────────────────────────────────────
+// COST COERCION HELPER
+//
+// Belt-and-suspenders: the AI prompt asks for integers, but occasionally
+// returns strings like "$1,500", "1500.00", or "800–1200".
+// Returns the lower bound as an integer, or null when unparseable.
+// ─────────────────────────────────────────────────────────────────
+function parseEstimatedCost(raw: unknown): number | null {
+  if (raw == null) return null;
+  if (typeof raw === "number") return isFinite(raw) ? Math.round(raw) : null;
+  if (typeof raw !== "string") return null;
+  const s = raw.replace(/[$,\s]/g, "");
+  // Range: "800–1200" or "800-1200" — take lower bound
+  const rangeMatch = s.match(/^(\d+(?:\.\d+)?)[–\-](\d+(?:\.\d+)?)$/);
+  if (rangeMatch) return Math.round(parseFloat(rangeMatch[1]));
+  // Plain number (possibly with decimals)
+  const plain = parseFloat(s);
+  if (!isNaN(plain) && plain >= 0) return Math.round(plain);
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────
+// AGE EXTRACTION HELPER
+//
+// Extracts a numeric age from range strings like "5-7 year old" or
+// "approximately 10 years" when the AI returns null for age_years.
+// Uses the midpoint of ranges; returns null when not parseable.
+// ─────────────────────────────────────────────────────────────────
+function deriveAgeYears(description: string): number | null {
+  if (!description) return null;
+  // Range: "5-7 years", "5 to 7 years", "5–7 year"
+  const rangeMatch = description.match(/(\d+)\s*(?:to|–|-)\s*(\d+)\s*year/i);
+  if (rangeMatch) {
+    const lo = parseInt(rangeMatch[1], 10);
+    const hi = parseInt(rangeMatch[2], 10);
+    return Math.round((lo + hi) / 2);
+  }
+  // Single: "approximately 10 years old", "10-year-old", "10 years"
+  const singleMatch = description.match(/(?:approximately\s+)?(\d+)[\s-]year(?:s|\s+old)?/i);
+  if (singleMatch) return parseInt(singleMatch[1], 10);
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────
 // MAIN NORMALIZATION FUNCTION
 // ─────────────────────────────────────────────────────────────────
 export function normalizeFinding(raw: RawFinding): NormalizedFinding {
@@ -509,10 +552,10 @@ export function normalizeFinding(raw: RawFinding): NormalizedFinding {
                               "Monitor and perform routine maintenance";
 
   // 11. Cost range (±25% of point estimate when available)
-  const estimated_cost_min = raw.estimated_cost != null
-    ? Math.round(raw.estimated_cost * 0.75) : null;
-  const estimated_cost_max = raw.estimated_cost != null
-    ? Math.round(raw.estimated_cost * 1.25) : null;
+  // Use the coerced cost value so string returns ("$1,500") still produce ranges.
+  const coercedCost = parseEstimatedCost(raw.estimated_cost);
+  const estimated_cost_min = coercedCost != null ? Math.round(coercedCost * 0.75) : null;
+  const estimated_cost_max = coercedCost != null ? Math.round(coercedCost * 1.25) : null;
 
   return {
     normalized_finding_key,
@@ -539,8 +582,8 @@ export function normalizeFinding(raw: RawFinding): NormalizedFinding {
     // Legacy compat fields consumed by scoring engine + existing dashboard code
     is_scorable:          scorable,
     status:               "open",
-    estimated_cost:       raw.estimated_cost       ?? null,
-    age_years:            raw.age_years            ?? null,
+    estimated_cost:       parseEstimatedCost(raw.estimated_cost) ?? null,
+    age_years:            raw.age_years            ?? deriveAgeYears(raw.description || "") ?? null,
     remaining_life_years: raw.remaining_life_years ?? null,
     lifespan_years:       raw.lifespan_years        ?? null,
   };
