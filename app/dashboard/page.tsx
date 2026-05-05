@@ -4869,33 +4869,52 @@ export default function Dashboard() {
     showToast(`Deleted ${doc.name}`, "success");
   }
 
+  // Full inspection reset: removes file from storage, documents row, all findings,
+  // clears properties inspection fields, and resets all score state.
   async function deleteInspectionDoc() {
     if (!inspectionDoc) return;
-    if (!confirm("Remove this inspection report file? Your score and analysis data will still be saved.")) return;
-    await confirmAndDeleteInspectionDoc();
-  }
+    const propId = activePropertyIdRef.current;
 
-  async function confirmAndDeleteInspectionDoc() {
-    if (!inspectionDoc) return;
-    setConfirmDeleteInspection(false);
-    // Remove from Storage
+    // 1. Remove file from Storage
     const { error: storageErr } = await supabase.storage.from("documents").remove([inspectionDoc.path]);
-    if (storageErr) console.warn("[deleteInspectionDoc] storage delete error:", storageErr.message);
-    // Remove from Postgres — by id if available, otherwise by file_path
+    if (storageErr) console.warn("[deleteInspectionDoc] storage error:", storageErr.message);
+
+    // 2. Remove documents table row
     if (inspectionDoc.id) {
       await supabase.from("documents").delete().eq("id", inspectionDoc.id);
     } else {
       await supabase.from("documents").delete().eq("file_path", inspectionDoc.path);
     }
+
+    // 3. Clear findings + inspection data from properties table
+    if (propId) {
+      await supabase.from("findings").delete().eq("property_id", propId);
+      await supabase.from("properties").update({
+        inspection_findings:  [],
+        inspection_summary:   null,
+        inspection_type:      null,
+        inspection_date:      null,
+        total_estimated_cost: null,
+      }).eq("id", propId);
+    }
+
+    // 4. Reset all in-memory state
     setInspectionDoc(null);
-    // Also clear last-seen filename so the duplicate guard doesn't block re-upload
+    setInspectDone(false);
+    setInspectionResult(null);
+    setHomeHealthReport(null);
+    setCachedScore(null);
     setLastInspectionFilename(null);
-    showToast("Inspection report removed — upload a new one to re-analyze", "success");
+    try {
+      localStorage.removeItem(`btlr_score_v1_${propId}`);
+      localStorage.removeItem(`btlr_inspected_v1_${propId}`);
+    } catch {}
+
+    showToast("Inspection deleted — upload a new report to re-analyze", "success");
   }
 
-  // Clear inspection analysis data without a file record (inspectDone=true but no file saved)
+  // Legacy: clear analysis when no file record exists (kept for the "clear" button path)
   async function clearInspectionAnalysis() {
-    if (!confirm("Clear this inspection analysis? Your Home Health Score will be reset. You can re-upload at any time.")) return;
     const propId = activePropertyIdRef.current;
     if (propId) {
       await supabase.from("properties").update({
