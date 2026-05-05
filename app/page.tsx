@@ -346,6 +346,8 @@ export default function LandingPage() {
         .pain-item:first-child{border-top:1px solid rgba(255,255,255,.07)}
         .step-hover:hover{border-color:${C.gold} !important}
         .vendor-row-hover:hover{border-color:${C.borderGold} !important;background:${C.surface} !important}
+        /* Footer grid — desktop base */
+        .footer-cols{display:grid;grid-template-columns:1.6fr 1fr 1fr 1.4fr;gap:48px}
         @media(max-width:900px){
           /* Nav */
           .nav-links-hide{display:none !important}
@@ -367,8 +369,7 @@ export default function LandingPage() {
           .steps-grid::before{display:none !important}
           .stats-flex{flex-wrap:wrap !important;gap:28px 40px !important;padding:56px 28px !important;justify-content:center !important}
           /* Footer */
-          .footer-cols{display:grid;grid-template-columns:1.6fr 1fr 1fr 1.4fr;gap:48px}
-          @media(max-width:900px){.footer-cols{grid-template-columns:1fr 1fr;gap:36px}}
+          .footer-cols{grid-template-columns:1fr 1fr;gap:36px}
           @media(max-width:560px){.footer-cols{grid-template-columns:1fr;gap:28px}}
           /* Dollhouse */
           #sv-labels{display:none !important}
@@ -814,7 +815,7 @@ export default function LandingPage() {
       </section>
 
       {/* ── FOOTER ── */}
-      <footer style={{ background: C.navy, padding: "64px 64px 40px" }}>
+      <footer style={{ background: "#1E3048", padding: "64px 64px 40px" }}>
         <div className="footer-cols">
 
           {/* ── Col 1: Brand ── */}
