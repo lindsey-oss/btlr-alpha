@@ -8017,7 +8017,7 @@ export default function Dashboard() {
               const validInspDate = parsedInspDate && !isNaN(parsedInspDate.getTime()) ? parsedInspDate : null;
               const lastUpd = validInspDate
                 ? `Last updated ${validInspDate.toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
-                : inspectDone ? "Last updated recently" : "Add your home data to get started";
+                : (inspectDone || inspectionDoc) ? "Last updated recently" : "Add your home data to get started";
               return (
                 <div style={{
                   background: customTheme.bgImage
@@ -8075,7 +8075,7 @@ export default function Dashboard() {
                         const top = warnings[0];
                         chips.push({ label: "View Repairs", color: C.amber, icon: "⚒", action: () => setNav("Repairs") });
                         chips.push({ label: `Find a ${tradeForCategory(top.system ?? top.category ?? "")}`, color: C.amber, icon: "◯", action: () => handleFindVendors(top.category, top.category, top.description) });
-                      } else if (!inspectDone) {
+                      } else if (!inspectDone && !inspectionDoc) {
                         chips.push({ label: "Upload Inspection Report", color: C.accent, icon: "◉", action: () => inspRef.current?.click() });
                         chips.push({ label: "Self-Inspection", color: C.accent, icon: "⚒", action: () => { setSelfInspectStep(0); setSelfInspectAnswers({}); setShowSelfInspectModal(true); } });
                       } else {
@@ -8144,7 +8144,7 @@ export default function Dashboard() {
               gridTemplateColumns: "minmax(0, 1.6fr) minmax(0, 1fr)", gap: 16, alignItems: "start" }}>
 
             {/* LEFT: Health Score Card */}
-            {(inspectDone || roofYear || hvacYear) ? (
+            {(inspectDone || inspectionDoc || roofYear || hvacYear) ? (
               <div
                 onClick={() => setShowHealthModal(true)}
                 style={{ ...card(), cursor: "pointer", transition: "box-shadow 0.18s" }}
