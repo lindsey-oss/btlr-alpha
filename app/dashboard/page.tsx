@@ -3924,9 +3924,15 @@ export default function Dashboard() {
           setHomeHealthReport(report);
           console.log(`[loadProperty] Score computed: ${report.home_health_score} (${seriousFindings.length} scored / ${scoringFindings.length} total findings from ${loadedFindings.length > 0 ? "findings table" : "JSONB fallback"})`);
           // Cache score + inspection flag in localStorage so both survive hard refresh.
-          // On next load, the score circle appears immediately while recompute runs.
+          // Only overwrite existing cache when we have real findings to back it up —
+          // prevents a 0-findings loadProperty run from writing 100 and stomping a
+          // good score that was cached at upload time.
           try {
-            localStorage.setItem(`btlr_score_v1_${propId}`, String(report.home_health_score));
+            const existingCached = parseInt(localStorage.getItem(`btlr_score_v1_${propId}`) ?? "");
+            const shouldWrite = seriousFindings.length > 0 || isNaN(existingCached) || existingCached <= 0;
+            if (shouldWrite) {
+              localStorage.setItem(`btlr_score_v1_${propId}`, String(report.home_health_score));
+            }
             localStorage.setItem(`btlr_inspected_v1_${propId}`, "1");
           } catch {}
           // Persist score metadata so confidence bar and renewal funnel survive refresh
@@ -4587,6 +4593,15 @@ export default function Dashboard() {
             inspectionDate: result.inspection_date ?? null,
           });
           setHomeHealthReport(mergedReport);
+          // Cache score immediately so hard refresh shows the real score,
+          // not 100 (the empty-findings default). loadProperty() may recompute
+          // later but this seed value is always correct.
+          if (savePropId) {
+            try {
+              localStorage.setItem(`btlr_score_v1_${savePropId}`, String(mergedReport.home_health_score));
+              localStorage.setItem(`btlr_inspected_v1_${savePropId}`, "1");
+            } catch {}
+          }
           phCapture("home_health_score_calculated", {
             overall_score:    mergedReport.home_health_score,
             grade:            mergedReport.score_band,
@@ -4872,6 +4887,12 @@ export default function Dashboard() {
   // Full inspection reset: removes file from storage, documents row, all findings,
   // clears properties inspection fields, and resets all score state.
   async function deleteInspectionDoc() {
+    if (!inspectionDoc) return;
+    setConfirmDeleteInspection(true); // show warning modal first
+  }
+
+  async function confirmAndDeleteInspectionDoc() {
+    setConfirmDeleteInspection(false);
     if (!inspectionDoc) return;
     const propId = activePropertyIdRef.current;
 
@@ -10179,6 +10200,31 @@ export default function Dashboard() {
       <input ref={photoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handlePhotoCapture} disabled={photoAnalyzing}/>
       {/* Hidden input for document photo scanning */}
       <input ref={scanDocRef} type="file" accept="image/*,image/heic,image/heif" capture="environment" multiple style={{ display: "none" }} onChange={handleDocumentScan}/>
+
+      {/* ── Delete Inspection Confirmation Modal ─────────────────────── */}
+      {confirmDeleteInspection && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 1200, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}
+          onClick={() => setConfirmDeleteInspection(false)}>
+          <div style={{ background: C.surface, borderRadius: 18, padding: "32px 28px", width: "100%", maxWidth: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.25)" }}
+            onClick={e => e.stopPropagation()}>
+            <div style={{ width: 48, height: 48, borderRadius: 14, background: `${C.red}14`, display: "flex", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke={C.red} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+            </div>
+            <h2 style={{ fontSize: 18, fontWeight: 700, color: C.text, margin: "0 0 8px" }}>Delete inspection report?</h2>
+            <p style={{ fontSize: 14, color: C.text3, margin: "0 0 24px", lineHeight: 1.5 }}>
+              This will permanently remove the file, all extracted findings, and reset your Home Health Score. You can re-upload at any time.
+            </p>
+            <div style={{ display: "flex", gap: 10 }}>
+              <button onClick={() => setConfirmDeleteInspection(false)} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: `1.5px solid ${C.border}`, background: "transparent", color: C.text2, fontSize: 14, fontWeight: 600, cursor: "pointer" }}>
+                Cancel
+              </button>
+              <button onClick={confirmAndDeleteInspectionDoc} style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: C.red, color: "white", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Tutorial walkthrough ─────────────────────────────────────── */}
       <TutorialModal open={showTutorial} onClose={handleTutorialClose}/>
