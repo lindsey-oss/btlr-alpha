@@ -2391,7 +2391,12 @@ export default function Dashboard() {
   const [inspecting, setInspecting] = useState(false);
   const [inspectStage, setInspectStage] = useState<"uploading" | "analyzing" | "saving" | "">("");
   const [inspectIsLargeFile, setInspectIsLargeFile] = useState(false);
-  const [inspectDone, setInspectDone]   = useState(false);
+  const [inspectDone, setInspectDone]   = useState<boolean>(() => {
+    try {
+      const pid = typeof window !== "undefined" ? localStorage.getItem("btlr_active_property_id") : null;
+      return pid ? !!localStorage.getItem(`btlr_inspected_v1_${pid}`) : false;
+    } catch { return false; }
+  });
   const [inspectErr, setInspectErr]     = useState("");
   const [lastInspectionFilename, setLastInspectionFilename] = useState<string | null>(null);
   const [inspectionResult, setInspectionResult] = useState<{
@@ -2404,7 +2409,14 @@ export default function Dashboard() {
     company_name?: string;
   } | null>(null);
   const [homeHealthReport, setHomeHealthReport] = useState<HomeHealthReport | null>(null);
-  const [cachedScore,      setCachedScore]      = useState<number | null>(null);
+  const [cachedScore,      setCachedScore]      = useState<number | null>(() => {
+    try {
+      const pid = typeof window !== "undefined" ? localStorage.getItem("btlr_active_property_id") : null;
+      if (!pid) return null;
+      const v = parseInt(localStorage.getItem(`btlr_score_v1_${pid}`) ?? "");
+      return !isNaN(v) && v > 0 ? v : null;
+    } catch { return null; }
+  });
   const [regionalRanges,  setRegionalRanges]    = useState<Record<string, Record<string, { estimated_cost_min: number; estimated_cost_max: number }>> | null>(null);
   const [regionalLocation, setRegionalLocation] = useState<{ city?: string; state?: string } | null>(null);
 
